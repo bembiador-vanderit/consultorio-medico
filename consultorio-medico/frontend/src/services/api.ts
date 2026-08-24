@@ -1,23 +1,30 @@
 import axios from "axios";
 
-export const ACCESS_TOKEN_KEY = "consultorio_access_token";
-
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1",
+  withCredentials: true,
 });
 
 export function setAccessToken(token: string | null) {
-  if (token) {
-    localStorage.setItem(ACCESS_TOKEN_KEY, token);
-    api.defaults.headers.common.Authorization = `Bearer ${token}`;
-  } else {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    delete api.defaults.headers.common.Authorization;
+  if (token) api.defaults.headers.common.Authorization = `Bearer ${token}`;
+  else delete api.defaults.headers.common.Authorization;
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  try {
+    const { data } = await api.post<{ access_token: string }>("/auth/refresh");
+    setAccessToken(data.access_token);
+    return data.access_token;
+  } catch {
+    setAccessToken(null);
+    return null;
   }
 }
 
-export function restoreAccessToken() {
-  const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-  if (token) api.defaults.headers.common.Authorization = `Bearer ${token}`;
-  return token;
+export async function logoutSession() {
+  try {
+    await api.post("/auth/logout");
+  } finally {
+    setAccessToken(null);
+  }
 }
