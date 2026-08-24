@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { AxiosError } from "axios";
-import { api, setAccessToken } from "./services/api";
+import { api, restoreAccessToken, setAccessToken } from "./services/api";
 import Patients from "./pages/Patients";
 
 type User = { id: number; email: string; full_name: string; is_active: boolean; roles: string[] };
@@ -13,7 +13,30 @@ function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    const token = restoreAccessToken();
+
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    api.get<User>("/auth/me")
+      .then(({ data }) => {
+        if (mounted) setUser(data);
+      })
+      .catch(() => {
+        setAccessToken(null);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => { mounted = false; };
+  }, []);
 
   async function signIn(event: FormEvent) {
     event.preventDefault(); setLoading(true); setError("");
@@ -29,6 +52,8 @@ function App() {
   }
 
   function signOut() { setAccessToken(null); setUser(null); setView("dashboard"); }
+
+  if (loading) return <main className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-600"><p>Comprobando sesión...</p></main>;
 
   if (!user) return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6 text-slate-900">
