@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.db import get_db
@@ -8,6 +8,10 @@ from app.schemas.patient import PatientCreate, PatientResponse, PatientUpdate
 
 router = APIRouter(prefix="/patients", tags=["Pacientes"])
 access = require_permission("patients:access")
+
+@router.get("/count")
+def count_patients(_=Depends(access), db: Session = Depends(get_db)):
+    return {"count": db.scalar(select(func.count()).select_from(Patient)) or 0}
 
 @router.get("", response_model=list[PatientResponse])
 def list_patients(query: str | None = None, offset: int = Query(0, ge=0), limit: int = Query(25, ge=1, le=100), _=Depends(access), db: Session = Depends(get_db)):
