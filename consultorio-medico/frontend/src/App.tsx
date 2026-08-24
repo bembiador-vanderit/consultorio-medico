@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { AxiosError } from "axios";
-import { api, restoreAccessToken, setAccessToken } from "./services/api";
+import { api, logoutSession, refreshAccessToken, setAccessToken } from "./services/api";
 import Dashboard from "./pages/Dashboard";
 import Patients from "./pages/Patients";
 import type { User } from "./types/user";
@@ -18,21 +18,25 @@ function App() {
 
   useEffect(() => {
     let mounted = true;
-    const token = restoreAccessToken();
-    if (!token) {
-      setLoading(false);
-      return;
+
+    async function restoreSession() {
+      const token = await refreshAccessToken();
+      if (!token) {
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      try {
+        const { data } = await api.get<User>("/auth/me");
+        if (mounted) setUser(data);
+      } catch {
+        setAccessToken(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     }
 
-    api.get<User>("/auth/me")
-      .then(({ data }) => {
-        if (mounted) setUser(data);
-      })
-      .catch(() => setAccessToken(null))
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-
+    void restoreSession();
     return () => { mounted = false; };
   }, []);
 
@@ -57,8 +61,8 @@ function App() {
     }
   }
 
-  function signOut() {
-    setAccessToken(null);
+  async function signOut() {
+    await logoutSession();
     setUser(null);
     setView("dashboard");
   }
@@ -102,7 +106,7 @@ function App() {
               <p className="text-sm font-semibold">{user.full_name}</p>
               <p className="text-xs text-slate-500">{user.roles.join(", ")}</p>
             </div>
-            <button onClick={signOut} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">Cerrar sesión</button>
+            <button onClick={() => void signOut()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">Cerrar sesión</button>
           </div>
         </div>
       </header>
