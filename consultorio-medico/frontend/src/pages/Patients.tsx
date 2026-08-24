@@ -1,20 +1,24 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api } from "../services/api";
 import PatientForm from "../components/patients/PatientForm";
+import PatientInsurancePanel from "../components/patients/PatientInsurancePanel";
 import type { Patient } from "../types/patient";
+import type { User } from "../types/user";
 
 type Props = {
   onBack: () => void;
   onPatientChanged: () => void;
+  user: User;
 };
 
-export default function Patients({ onBack, onPatientChanged }: Props) {
+export default function Patients({ onBack, onPatientChanged, user }: Props) {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Patient | null>(null);
+  const [insurancePatient, setInsurancePatient] = useState<Patient | null>(null);
 
   async function loadPatients(search = "") {
     setLoading(true);
@@ -33,7 +37,7 @@ export default function Patients({ onBack, onPatientChanged }: Props) {
   }
 
   useEffect(() => {
-    loadPatients();
+    void loadPatients();
   }, []);
 
   function createPatient() {
@@ -56,15 +60,11 @@ export default function Patients({ onBack, onPatientChanged }: Props) {
     <section>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">
-            ← Volver al dashboard
-          </button>
+          <button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button>
           <h2 className="mt-2 text-2xl font-bold">Pacientes</h2>
           <p className="mt-1 text-sm text-slate-500">Registro y administración de pacientes.</p>
         </div>
-        <button onClick={createPatient} className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800">
-          + Nuevo paciente
-        </button>
+        <button onClick={createPatient} className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800">+ Nuevo paciente</button>
       </div>
 
       <form onSubmit={(event: FormEvent) => { event.preventDefault(); void loadPatients(query); }} className="mt-6 flex flex-col gap-3 rounded-xl border bg-white p-4 shadow-sm sm:flex-row">
@@ -79,21 +79,12 @@ export default function Patients({ onBack, onPatientChanged }: Props) {
         {loading ? (
           <p className="p-6 text-slate-500">Cargando pacientes...</p>
         ) : patients.length === 0 ? (
-          <div className="p-10 text-center">
-            <p className="font-medium">No hay pacientes registrados.</p>
-            <p className="mt-1 text-sm text-slate-500">Puedes registrar el primero con "Nuevo paciente".</p>
-          </div>
+          <div className="p-10 text-center"><p className="font-medium">No hay pacientes registrados.</p><p className="mt-1 text-sm text-slate-500">Puedes registrar el primero con "Nuevo paciente".</p></div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Paciente</th>
-                  <th className="px-4 py-3">Fecha nacimiento</th>
-                  <th className="px-4 py-3">Teléfono</th>
-                  <th className="px-4 py-3">Correo</th>
-                  <th className="px-4 py-3 text-right">Acción</th>
-                </tr>
+                <tr><th className="px-4 py-3">Paciente</th><th className="px-4 py-3">Fecha nacimiento</th><th className="px-4 py-3">Teléfono</th><th className="px-4 py-3">Correo</th><th className="px-4 py-3 text-right">Acciones</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {patients.map((patient) => (
@@ -103,7 +94,10 @@ export default function Patients({ onBack, onPatientChanged }: Props) {
                     <td className="px-4 py-3">{patient.phone || "—"}</td>
                     <td className="px-4 py-3">{patient.email || "—"}</td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => editPatient(patient)} className="font-medium text-teal-700 hover:underline">Editar</button>
+                      <div className="flex justify-end gap-3">
+                        <button onClick={() => editPatient(patient)} className="font-medium text-teal-700 hover:underline">Editar</button>
+                        <button onClick={() => setInsurancePatient(patient)} className="font-medium text-slate-700 hover:underline">Seguro</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -113,8 +107,15 @@ export default function Patients({ onBack, onPatientChanged }: Props) {
         )}
       </div>
 
-      {showForm && (
-        <PatientForm patient={editing} onClose={() => setShowForm(false)} onSaved={handleSaved} />
+      {showForm && <PatientForm patient={editing} onClose={() => setShowForm(false)} onSaved={handleSaved} />}
+
+      {insurancePatient && (
+        <PatientInsurancePanel
+          patientId={insurancePatient.id}
+          patientName={`${insurancePatient.first_name} ${insurancePatient.last_name}`}
+          user={user}
+          onClose={() => setInsurancePatient(null)}
+        />
       )}
     </section>
   );
