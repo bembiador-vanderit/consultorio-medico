@@ -15,6 +15,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     roles: Mapped[list["Role"]] = relationship(secondary=user_roles, back_populates="users")
+    centers: Mapped[list["CareCenter"]] = relationship(secondary="user_centers", back_populates="users")
 
 class Role(Base):
     __tablename__ = "roles"

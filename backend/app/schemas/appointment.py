@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 
 class AppointmentBase(BaseModel):
     patient_id: int
+    doctor_id: int | None = None
+    center_id: int | None = None
     appointment_date: date
     appointment_time: time
     reason: str | None = Field(default=None, max_length=5000)
@@ -15,8 +17,11 @@ class AppointmentCreate(AppointmentBase):
 class AppointmentResponse(AppointmentBase):
     id: int
     doctor_id: int
+    center_id: int | None
     patient_name: str
     doctor_name: str
+    center_name: str | None
+    center_city: str | None
     created_at: datetime
     updated_at: datetime
 
