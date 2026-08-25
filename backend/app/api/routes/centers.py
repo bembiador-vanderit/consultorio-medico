@@ -4,13 +4,17 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
 from app.db import get_db
-from app.models import CareCenter, User
+from app.models import CareCenter, Locality, User
 from app.models.center import user_centers
 from app.schemas.center import CareCenterCreate, CareCenterResponse, CareCenterUpdate, CenterUserAssignment
 
 router = APIRouter(prefix="/centers", tags=["Centros de atención"])
 access = require_permission("centers:access")
 manage = require_permission("centers:manage")
+
+
+def center_response(center: CareCenter) -> CareCenter:
+    return center
 
 
 @router.get("/mine", response_model=list[CareCenterResponse])
@@ -25,7 +29,10 @@ def list_centers(_: User = Depends(manage), db: Session = Depends(get_db)):
 
 @router.post("", response_model=CareCenterResponse, status_code=status.HTTP_201_CREATED)
 def create_center(payload: CareCenterCreate, _: User = Depends(manage), db: Session = Depends(get_db)):
-    center = CareCenter(**payload.model_dump())
+    locality = db.get(Locality, payload.locality_id)
+    if not locality or not locality.is_active:
+        raise HTTPException(status_code=422, detail="Localidad inválida o inactiva")
+    center = CareCenter(**payload.model_dump(), city=locality.name)
     db.add(center)
     db.commit()
     db.refresh(center)
@@ -35,9 +42,14 @@ def create_center(payload: CareCenterCreate, _: User = Depends(manage), db: Sess
 @router.put("/{center_id}", response_model=CareCenterResponse)
 def update_center(center_id: int, payload: CareCenterUpdate, _: User = Depends(manage), db: Session = Depends(get_db)):
     center = db.get(CareCenter, center_id)
+    locality = db.get(Locality, payload.locality_id)
     if not center:
         raise HTTPException(status_code=404, detail="Centro de atención no encontrado")
-    for field, value in payload.model_dump().items():
+    if not locality or not locality.is_active:
+        raise HTTPException(status_code=422, detail="Localidad inválida o inactiva")
+    data = payload.model_dump()
+    data["city"] = locality.name
+    for field, value in data.items():
         setattr(center, field, value)
     db.commit()
     db.refresh(center)
@@ -58,17 +70,10 @@ def assign_user(center_id: int, payload: CenterUserAssignment, _: User = Depends
         db.flush()
 
     if payload.is_primary:
+        db.execute(update(user_centers).where(user_centers.c.user_id == user.id).values(is_primary=False))
         db.execute(
             update(user_centers)
-            .where(user_centers.c.user_id == user.id)
-            .values(is_primary=False)
-        )
-        db.execute(
-            update(user_centers)
-            .where(
-                user_centers.c.user_id == user.id,
-                user_centers.c.center_id == center.id,
-            )
+            .where(user_centers.c.user_id == user.id, user_centers.c.center_id == center.id)
             .values(is_primary=True)
         )
 
