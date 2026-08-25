@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -8,10 +8,10 @@ from app.db import Base
 
 class ClinicalHistory(Base):
     __tablename__ = "clinical_histories"
-    __table_args__ = (UniqueConstraint("patient_id", name="uq_clinical_history_patient"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id", ondelete="CASCADE"), nullable=False, index=True)
+    consultation_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     reason_for_visit: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_illness: Mapped[str | None] = mapped_column(Text, nullable=True)
     personal_history: Mapped[str | None] = mapped_column(Text, nullable=True)
