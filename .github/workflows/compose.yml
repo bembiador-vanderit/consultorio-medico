@@ -13,8 +13,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create local environment
-        run: cp .env.example .env
+      - name: Create CI test environment
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_DB=consultorio_medico_ci
+          POSTGRES_USER=consultorio_user_ci
+          POSTGRES_PASSWORD=prueba1488
+          POSTGRES_PORT=5432
+          DATABASE_URL=postgresql+psycopg://consultorio_user_ci:prueba1488@postgres:5432/consultorio_medico_ci
+          SECRET_KEY=lkfdjdf123213sddhf54f98#%^TG
+          INITIAL_ADMIN_EMAIL=admin@ci.local
+          INITIAL_ADMIN_PASSWORD=prueba1488
+          INITIAL_ADMIN_NAME=Administrador CI
+          BACKEND_PORT=8000
+          FRONTEND_PORT=5173
+          EOF
 
       - name: Build and start services
         run: docker compose up -d --build
