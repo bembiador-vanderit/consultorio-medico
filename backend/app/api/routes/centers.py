@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
 from app.db import get_db
 from app.models import CareCenter, User
+from app.models.center import user_centers
 from app.schemas.center import CareCenterCreate, CareCenterResponse, CareCenterUpdate, CenterUserAssignment
 
 router = APIRouter(prefix="/centers", tags=["Centros de atención"])
@@ -51,14 +52,26 @@ def assign_user(center_id: int, payload: CenterUserAssignment, _: User = Depends
         raise HTTPException(status_code=404, detail="Centro de atención no encontrado")
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
     if center not in user.centers:
         user.centers.append(center)
+        db.flush()
+
     if payload.is_primary:
-        for other in user.centers:
-            if other.id != center.id:
-                db.execute(
-                    CareCenter.__table__.update().where(CareCenter.id == other.id).values()
-                )
+        db.execute(
+            update(user_centers)
+            .where(user_centers.c.user_id == user.id)
+            .values(is_primary=False)
+        )
+        db.execute(
+            update(user_centers)
+            .where(
+                user_centers.c.user_id == user.id,
+                user_centers.c.center_id == center.id,
+            )
+            .values(is_primary=True)
+        )
+
     db.commit()
     db.refresh(center)
     return center
