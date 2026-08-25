@@ -33,6 +33,7 @@ class NotificationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     follow_up_id: int | None
+    appointment_id: int | None
     title: str
     message: str
     notification_type: str
