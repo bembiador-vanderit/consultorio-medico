@@ -1,6 +1,7 @@
 export type ClinicalHistory = {
   id: number;
   patient_id: number;
+  consultation_date: string;
   reason_for_visit: string | null;
   current_illness: string | null;
   personal_history: string | null;
