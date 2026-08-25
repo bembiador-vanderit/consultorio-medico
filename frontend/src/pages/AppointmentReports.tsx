@@ -22,6 +22,7 @@ export default function AppointmentReports({ onBack }: Props) {
   const [filters, setFilters] = useState<ReportFilters>({ from: today, to: today, status: "", search: "", doctorId: "", centerId: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -65,6 +66,38 @@ export default function AppointmentReports({ onBack }: Props) {
 
   function print() { window.print(); }
 
+  async function downloadPdf() {
+    if (!filtered.length) return;
+    setPdfLoading(true);
+    setError("");
+    try {
+      const response = await api.get<Blob>("/reports/appointments/pdf", {
+        params: {
+          start: filters.from || undefined,
+          end: filters.to || undefined,
+          status: filters.status || undefined,
+          doctor_id: filters.doctorId || undefined,
+          center_id: filters.centerId || undefined,
+          search: filters.search.trim() || undefined,
+        },
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `reporte-citas-${filters.from || "inicio"}-${filters.to || "fin"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "No fue posible generar el PDF.");
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
   function shareWhatsApp() {
     window.open(`https://wa.me/?text=${encodeURIComponent(reportText)}`, "_blank", "noopener,noreferrer");
   }
@@ -82,8 +115,8 @@ export default function AppointmentReports({ onBack }: Props) {
     <div className="print:hidden">
       <button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button>
       <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div><h2 className="text-2xl font-bold">Reportes de citas</h2><p className="mt-1 text-sm text-slate-500">Consulta, filtra, imprime o comparte el resumen de la agenda.</p></div>
-        <div className="flex flex-wrap gap-2"><button onClick={print} disabled={!filtered.length} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">🖨️ Imprimir / PDF</button><button onClick={shareWhatsApp} disabled={!filtered.length} className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">WhatsApp</button><button onClick={shareEmail} disabled={!filtered.length} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-40">Correo</button></div>
+        <div><h2 className="text-2xl font-bold">Reportes de citas</h2><p className="mt-1 text-sm text-slate-500">Consulta, filtra, descarga PDF, imprime o comparte el resumen de la agenda.</p></div>
+        <div className="flex flex-wrap gap-2"><button onClick={downloadPdf} disabled={!filtered.length || pdfLoading} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">{pdfLoading ? "Generando…" : "⬇️ Descargar PDF"}</button><button onClick={print} disabled={!filtered.length} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">🖨️ Imprimir</button><button onClick={shareWhatsApp} disabled={!filtered.length} className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">WhatsApp</button><button onClick={shareEmail} disabled={!filtered.length} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-40">Correo</button></div>
       </div>
       <div className="mt-6 grid gap-4 rounded-xl border bg-white p-4 shadow-sm md:grid-cols-3">
         <label className="text-sm font-medium">Desde<input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
