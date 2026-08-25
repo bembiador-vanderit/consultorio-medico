@@ -1,14 +1,14 @@
 """Add care centers and user-center assignments.
 
-Revision ID: 0006_care_centers
-Revises: 0005_clinical_history
+Revision ID: 0008_care_centers
+Revises: 0007_appointments
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0006_care_centers"
-down_revision = "0005_clinical_history"
+revision = "0008_care_centers"
+down_revision = "0007_appointments"
 branch_labels = None
 depends_on = None
 
