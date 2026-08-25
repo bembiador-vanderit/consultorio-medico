@@ -83,7 +83,7 @@ def list_patient_insurances(
     items = db.scalars(
         select(PatientInsurance)
         .where(PatientInsurance.patient_id == patient_id)
-        .order_by(PatientInsurance.is_primary.desc(), PatientInsurance.created_at.desc())
+        .order_by(PatientInsurance.is_active.desc(), PatientInsurance.is_primary.desc(), PatientInsurance.created_at.desc())
     ).all()
     return [serialize_patient_insurance(item) for item in items]
 
@@ -123,8 +123,33 @@ def add_patient_insurance(
         member_number=payload.member_number.strip(),
         plan_name=payload.plan_name.strip() if payload.plan_name else None,
         is_primary=payload.is_primary,
+        is_active=True,
     )
     db.add(item)
     db.commit()
     db.refresh(item)
     return serialize_patient_insurance(item)
+
+
+@router.delete(
+    "/patients/{patient_id}/{insurance_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def deactivate_patient_insurance(
+    patient_id: int,
+    insurance_id: int,
+    _: User = Depends(require_permission("patients:access")),
+    db: Session = Depends(get_db),
+):
+    item = db.scalar(
+        select(PatientInsurance).where(
+            PatientInsurance.id == insurance_id,
+            PatientInsurance.patient_id == patient_id,
+        )
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Seguro del paciente no encontrado")
+
+    item.is_active = False
+    item.is_primary = False
+    db.commit()
