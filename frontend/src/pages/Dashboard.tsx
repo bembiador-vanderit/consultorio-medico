@@ -5,6 +5,7 @@ import type { User } from "../types/user";
 type Notification = {
   id: number;
   follow_up_id: number | null;
+  appointment_id: number | null;
   title: string;
   message: string;
   notification_type: string;
@@ -33,6 +34,7 @@ export default function Dashboard({ user, patientsVersion }: { user: User; patie
 
   async function loadNotifications() {
     try {
+      await api.post("/follow-ups/notifications/sync");
       const { data } = await api.get<Notification[]>("/follow-ups/notifications");
       setNotifications(data);
     } catch (error) {
@@ -90,8 +92,8 @@ export default function Dashboard({ user, patientsVersion }: { user: User; patie
 
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <h3 className="font-bold">Acciones rápidas</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            Los seguimientos se crearán desde la consulta clínica y generarán automáticamente una notificación para el médico responsable.
+          <p className="mt-1 text-slate-500">
+            Las citas y seguimientos próximos generan avisos automáticamente cuando el médico entra al sistema.
           </p>
         </div>
       </div>
