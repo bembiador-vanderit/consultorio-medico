@@ -1,5 +1,6 @@
 from app.models.appointment import Appointment
 from app.models.center import CareCenter
+from app.models.clinical_catalog import AnatomicalRegion, DoctorProfile, MedicalStudy, Specialty
 from app.models.clinical_history import ClinicalHistory
 from app.models.doctor_availability import DoctorAvailability
 from app.models.follow_up import FollowUp, Notification
@@ -10,5 +11,6 @@ from app.models.patient import Patient
 
 __all__ = [
     "Permission", "Role", "User", "Locality", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
-    "PatientInsurance", "ClinicalHistory", "Appointment", "FollowUp", "Notification",
+    "PatientInsurance", "ClinicalHistory", "Appointment", "FollowUp", "Notification", "Specialty",
+    "AnatomicalRegion", "MedicalStudy", "DoctorProfile",
 ]
