@@ -13,13 +13,15 @@ access = require_permission("centers:access")
 manage = require_permission("centers:manage")
 
 
-def center_response(center: CareCenter) -> CareCenter:
-    return center
+def is_role(user: User, code: str) -> bool:
+    return any(role.code == code for role in user.roles)
 
 
 @router.get("/mine", response_model=list[CareCenterResponse])
-def list_my_centers(user: User = Depends(access)):
-    return [center for center in user.centers if center.is_active]
+def list_my_centers(user: User = Depends(access), db: Session = Depends(get_db)):
+    if is_role(user, "admin"):
+        return list(db.scalars(select(CareCenter).where(CareCenter.is_active.is_(True)).order_by(CareCenter.city, CareCenter.name)).all())
+    return sorted([center for center in user.centers if center.is_active], key=lambda center: (center.city, center.name))
 
 
 @router.get("", response_model=list[CareCenterResponse])
@@ -47,47 +49,29 @@ def update_center(center_id: int, payload: CareCenterUpdate, _: User = Depends(m
         raise HTTPException(status_code=404, detail="Centro de atención no encontrado")
     if not locality or not locality.is_active:
         raise HTTPException(status_code=422, detail="Localidad inválida o inactiva")
-    data = payload.model_dump()
-    data["city"] = locality.name
-    for field, value in data.items():
-        setattr(center, field, value)
-    db.commit()
-    db.refresh(center)
+    data = payload.model_dump(); data["city"] = locality.name
+    for field, value in data.items(): setattr(center, field, value)
+    db.commit(); db.refresh(center)
     return center
 
 
 @router.post("/{center_id}/users", response_model=CareCenterResponse)
 def assign_user(center_id: int, payload: CenterUserAssignment, _: User = Depends(manage), db: Session = Depends(get_db)):
-    center = db.get(CareCenter, center_id)
-    user = db.get(User, payload.user_id)
-    if not center:
-        raise HTTPException(status_code=404, detail="Centro de atención no encontrado")
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
+    center = db.get(CareCenter, center_id); user = db.get(User, payload.user_id)
+    if not center: raise HTTPException(status_code=404, detail="Centro de atención no encontrado")
+    if not user: raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if center not in user.centers:
-        user.centers.append(center)
-        db.flush()
-
+        user.centers.append(center); db.flush()
     if payload.is_primary:
         db.execute(update(user_centers).where(user_centers.c.user_id == user.id).values(is_primary=False))
-        db.execute(
-            update(user_centers)
-            .where(user_centers.c.user_id == user.id, user_centers.c.center_id == center.id)
-            .values(is_primary=True)
-        )
-
-    db.commit()
-    db.refresh(center)
+        db.execute(update(user_centers).where(user_centers.c.user_id == user.id, user_centers.c.center_id == center.id).values(is_primary=True))
+    db.commit(); db.refresh(center)
     return center
 
 
 @router.delete("/{center_id}/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def unassign_user(center_id: int, user_id: int, _: User = Depends(manage), db: Session = Depends(get_db)):
-    center = db.get(CareCenter, center_id)
-    user = db.get(User, user_id)
-    if not center or not user:
-        raise HTTPException(status_code=404, detail="Centro o usuario no encontrado")
-    if center in user.centers:
-        user.centers.remove(center)
+    center = db.get(CareCenter, center_id); user = db.get(User, user_id)
+    if not center or not user: raise HTTPException(status_code=404, detail="Centro o usuario no encontrado")
+    if center in user.centers: user.centers.remove(center)
     db.commit()
