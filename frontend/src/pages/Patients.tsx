@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { api } from "../services/api";
 import PatientForm from "../components/patients/PatientForm";
 import PatientInsurancePanel from "../components/patients/PatientInsurancePanel";
+import ClinicalHistoryPanel from "../components/patients/ClinicalHistoryPanel";
 import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
 
@@ -19,6 +20,7 @@ export default function Patients({ onBack, onPatientChanged, user }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Patient | null>(null);
   const [insurancePatient, setInsurancePatient] = useState<Patient | null>(null);
+  const [historyPatient, setHistoryPatient] = useState<Patient | null>(null);
 
   async function loadPatients(search = "") {
     setLoading(true);
@@ -96,6 +98,7 @@ export default function Patients({ onBack, onPatientChanged, user }: Props) {
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-3">
                         <button onClick={() => editPatient(patient)} className="font-medium text-teal-700 hover:underline">Editar</button>
+                        <button onClick={() => setHistoryPatient(patient)} className="font-medium text-indigo-700 hover:underline">Historia clínica</button>
                         <button onClick={() => setInsurancePatient(patient)} className="font-medium text-slate-700 hover:underline">Seguro</button>
                       </div>
                     </td>
@@ -108,6 +111,14 @@ export default function Patients({ onBack, onPatientChanged, user }: Props) {
       </div>
 
       {showForm && <PatientForm patient={editing} onClose={() => setShowForm(false)} onSaved={handleSaved} />}
+
+      {historyPatient && (
+        <ClinicalHistoryPanel
+          patientId={historyPatient.id}
+          patientName={`${historyPatient.first_name} ${historyPatient.last_name}`}
+          onClose={() => setHistoryPatient(null)}
+        />
+      )}
 
       {insurancePatient && (
         <PatientInsurancePanel
