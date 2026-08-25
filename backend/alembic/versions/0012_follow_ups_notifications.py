@@ -18,7 +18,7 @@ def upgrade():
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("patient_id", sa.Integer(), sa.ForeignKey("patients.id", ondelete="CASCADE"), nullable=False),
         sa.Column("doctor_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
-        sa.Column("clinical_history_id", sa.Integer(), sa.ForeignKey("clinical_history.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("clinical_history_id", sa.Integer(), sa.ForeignKey("clinical_histories.id", ondelete="SET NULL"), nullable=True),
         sa.Column("center_id", sa.Integer(), sa.ForeignKey("care_centers.id", ondelete="SET NULL"), nullable=True),
         sa.Column("due_at", sa.DateTime(), nullable=False),
         sa.Column("reason", sa.String(length=255), nullable=False),
