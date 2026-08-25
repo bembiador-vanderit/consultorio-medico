@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import appointments, auth, centers, clinical_catalog, clinical_history, communications, doctor_availability, follow_ups, health, insurance, localities, patients, users
+from app.api.routes import appointments, auth, centers, clinical_catalog, clinical_history, communications, doctor_availability, follow_ups, health, insurance, localities, patients, reports, users
 from app.core.config import get_settings
 from app.db import SessionLocal
 from app.services.bootstrap import seed_identity
@@ -24,5 +24,5 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-for router in (health.router, auth.router, users.router, localities.router, centers.router, patients.router, insurance.router, clinical_history.router, appointments.router, doctor_availability.router, follow_ups.router, communications.router, clinical_catalog.router):
+for router in (health.router, auth.router, users.router, localities.router, centers.router, patients.router, insurance.router, clinical_history.router, appointments.router, doctor_availability.router, follow_ups.router, communications.router, clinical_catalog.router, reports.router):
     app.include_router(router, prefix="/api/v1")
