@@ -1,13 +1,13 @@
 """Link appointments to care centers and add doctor availability.
 
-Revision ID: 0009_appointments_centers_availability
+Revision ID: 0009_appt_centers_availability
 Revises: 0008_care_centers
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0009_appointments_centers_availability"
+revision = "0009_appt_centers_availability"
 down_revision = "0008_care_centers"
 branch_labels = None
 depends_on = None
