@@ -67,6 +67,20 @@ export default function PatientInsurancePanel({ patientId, patientName, user, on
     }
   }
 
+  async function deactivateInsurance(item: PatientInsurance) {
+    if (!window.confirm(`¿Desea desactivar el seguro ${item.insurance_company_name} del paciente? El registro se conservará en el historial.`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.delete(`/insurance/patients/${patientId}/${item.id}`);
+      await load();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "No fue posible desactivar el seguro.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function createCompany(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
@@ -86,6 +100,8 @@ export default function PatientInsurancePanel({ patientId, patientName, user, on
       setSaving(false);
     }
   }
+
+  const activeItems = items.filter((item) => item.is_active);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 p-4">
@@ -142,15 +158,16 @@ export default function PatientInsurancePanel({ patientId, patientName, user, on
         <div className="mt-6">
           <h4 className="font-semibold">Seguros registrados</h4>
           {loading ? <p className="mt-3 text-sm text-slate-500">Cargando...</p> : items.length === 0 ? (
-            <p className="mt-3 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">Este paciente todavía no tiene seguros registrados.</p>
+            <p className="mt-3 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">Paciente sin Seguro.</p>
           ) : (
             <div className="mt-3 overflow-hidden rounded-xl border">
               <table className="min-w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">ARS</th><th className="px-4 py-3">Afiliado</th><th className="px-4 py-3">Plan</th><th className="px-4 py-3">Estado</th></tr></thead>
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">ARS</th><th className="px-4 py-3">Afiliado</th><th className="px-4 py-3">Plan</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3 text-right">Acción</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
-                  {items.map((item) => <tr key={item.id}><td className="px-4 py-3 font-medium">{item.insurance_company_name}{item.is_primary && <span className="ml-2 rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-700">Principal</span>}</td><td className="px-4 py-3">{item.member_number}</td><td className="px-4 py-3">{item.plan_name || "—"}</td><td className="px-4 py-3">{item.is_active ? "Activo" : "Inactivo"}</td></tr>)}
+                  {items.map((item) => <tr key={item.id}><td className="px-4 py-3 font-medium">{item.insurance_company_name}{item.is_primary && item.is_active && <span className="ml-2 rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-700">Principal</span>}</td><td className="px-4 py-3">{item.member_number}</td><td className="px-4 py-3">{item.plan_name || "—"}</td><td className="px-4 py-3">{item.is_active ? "Activo" : "Inactivo"}</td><td className="px-4 py-3 text-right">{item.is_active ? <button disabled={saving} onClick={() => void deactivateInsurance(item)} className="font-medium text-red-700 hover:underline disabled:opacity-50">Desactivar</button> : <span className="text-slate-400">Historial</span>}</td></tr>)}
                 </tbody>
               </table>
+              {activeItems.length === 0 && <p className="border-t bg-slate-50 p-4 text-center text-sm font-medium text-slate-600">Paciente sin Seguro activo.</p>}
             </div>
           )}
         </div>
