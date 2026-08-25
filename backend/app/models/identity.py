@@ -15,6 +15,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     roles: Mapped[list["Role"]] = relationship(secondary=user_roles, back_populates="users")
+    centers: Mapped[list["CareCenter"]] = relationship(secondary="user_centers", back_populates="users")
 
 class Role(Base):
     __tablename__ = "roles"
@@ -29,4 +30,4 @@ class Permission(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(100), unique=True)
     description: Mapped[str] = mapped_column(String(200))
-    roles: Mapped[list[Role]] = relationship(secondary=role_permissions, back_populates="permissions")
+    roles: Mapped[list[Role]] = relationship(secondary=role_permissions, back_populates="roles")
