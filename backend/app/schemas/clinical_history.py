@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
 
 class ClinicalHistoryBase(BaseModel):
+    consultation_date: date
     reason_for_visit: str | None = Field(default=None, max_length=5000)
     current_illness: str | None = Field(default=None, max_length=10000)
     personal_history: str | None = Field(default=None, max_length=10000)
