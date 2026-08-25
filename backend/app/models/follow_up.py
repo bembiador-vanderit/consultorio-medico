@@ -10,7 +10,7 @@ class FollowUp(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id", ondelete="CASCADE"), index=True)
     doctor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
-    clinical_history_id: Mapped[int | None] = mapped_column(ForeignKey("clinical_history.id", ondelete="SET NULL"), nullable=True, index=True)
+    clinical_history_id: Mapped[int | None] = mapped_column(ForeignKey("clinical_histories.id", ondelete="SET NULL"), nullable=True, index=True)
     center_id: Mapped[int | None] = mapped_column(ForeignKey("care_centers.id", ondelete="SET NULL"), nullable=True, index=True)
     due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     reason: Mapped[str] = mapped_column(String(255))
