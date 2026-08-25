@@ -30,4 +30,4 @@ class Permission(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(100), unique=True)
     description: Mapped[str] = mapped_column(String(200))
-    roles: Mapped[list[Role]] = relationship(secondary=role_permissions, back_populates="roles")
+    roles: Mapped[list[Role]] = relationship(secondary=role_permissions, back_populates="permissions")
