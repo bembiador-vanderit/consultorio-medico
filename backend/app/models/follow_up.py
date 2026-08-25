@@ -32,6 +32,7 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     follow_up_id: Mapped[int | None] = mapped_column(ForeignKey("follow_ups.id", ondelete="CASCADE"), nullable=True, index=True)
+    appointment_id: Mapped[int | None] = mapped_column(ForeignKey("appointments.id", ondelete="CASCADE"), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(160))
     message: Mapped[str] = mapped_column(Text)
     notification_type: Mapped[str] = mapped_column(String(30), default="follow_up")
@@ -41,3 +42,4 @@ class Notification(Base):
 
     user = relationship("User")
     follow_up = relationship("FollowUp")
+    appointment = relationship("Appointment")
