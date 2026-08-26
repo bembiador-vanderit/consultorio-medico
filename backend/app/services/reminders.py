@@ -28,18 +28,29 @@ def _appointment_message(appointment: Appointment) -> str:
     )
 
 
-def _already_sent(db: Session, appointment_id: int, notification_type: str) -> bool:
-    return db.scalar(
-        select(Notification.id)
-        .where(
-            Notification.appointment_id == appointment_id,
-            Notification.notification_type == notification_type,
-        )
-        .limit(1)
-    ) is not None
+def _already_sent(
+    db: Session,
+    appointment_id: int,
+    notification_type: str,
+    *,
+    user_id: int | None = None,
+) -> bool:
+    query = select(Notification.id).where(
+        Notification.appointment_id == appointment_id,
+        Notification.notification_type == notification_type,
+    )
+    if user_id is not None:
+        query = query.where(Notification.user_id == user_id)
+    return db.scalar(query.limit(1)) is not None
 
 
-def _mark_channel_sent(db: Session, appointment: Appointment, notification_type: str, title: str, message: str) -> None:
+def _mark_channel_sent(
+    db: Session,
+    appointment: Appointment,
+    notification_type: str,
+    title: str,
+    message: str,
+) -> None:
     db.add(
         Notification(
             user_id=appointment.doctor_id,
@@ -86,7 +97,7 @@ def sync_appointment_reminders(
 
         message = _appointment_message(appointment)
         for user_id in recipients:
-            if not _already_sent(db, appointment.id, REMINDER_TYPE):
+            if not _already_sent(db, appointment.id, REMINDER_TYPE, user_id=user_id):
                 db.add(
                     Notification(
                         user_id=user_id,
@@ -113,12 +124,14 @@ def sync_appointment_reminders(
 
         if appointment.patient.phone and not _already_sent(db, appointment.id, WHATSAPP_REMINDER_TYPE):
             try:
-                send_whatsapp(appointment.patient.phone, message)
+                whatsapp_result = send_whatsapp(appointment.patient.phone, message)
             except Exception:
                 pass
             else:
-                _mark_channel_sent(db, appointment, WHATSAPP_REMINDER_TYPE, "Recordatorio enviado por WhatsApp", message)
-                created += 1
+                settings_configured = whatsapp_result == "" or not whatsapp_result.startswith("https://wa.me/")
+                if settings_configured:
+                    _mark_channel_sent(db, appointment, WHATSAPP_REMINDER_TYPE, "Recordatorio enviado por WhatsApp", message)
+                    created += 1
 
     if created:
         db.commit()
