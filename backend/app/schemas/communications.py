@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -17,3 +19,17 @@ class CommunicationResponse(BaseModel):
     status: str
     detail: str
     action_url: str | None = None
+
+
+class CommunicationHistoryItem(BaseModel):
+    id: int
+    patient_id: int
+    appointment_id: int | None
+    channel: str
+    status: str
+    recipient: str
+    error_message: str | None
+    sent_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
