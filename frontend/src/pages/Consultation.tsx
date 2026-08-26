@@ -5,15 +5,20 @@ import type { Appointment } from "../types/appointment";
 type Props = { appointment: Appointment; onBack: () => void };
 type Context = { appointment_id: number; patient_id: number; doctor_id: number; center_id: number | null; appointment_date: string; appointment_time: string; appointment_reason: string | null; appointment_status: string; previous_consultations: Consultation[] };
 type Consultation = { id: number; patient_id: number; appointment_id: number | null; doctor_id: number | null; center_id: number | null; consultation_date: string; reason_for_visit: string | null; current_illness: string | null; personal_history: string | null; family_history: string | null; allergies: string | null; current_medications: string | null; previous_surgeries: string | null; chronic_conditions: string | null; habits: string | null; clinical_notes: string | null; created_at: string; updated_at: string };
-
+type Diagnosis = { id: number; clinical_history_id: number; description: string; icd10_code: string | null; is_primary: boolean; created_at: string; updated_at: string };
 type Form = Omit<Consultation, "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "created_at" | "updated_at">;
 const emptyForm = (reason: string | null): Form => ({ consultation_date: new Date().toISOString().slice(0, 10), reason_for_visit: reason || "", current_illness: "", personal_history: "", family_history: "", allergies: "", current_medications: "", previous_surgeries: "", chronic_conditions: "", habits: "", clinical_notes: "" });
 
 export default function Consultation({ appointment, onBack }: Props) {
   const [context, setContext] = useState<Context | null>(null);
   const [form, setForm] = useState<Form>(emptyForm(appointment.reason));
+  const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
+  const [diagnosis, setDiagnosis] = useState("");
+  const [icd10, setIcd10] = useState("");
+  const [primary, setPrimary] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingDiagnosis, setSavingDiagnosis] = useState(false);
   const [saved, setSaved] = useState<Consultation | null>(null);
   const [error, setError] = useState("");
 
@@ -38,8 +43,28 @@ export default function Consultation({ appointment, onBack }: Props) {
       const { data } = await api.post<Consultation>(`/clinical-history/patients/${context.patient_id}`, { ...form, appointment_id: context.appointment_id });
       setSaved(data);
       setContext((current) => current ? { ...current, previous_consultations: [data, ...current.previous_consultations] } : current);
+      setDiagnoses([]);
     } catch (e: any) { setError(e?.response?.data?.detail || "No fue posible guardar la consulta."); }
     finally { setSaving(false); }
+  }
+
+  async function addDiagnosis() {
+    if (!saved?.id || !diagnosis.trim()) return;
+    setSavingDiagnosis(true); setError("");
+    try {
+      const { data } = await api.post<Diagnosis>(`/clinical-history/${saved.id}/diagnoses`, { description: diagnosis.trim(), icd10_code: icd10.trim() || null, is_primary: primary });
+      setDiagnoses((current) => primary ? [data, ...current.map((item) => ({ ...item, is_primary: false }))] : [...current, data]);
+      setDiagnosis(""); setIcd10(""); setPrimary(false);
+    } catch (e: any) { setError(e?.response?.data?.detail || "No fue posible guardar el diagnóstico."); }
+    finally { setSavingDiagnosis(false); }
+  }
+
+  async function removeDiagnosis(id: number) {
+    if (!saved?.id) return;
+    try {
+      await api.delete(`/clinical-history/${saved.id}/diagnoses/${id}`);
+      setDiagnoses((current) => current.filter((item) => item.id !== id));
+    } catch (e: any) { setError(e?.response?.data?.detail || "No fue posible eliminar el diagnóstico."); }
   }
 
   if (loading) return <section><button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver a la agenda</button><p className="mt-6 text-slate-500">Cargando contexto de atención...</p></section>;
@@ -49,22 +74,36 @@ export default function Consultation({ appointment, onBack }: Props) {
     {error && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
     {saved && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Consulta guardada correctamente. ID #{saved.id} · cita #{saved.appointment_id}.</div>}
     <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="rounded-xl border bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-semibold">Historia de la consulta</h3>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-sm font-medium">Fecha de consulta<input type="date" value={form.consultation_date} onChange={(e) => update("consultation_date", e.target.value)} className="mt-1 w-full rounded-lg border p-2.5" required /></label>
-          <label className="text-sm font-medium">Motivo de consulta<input value={form.reason_for_visit || ""} onChange={(e) => update("reason_for_visit", e.target.value)} className="mt-1 w-full rounded-lg border p-2.5" /></label>
-          <Field label="Enfermedad actual" value={form.current_illness || ""} onChange={(v) => update("current_illness", v)} />
-          <Field label="Antecedentes personales" value={form.personal_history || ""} onChange={(v) => update("personal_history", v)} />
-          <Field label="Antecedentes familiares" value={form.family_history || ""} onChange={(v) => update("family_history", v)} />
-          <Field label="Alergias" value={form.allergies || ""} onChange={(v) => update("allergies", v)} />
-          <Field label="Medicamentos actuales" value={form.current_medications || ""} onChange={(v) => update("current_medications", v)} />
-          <Field label="Cirugías previas" value={form.previous_surgeries || ""} onChange={(v) => update("previous_surgeries", v)} />
-          <Field label="Enfermedades crónicas" value={form.chronic_conditions || ""} onChange={(v) => update("chronic_conditions", v)} />
-          <Field label="Hábitos" value={form.habits || ""} onChange={(v) => update("habits", v)} />
+      <div className="space-y-6">
+        <div className="rounded-xl border bg-white p-6 shadow-sm">
+          <h3 className="text-lg font-semibold">Historia de la consulta</h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium">Fecha de consulta<input type="date" value={form.consultation_date} onChange={(e) => update("consultation_date", e.target.value)} className="mt-1 w-full rounded-lg border p-2.5" required /></label>
+            <label className="text-sm font-medium">Motivo de consulta<input value={form.reason_for_visit || ""} onChange={(e) => update("reason_for_visit", e.target.value)} className="mt-1 w-full rounded-lg border p-2.5" /></label>
+            <Field label="Enfermedad actual" value={form.current_illness || ""} onChange={(v) => update("current_illness", v)} />
+            <Field label="Antecedentes personales" value={form.personal_history || ""} onChange={(v) => update("personal_history", v)} />
+            <Field label="Antecedentes familiares" value={form.family_history || ""} onChange={(v) => update("family_history", v)} />
+            <Field label="Alergias" value={form.allergies || ""} onChange={(v) => update("allergies", v)} />
+            <Field label="Medicamentos actuales" value={form.current_medications || ""} onChange={(v) => update("current_medications", v)} />
+            <Field label="Cirugías previas" value={form.previous_surgeries || ""} onChange={(v) => update("previous_surgeries", v)} />
+            <Field label="Enfermedades crónicas" value={form.chronic_conditions || ""} onChange={(v) => update("chronic_conditions", v)} />
+            <Field label="Hábitos" value={form.habits || ""} onChange={(v) => update("habits", v)} />
+          </div>
+          <label className="mt-4 block text-sm font-medium">Notas clínicas<textarea value={form.clinical_notes || ""} onChange={(e) => update("clinical_notes", e.target.value)} rows={5} className="mt-1 w-full rounded-lg border p-2.5" /></label>
+          <div className="mt-6 flex justify-end"><button onClick={() => void save()} disabled={saving || !context} className="rounded-lg bg-teal-700 px-5 py-2.5 font-medium text-white disabled:opacity-50">{saving ? "Guardando..." : "Guardar consulta"}</button></div>
         </div>
-        <label className="mt-4 block text-sm font-medium">Notas clínicas<textarea value={form.clinical_notes || ""} onChange={(e) => update("clinical_notes", e.target.value)} rows={5} className="mt-1 w-full rounded-lg border p-2.5" /></label>
-        <div className="mt-6 flex justify-end"><button onClick={() => void save()} disabled={saving || !context} className="rounded-lg bg-teal-700 px-5 py-2.5 font-medium text-white disabled:opacity-50">{saving ? "Guardando..." : "Guardar consulta"}</button></div>
+
+        <div className="rounded-xl border bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between"><div><h3 className="text-lg font-semibold">Diagnóstico</h3><p className="text-sm text-slate-500">Guarda uno o varios diagnósticos asociados a esta consulta.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">CIE-10 preparado</span></div>
+          {!saved && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Primero guarda la consulta para poder agregar diagnósticos.</p>}
+          <div className="mt-4 grid gap-3 md:grid-cols-[1fr_160px_auto]">
+            <input value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="Descripción del diagnóstico" disabled={!saved} className="rounded-lg border p-2.5" />
+            <input value={icd10} onChange={(e) => setIcd10(e.target.value)} placeholder="Código CIE-10" disabled={!saved} className="rounded-lg border p-2.5" />
+            <button onClick={() => void addDiagnosis()} disabled={!saved || savingDiagnosis || !diagnosis.trim()} className="rounded-lg bg-slate-800 px-4 py-2.5 font-medium text-white disabled:opacity-50">{savingDiagnosis ? "Guardando..." : "Agregar"}</button>
+          </div>
+          <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={primary} onChange={(e) => setPrimary(e.target.checked)} disabled={!saved} /> Marcar como diagnóstico principal</label>
+          <div className="mt-5 space-y-2">{diagnoses.map((item) => <div key={item.id} className="flex items-start justify-between rounded-lg bg-slate-50 p-3"><div><p className="font-medium">{item.description} {item.is_primary && <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-800">Principal</span>}</p>{item.icd10_code && <p className="text-sm text-slate-500">CIE-10: {item.icd10_code}</p>}</div><button onClick={() => void removeDiagnosis(item.id)} className="text-sm font-medium text-red-600 hover:underline">Eliminar</button></div>)}{saved && !diagnoses.length && <p className="text-sm text-slate-500">No hay diagnósticos registrados.</p>}</div>
+        </div>
       </div>
       <aside className="space-y-4">
         <div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Contexto de atención</h3><dl className="mt-3 space-y-3 text-sm"><div><dt className="text-slate-500">Paciente</dt><dd className="font-semibold">{appointment.patient_name}</dd></div><div><dt className="text-slate-500">Médico</dt><dd className="font-semibold">{appointment.doctor_name}</dd></div><div><dt className="text-slate-500">Centro</dt><dd className="font-semibold">{appointment.center_name ? `${appointment.center_name}${appointment.center_city ? ` · ${appointment.center_city}` : ""}` : "Sin centro"}</dd></div><div><dt className="text-slate-500">Motivo de la cita</dt><dd>{appointment.reason || "—"}</dd></div></dl><div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">appointment_id: <strong>{context?.appointment_id}</strong><br />doctor_id: <strong>{context?.doctor_id}</strong><br />center_id: <strong>{context?.center_id ?? "NULL"}</strong></div></div>
