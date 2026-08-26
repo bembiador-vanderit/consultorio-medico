@@ -58,7 +58,7 @@ def communication_history(
     communication_status: str | None = Query(default=None, alias="status", min_length=1, max_length=20),
     limit: int = Query(default=100, ge=1, le=500),
 ):
-    query = select(CommunicationLog).join(CommunicationLog.patient)
+    query = select(CommunicationLog)
 
     if patient_id is not None:
         query = query.where(CommunicationLog.patient_id == patient_id)
