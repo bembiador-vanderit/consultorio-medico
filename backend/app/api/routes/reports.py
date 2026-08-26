@@ -1,7 +1,9 @@
 from datetime import date
 from io import BytesIO
-from fastapi import APIRouter, Depends, Query
+
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from fastapi.responses import StreamingResponse
+from pydantic import EmailStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from reportlab.lib import colors
@@ -12,8 +14,10 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from app.api.deps import require_permission
+from app.core.config import get_settings
 from app.db import get_db
 from app.models import Appointment, User
+from app.services.communication import send_email_with_attachment
 
 router = APIRouter(prefix="/reports", tags=["Reportes"])
 access = require_permission("patients:access")
@@ -31,24 +35,24 @@ def fmt_date(value: date) -> str:
     return value.strftime("%d/%m/%Y")
 
 
-@router.get("/appointments/pdf")
-def appointment_report_pdf(
-    start: date | None = Query(None),
-    end: date | None = Query(None),
-    status: str | None = Query(None),
-    doctor_id: int | None = Query(None),
-    center_id: int | None = Query(None),
-    search: str | None = Query(None),
-    user: User = Depends(access),
-    db: Session = Depends(get_db),
-):
+def get_appointment_rows(
+    *,
+    start: date | None,
+    end: date | None,
+    appointment_status: str | None,
+    doctor_id: int | None,
+    center_id: int | None,
+    search: str | None,
+    user: User,
+    db: Session,
+) -> list[Appointment]:
     query = select(Appointment).order_by(Appointment.appointment_date, Appointment.appointment_time)
     if start:
         query = query.where(Appointment.appointment_date >= start)
     if end:
         query = query.where(Appointment.appointment_date <= end)
-    if status:
-        query = query.where(Appointment.status == status)
+    if appointment_status:
+        query = query.where(Appointment.status == appointment_status)
     if doctor_id:
         query = query.where(Appointment.doctor_id == doctor_id)
     if center_id:
@@ -72,7 +76,10 @@ def appointment_report_pdf(
                 appointment.reason or "",
             ]).lower()
         ]
+    return appointments
 
+
+def build_appointment_report_pdf(appointments: list[Appointment], start: date | None, end: date | None) -> bytes:
     buffer = BytesIO()
     document = SimpleDocTemplate(
         buffer, pagesize=A4, rightMargin=14 * mm, leftMargin=14 * mm,
@@ -118,6 +125,70 @@ def appointment_report_pdf(
     ]))
     story.append(table)
     document.build(story)
-    buffer.seek(0)
-    filename = f"reporte-citas-{start.isoformat() if start else 'inicio'}-{end.isoformat() if end else 'fin'}.pdf"
-    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return buffer.getvalue()
+
+
+def report_filename(start: date | None, end: date | None) -> str:
+    return f"reporte-citas-{start.isoformat() if start else 'inicio'}-{end.isoformat() if end else 'fin'}.pdf"
+
+
+@router.get("/appointments/pdf")
+def appointment_report_pdf(
+    start: date | None = Query(None),
+    end: date | None = Query(None),
+    status: str | None = Query(None),
+    doctor_id: int | None = Query(None),
+    center_id: int | None = Query(None),
+    search: str | None = Query(None),
+    user: User = Depends(access),
+    db: Session = Depends(get_db),
+):
+    appointments = get_appointment_rows(
+        start=start, end=end, appointment_status=status, doctor_id=doctor_id,
+        center_id=center_id, search=search, user=user, db=db,
+    )
+    content = build_appointment_report_pdf(appointments, start, end)
+    filename = report_filename(start, end)
+    return StreamingResponse(BytesIO(content), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.post("/appointments/email")
+def appointment_report_email(
+    to: EmailStr,
+    start: date | None = Query(None),
+    end: date | None = Query(None),
+    appointment_status: str | None = Query(None),
+    doctor_id: int | None = Query(None),
+    center_id: int | None = Query(None),
+    search: str | None = Query(None),
+    user: User = Depends(access),
+    db: Session = Depends(get_db),
+):
+    appointments = get_appointment_rows(
+        start=start, end=end, appointment_status=appointment_status, doctor_id=doctor_id,
+        center_id=center_id, search=search, user=user, db=db,
+    )
+    if not appointments:
+        raise HTTPException(status_code=422, detail="No hay citas para enviar en el reporte")
+
+    content = build_appointment_report_pdf(appointments, start, end)
+    filename = report_filename(start, end)
+    settings = get_settings()
+    if not settings.smtp_host or not settings.smtp_from:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="SMTP no está configurado")
+
+    period = f"{fmt_date(start) if start else 'Inicio'} - {fmt_date(end) if end else 'Fin'}"
+    try:
+        send_email_with_attachment(
+            str(to),
+            f"Reporte de citas - {period}",
+            f"Adjunto encontrará el reporte de citas de Atlas Consultorio correspondiente al período {period}. Total de citas: {len(appointments)}.",
+            filename=filename,
+            content=content,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="No fue posible enviar el reporte por correo") from exc
+
+    return {"channel": "email", "status": "sent", "detail": "Reporte PDF enviado por correo"}
