@@ -4,6 +4,51 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Appointment, Notification, User
+from app.services.communication import send_email, send_whatsapp
+
+
+REMINDER_TYPE = "appointment_due"
+EMAIL_REMINDER_TYPE = "appointment_due_email"
+WHATSAPP_REMINDER_TYPE = "appointment_due_whatsapp"
+
+
+def _appointment_message(appointment: Appointment) -> str:
+    patient = appointment.patient
+    doctor = appointment.doctor
+    center = appointment.center
+    center_text = center.name if center else "Centro de atención pendiente"
+    return (
+        f"Estimado/a {patient.first_name} {patient.last_name},\n\n"
+        "Le recordamos su próxima cita médica:\n"
+        f"Fecha: {appointment.appointment_date:%d/%m/%Y}\n"
+        f"Hora: {appointment.appointment_time:%I:%M %p}\n"
+        f"Médico: Dr. {doctor.full_name}\n"
+        f"Centro: {center_text}\n\n"
+        "Si necesita reprogramar su cita, comuníquese con el consultorio."
+    )
+
+
+def _already_sent(db: Session, appointment_id: int, notification_type: str) -> bool:
+    return db.scalar(
+        select(Notification.id)
+        .where(
+            Notification.appointment_id == appointment_id,
+            Notification.notification_type == notification_type,
+        )
+        .limit(1)
+    ) is not None
+
+
+def _mark_channel_sent(db: Session, appointment: Appointment, notification_type: str, title: str, message: str) -> None:
+    db.add(
+        Notification(
+            user_id=appointment.doctor_id,
+            appointment_id=appointment.id,
+            title=title,
+            message=message,
+            notification_type=notification_type,
+        )
+    )
 
 
 def sync_appointment_reminders(
@@ -12,13 +57,7 @@ def sync_appointment_reminders(
     now: datetime | None = None,
     horizon_hours: int = 24,
 ) -> int:
-    """Create idempotent in-app reminders for appointments in the next 24 hours.
-
-    Reminders are generated for the assigned doctor and active secretaries
-    assigned to the appointment's center. Existing reminders are detected by
-    recipient + appointment + notification type, so repeated scheduler runs
-    cannot create duplicates.
-    """
+    """Create in-app reminders and attempt configured patient email/WhatsApp delivery."""
     now = now or datetime.utcnow()
     horizon = now + timedelta(hours=horizon_hours)
 
@@ -31,10 +70,7 @@ def sync_appointment_reminders(
 
     created = 0
     for appointment in appointments:
-        appointment_at = datetime.combine(
-            appointment.appointment_date,
-            appointment.appointment_time,
-        )
+        appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
         if appointment_at < now or appointment_at > horizon:
             continue
 
@@ -48,30 +84,41 @@ def sync_appointment_reminders(
                 if any(role.code == "secretary" for role in user.roles):
                     recipients.add(user.id)
 
-        message = (
-            f"{appointment.patient.first_name} {appointment.patient.last_name} — "
-            f"{appointment_at:%d/%m/%Y %H:%M}"
-        )
+        message = _appointment_message(appointment)
         for user_id in recipients:
-            existing = db.scalar(
-                select(Notification.id).where(
-                    Notification.user_id == user_id,
-                    Notification.appointment_id == appointment.id,
-                    Notification.notification_type == "appointment_due",
-                ).limit(1)
-            )
-            if existing:
-                continue
-            db.add(
-                Notification(
-                    user_id=user_id,
-                    appointment_id=appointment.id,
-                    title="Cita próxima",
-                    message=message,
-                    notification_type="appointment_due",
+            if not _already_sent(db, appointment.id, REMINDER_TYPE):
+                db.add(
+                    Notification(
+                        user_id=user_id,
+                        appointment_id=appointment.id,
+                        title="Cita próxima",
+                        message=f"{appointment.patient.first_name} {appointment.patient.last_name} — {appointment_at:%d/%m/%Y %H:%M}",
+                        notification_type=REMINDER_TYPE,
+                    )
                 )
-            )
-            created += 1
+                created += 1
+
+        if appointment.patient.email and not _already_sent(db, appointment.id, EMAIL_REMINDER_TYPE):
+            try:
+                send_email(
+                    appointment.patient.email,
+                    f"Recordatorio de cita médica - {appointment.appointment_date:%d/%m/%Y}",
+                    message,
+                )
+            except Exception:
+                pass
+            else:
+                _mark_channel_sent(db, appointment, EMAIL_REMINDER_TYPE, "Recordatorio enviado por correo", message)
+                created += 1
+
+        if appointment.patient.phone and not _already_sent(db, appointment.id, WHATSAPP_REMINDER_TYPE):
+            try:
+                send_whatsapp(appointment.patient.phone, message)
+            except Exception:
+                pass
+            else:
+                _mark_channel_sent(db, appointment, WHATSAPP_REMINDER_TYPE, "Recordatorio enviado por WhatsApp", message)
+                created += 1
 
     if created:
         db.commit()
