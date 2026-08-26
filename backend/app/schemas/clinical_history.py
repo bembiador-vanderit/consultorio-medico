@@ -2,6 +2,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
+from app.schemas.requested_tests import RequestedTestResponse
+
 
 class ClinicalHistoryBase(BaseModel):
     consultation_date: date
@@ -26,5 +28,6 @@ class ClinicalHistoryResponse(ClinicalHistoryBase):
     patient_id: int
     created_at: datetime
     updated_at: datetime
+    requested_tests: list[RequestedTestResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
