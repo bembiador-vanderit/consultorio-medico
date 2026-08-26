@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,12 +8,44 @@ from app.api.routes import appointments, auth, centers, clinical_catalog, clinic
 from app.core.config import get_settings
 from app.db import SessionLocal
 from app.services.bootstrap import seed_identity
+from app.services.reminders import sync_appointment_reminders
+
+
+async def _reminder_worker(stop_event: asyncio.Event) -> None:
+    """Run appointment reminder synchronization periodically.
+
+    The operation is idempotent, so multiple application instances can safely
+    run it without creating duplicate in-app notifications.
+    """
+    while not stop_event.is_set():
+        try:
+            with SessionLocal() as session:
+                sync_appointment_reminders(session)
+        except Exception:
+            # Reminder failures must not take down the API process. The next
+            # scheduled cycle will retry the synchronization.
+            pass
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=300)
+        except asyncio.TimeoutError:
+            continue
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     with SessionLocal() as session:
         seed_identity(session)
-    yield
+
+    stop_event = asyncio.Event()
+    worker = asyncio.create_task(_reminder_worker(stop_event))
+    try:
+        yield
+    finally:
+        stop_event.set()
+        worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker
+
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.9.0", lifespan=lifespan)
