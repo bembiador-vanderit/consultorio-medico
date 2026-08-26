@@ -41,6 +41,20 @@ def _appointment_context(appointment: Appointment, patient_id: int) -> dict[str,
     }
 
 
+def _resolve_consultation_context(
+    appointment_id: int | None,
+    patient_id: int,
+    db: Session,
+) -> dict[str, int | None]:
+    if appointment_id is None:
+        return {"appointment_id": None, "doctor_id": None, "center_id": None}
+
+    appointment = db.get(Appointment, appointment_id)
+    if appointment is None:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+    return _appointment_context(appointment, patient_id)
+
+
 @router.get("/patients/{patient_id}", response_model=list[ClinicalHistoryResponse])
 def get_clinical_history(patient_id: int, _=Depends(access), db: Session = Depends(get_db)):
     if not db.get(Patient, patient_id):
@@ -113,12 +127,8 @@ def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, _=D
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
     data = payload.model_dump()
-    appointment_id = data.get("appointment_id")
-    if appointment_id is not None:
-        appointment = db.get(Appointment, appointment_id)
-        if appointment is None:
-            raise HTTPException(status_code=404, detail="Cita no encontrada")
-        data.update(_appointment_context(appointment, patient_id))
+    context = _resolve_consultation_context(data.get("appointment_id"), patient_id, db)
+    data.update(context)
 
     history = ClinicalHistory(patient_id=patient_id, **data)
     db.add(history)
@@ -134,12 +144,8 @@ def update_clinical_history(history_id: int, payload: ClinicalHistoryCreate, _=D
         raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
 
     data = payload.model_dump()
-    appointment_id = data.get("appointment_id")
-    if appointment_id is not None:
-        appointment = db.get(Appointment, appointment_id)
-        if appointment is None:
-            raise HTTPException(status_code=404, detail="Cita no encontrada")
-        data.update(_appointment_context(appointment, history.patient_id))
+    context = _resolve_consultation_context(data.get("appointment_id"), history.patient_id, db)
+    data.update(context)
 
     for field, value in data.items():
         setattr(history, field, value)
