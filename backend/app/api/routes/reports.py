@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
@@ -16,8 +16,8 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from app.api.deps import require_permission
 from app.core.config import get_settings
 from app.db import get_db
-from app.models import Appointment, User
-from app.services.communication import send_email_with_attachment
+from app.models import Appointment, CommunicationLog, User
+from app.services.communication import send_email_with_attachment, send_whatsapp_document
 
 router = APIRouter(prefix="/reports", tags=["Reportes"])
 access = require_permission("patients:access")
@@ -132,6 +132,31 @@ def report_filename(start: date | None, end: date | None) -> str:
     return f"reporte-citas-{start.isoformat() if start else 'inicio'}-{end.isoformat() if end else 'fin'}.pdf"
 
 
+def record_delivery(
+    db: Session,
+    *,
+    appointments: list[Appointment],
+    channel: str,
+    recipient: str,
+    delivery_status: str,
+    error_message: str | None = None,
+) -> None:
+    # A report can contain many appointments and is not a patient-specific message.
+    # Keep the audit entry general while linking it to the first appointment when available.
+    db.add(
+        CommunicationLog(
+            patient_id=appointments[0].patient_id if len(appointments) == 1 else None,
+            appointment_id=appointments[0].id if len(appointments) == 1 else None,
+            channel=channel,
+            status=delivery_status,
+            recipient=recipient,
+            error_message=error_message,
+            sent_at=datetime.utcnow() if delivery_status == "sent" else None,
+        )
+    )
+    db.commit()
+
+
 @router.get("/appointments/pdf")
 def appointment_report_pdf(
     start: date | None = Query(None),
@@ -178,17 +203,59 @@ def appointment_report_email(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="SMTP no está configurado")
 
     period = f"{fmt_date(start) if start else 'Inicio'} - {fmt_date(end) if end else 'Fin'}"
+    body = f"Adjunto encontrará el reporte de citas de Atlas Consultorio correspondiente al período {period}. Total de citas: {len(appointments)}."
     try:
         send_email_with_attachment(
-            str(to),
-            f"Reporte de citas - {period}",
-            f"Adjunto encontrará el reporte de citas de Atlas Consultorio correspondiente al período {period}. Total de citas: {len(appointments)}.",
-            filename=filename,
-            content=content,
+            str(to), f"Reporte de citas - {period}", body,
+            filename=filename, content=content,
         )
     except RuntimeError as exc:
+        record_delivery(db, appointments=appointments, channel="email", recipient=str(to), delivery_status="failed", error_message=str(exc))
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except Exception as exc:
+        record_delivery(db, appointments=appointments, channel="email", recipient=str(to), delivery_status="failed", error_message="No fue posible enviar el reporte por correo")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="No fue posible enviar el reporte por correo") from exc
 
+    record_delivery(db, appointments=appointments, channel="email", recipient=str(to), delivery_status="sent")
     return {"channel": "email", "status": "sent", "detail": "Reporte PDF enviado por correo"}
+
+
+@router.post("/appointments/whatsapp")
+def appointment_report_whatsapp(
+    phone: str,
+    start: date | None = Query(None),
+    end: date | None = Query(None),
+    appointment_status: str | None = Query(None),
+    doctor_id: int | None = Query(None),
+    center_id: int | None = Query(None),
+    search: str | None = Query(None),
+    user: User = Depends(access),
+    db: Session = Depends(get_db),
+):
+    appointments = get_appointment_rows(
+        start=start, end=end, appointment_status=appointment_status, doctor_id=doctor_id,
+        center_id=center_id, search=search, user=user, db=db,
+    )
+    if not appointments:
+        raise HTTPException(status_code=422, detail="No hay citas para enviar en el reporte")
+
+    content = build_appointment_report_pdf(appointments, start, end)
+    filename = report_filename(start, end)
+    period = f"{fmt_date(start) if start else 'Inicio'} - {fmt_date(end) if end else 'Fin'}"
+    caption = f"Reporte de citas de Atlas Consultorio — {period} — {len(appointments)} citas"
+    settings = get_settings()
+    try:
+        action_url = send_whatsapp_document(phone, filename, content, caption)
+    except Exception as exc:
+        record_delivery(db, appointments=appointments, channel="whatsapp", recipient=phone, delivery_status="failed", error_message="No fue posible enviar el reporte por WhatsApp")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="No fue posible enviar el reporte por WhatsApp") from exc
+
+    automatic = bool(settings.whatsapp_access_token and settings.whatsapp_phone_number_id)
+    delivery_status = "sent" if automatic else "ready"
+    record_delivery(db, appointments=appointments, channel="whatsapp", recipient=phone, delivery_status=delivery_status)
+    return {
+        "channel": "whatsapp",
+        "status": delivery_status,
+        "detail": "Reporte PDF enviado por WhatsApp" if automatic else "Enlace de WhatsApp generado; configure la API para envío automático",
+        "action_url": action_url,
+    }
