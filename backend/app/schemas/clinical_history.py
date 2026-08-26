@@ -20,12 +20,17 @@ class ClinicalHistoryBase(BaseModel):
 
 
 class ClinicalHistoryCreate(ClinicalHistoryBase):
-    pass
+    appointment_id: int | None = None
+    doctor_id: int | None = None
+    center_id: int | None = None
 
 
 class ClinicalHistoryResponse(ClinicalHistoryBase):
     id: int
     patient_id: int
+    appointment_id: int | None = None
+    doctor_id: int | None = None
+    center_id: int | None = None
     created_at: datetime
     updated_at: datetime
     requested_tests: list[RequestedTestResponse] = Field(default_factory=list)
