@@ -20,9 +20,10 @@ class ClinicalHistoryBase(BaseModel):
 
 
 class ClinicalHistoryCreate(ClinicalHistoryBase):
+    # The appointment is the source of truth for the clinical context.
+    # doctor_id and center_id are intentionally not accepted from the client;
+    # they are derived from appointment_id when a consultation is saved.
     appointment_id: int | None = None
-    doctor_id: int | None = None
-    center_id: int | None = None
 
 
 class ClinicalHistoryResponse(ClinicalHistoryBase):
