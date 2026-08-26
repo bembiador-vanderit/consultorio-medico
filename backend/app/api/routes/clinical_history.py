@@ -18,7 +18,26 @@ access = require_permission("patients:access")
 def get_clinical_history(patient_id: int, _=Depends(access), db: Session = Depends(get_db)):
     if not db.get(Patient, patient_id):
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
-    return list(db.scalars(select(ClinicalHistory).where(ClinicalHistory.patient_id == patient_id).order_by(ClinicalHistory.consultation_date.desc(), ClinicalHistory.id.desc())))
+    histories = list(
+        db.scalars(
+            select(ClinicalHistory)
+            .where(ClinicalHistory.patient_id == patient_id)
+            .order_by(ClinicalHistory.consultation_date.desc(), ClinicalHistory.id.desc())
+        )
+    )
+    response = []
+    for history in histories:
+        item = ClinicalHistoryResponse.model_validate(history)
+        item.requested_tests = [
+            RequestedTestResponse.model_validate(test)
+            for test in db.scalars(
+                select(RequestedTests)
+                .where(RequestedTests.clinical_history_id == history.id)
+                .order_by(RequestedTests.id)
+            )
+        ]
+        response.append(item)
+    return response
 
 
 @router.post("/patients/{patient_id}", response_model=ClinicalHistoryResponse, status_code=status.HTTP_201_CREATED)
