@@ -23,6 +23,7 @@ export default function AppointmentReports({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -102,9 +103,30 @@ export default function AppointmentReports({ onBack }: Props) {
     window.open(`https://wa.me/?text=${encodeURIComponent(reportText)}`, "_blank", "noopener,noreferrer");
   }
 
-  function shareEmail() {
-    const subject = `Reporte de citas ${filters.from} - ${filters.to}`;
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(reportText)}`;
+  async function shareEmail() {
+    if (!filtered.length) return;
+    const to = window.prompt("Correo electrónico del destinatario:");
+    if (!to) return;
+    setEmailLoading(true);
+    setError("");
+    try {
+      await api.post("/reports/appointments/email", null, {
+        params: {
+          to,
+          start: filters.from || undefined,
+          end: filters.to || undefined,
+          appointment_status: filters.status || undefined,
+          doctor_id: filters.doctorId || undefined,
+          center_id: filters.centerId || undefined,
+          search: filters.search.trim() || undefined,
+        },
+      });
+      window.alert("Reporte PDF enviado por correo correctamente.");
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || "No fue posible enviar el reporte por correo.");
+    } finally {
+      setEmailLoading(false);
+    }
   }
 
   function clearFilters() {
@@ -116,7 +138,7 @@ export default function AppointmentReports({ onBack }: Props) {
       <button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button>
       <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div><h2 className="text-2xl font-bold">Reportes de citas</h2><p className="mt-1 text-sm text-slate-500">Consulta, filtra, descarga PDF, imprime o comparte el resumen de la agenda.</p></div>
-        <div className="flex flex-wrap gap-2"><button onClick={downloadPdf} disabled={!filtered.length || pdfLoading} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">{pdfLoading ? "Generando…" : "⬇️ Descargar PDF"}</button><button onClick={print} disabled={!filtered.length} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">🖨️ Imprimir</button><button onClick={shareWhatsApp} disabled={!filtered.length} className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">WhatsApp</button><button onClick={shareEmail} disabled={!filtered.length} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-40">Correo</button></div>
+        <div className="flex flex-wrap gap-2"><button onClick={downloadPdf} disabled={!filtered.length || pdfLoading} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">{pdfLoading ? "Generando…" : "⬇️ Descargar PDF"}</button><button onClick={print} disabled={!filtered.length} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">🖨️ Imprimir</button><button onClick={shareWhatsApp} disabled={!filtered.length} className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">WhatsApp</button><button onClick={shareEmail} disabled={!filtered.length || emailLoading} className="rounded-lg border px-4 py-2 text-sm font-medium disabled:opacity-40">{emailLoading ? "Enviando…" : "Correo con PDF"}</button></div>
       </div>
       <div className="mt-6 grid gap-4 rounded-xl border bg-white p-4 shadow-sm md:grid-cols-3">
         <label className="text-sm font-medium">Desde<input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
