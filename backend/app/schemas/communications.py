@@ -23,7 +23,7 @@ class CommunicationResponse(BaseModel):
 
 class CommunicationHistoryItem(BaseModel):
     id: int
-    patient_id: int
+    patient_id: int | None
     appointment_id: int | None
     channel: str
     status: str
