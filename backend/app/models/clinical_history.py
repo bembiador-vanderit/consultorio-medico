@@ -11,6 +11,15 @@ class ClinicalHistory(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id", ondelete="CASCADE"), nullable=False, index=True)
+    appointment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("appointments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    doctor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    center_id: Mapped[int | None] = mapped_column(
+        ForeignKey("care_centers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     consultation_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     reason_for_visit: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_illness: Mapped[str | None] = mapped_column(Text, nullable=True)
