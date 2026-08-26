@@ -1,11 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user, require_permission
 from app.db import get_db
 from app.core.config import get_settings
-from app.models import Appointment, User
-from app.schemas.communications import CommunicationResponse, EmailSendRequest, WhatsAppSendRequest
+from app.models import Appointment, CommunicationLog, User
+from app.schemas.communications import (
+    CommunicationHistoryItem,
+    CommunicationResponse,
+    EmailSendRequest,
+    WhatsAppSendRequest,
+)
 from app.services.communication import build_whatsapp_link, send_email, send_whatsapp
 
 router = APIRouter(prefix="/communications", tags=["Comunicaciones"])
@@ -38,6 +46,41 @@ def appointment_message(appointment: Appointment) -> str:
         f"{reason_text}\n\n"
         "Si necesita reprogramar su cita, comuníquese con el consultorio."
     )
+
+
+@router.get("/history", response_model=list[CommunicationHistoryItem])
+def communication_history(
+    user: User = Depends(access),
+    db: Session = Depends(get_db),
+    patient_id: int | None = Query(default=None, ge=1),
+    appointment_id: int | None = Query(default=None, ge=1),
+    channel: str | None = Query(default=None, min_length=1, max_length=20),
+    communication_status: str | None = Query(default=None, alias="status", min_length=1, max_length=20),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    query = select(CommunicationLog).join(CommunicationLog.patient)
+
+    if patient_id is not None:
+        query = query.where(CommunicationLog.patient_id == patient_id)
+    if appointment_id is not None:
+        query = query.where(CommunicationLog.appointment_id == appointment_id)
+    if channel is not None:
+        query = query.where(CommunicationLog.channel == channel)
+    if communication_status is not None:
+        query = query.where(CommunicationLog.status == communication_status)
+
+    if is_role(user, "secretary"):
+        center_ids = assigned_center_ids(user)
+        if not center_ids:
+            return []
+        query = query.join(CommunicationLog.appointment, isouter=True).where(
+            Appointment.center_id.in_(center_ids)
+        )
+
+    logs = db.scalars(
+        query.order_by(CommunicationLog.created_at.desc()).limit(limit)
+    ).all()
+    return logs
 
 
 @router.post("/email", response_model=CommunicationResponse)
