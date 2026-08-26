@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
 from app.db import get_db
+from app.models.appointment import Appointment
 from app.models.clinical_history import ClinicalHistory
 from app.models.patient import Patient
 from app.models.requested_tests import RequestedTests
@@ -12,6 +14,18 @@ from app.schemas.requested_tests import RequestedTestCreate, RequestedTestRespon
 
 router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
 access = require_permission("patients:access")
+
+
+class ConsultationContextResponse(BaseModel):
+    appointment_id: int
+    patient_id: int
+    doctor_id: int
+    center_id: int | None
+    appointment_date: str
+    appointment_time: str
+    appointment_reason: str | None
+    appointment_status: str
+    previous_consultations: list[ClinicalHistoryResponse]
 
 
 @router.get("/patients/{patient_id}", response_model=list[ClinicalHistoryResponse])
@@ -38,6 +52,46 @@ def get_clinical_history(patient_id: int, _=Depends(access), db: Session = Depen
         ]
         response.append(item)
     return response
+
+
+@router.get("/appointments/{appointment_id}/context", response_model=ConsultationContextResponse)
+def get_consultation_context(appointment_id: int, _=Depends(access), db: Session = Depends(get_db)):
+    appointment = db.get(Appointment, appointment_id)
+    if appointment is None:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    histories = list(
+        db.scalars(
+            select(ClinicalHistory)
+            .where(ClinicalHistory.patient_id == appointment.patient_id)
+            .order_by(ClinicalHistory.consultation_date.desc(), ClinicalHistory.id.desc())
+        )
+    )
+
+    previous_consultations = []
+    for history in histories:
+        item = ClinicalHistoryResponse.model_validate(history)
+        item.requested_tests = [
+            RequestedTestResponse.model_validate(test)
+            for test in db.scalars(
+                select(RequestedTests)
+                .where(RequestedTests.clinical_history_id == history.id)
+                .order_by(RequestedTests.id)
+            )
+        ]
+        previous_consultations.append(item)
+
+    return ConsultationContextResponse(
+        appointment_id=appointment.id,
+        patient_id=appointment.patient_id,
+        doctor_id=appointment.doctor_id,
+        center_id=appointment.center_id,
+        appointment_date=appointment.appointment_date.isoformat(),
+        appointment_time=appointment.appointment_time.isoformat(),
+        appointment_reason=appointment.reason,
+        appointment_status=appointment.status,
+        previous_consultations=previous_consultations,
+    )
 
 
 @router.post("/patients/{patient_id}", response_model=ClinicalHistoryResponse, status_code=status.HTTP_201_CREATED)
