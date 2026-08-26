@@ -1,13 +1,13 @@
 """link clinical history entries to appointment context
 
 Revision ID: 0016_clinical_history_context
-Revises: 0015_communication_logs
+Revises: 0016_comm_logs_general
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0016_clinical_history_context"
-down_revision = "0015_communication_logs"
+down_revision = "0016_comm_logs_general"
 branch_labels = None
 depends_on = None
 
