@@ -12,16 +12,10 @@ def build_whatsapp_link(phone: str, message: str) -> str:
     return f"https://wa.me/{normalized}?text={quote(message)}"
 
 
-def send_email(to: str, subject: str, body: str) -> None:
+def _smtp_send(message: EmailMessage) -> None:
     settings = get_settings()
     if not settings.smtp_host or not settings.smtp_from:
         raise RuntimeError("SMTP no está configurado")
-
-    message = EmailMessage()
-    message["From"] = settings.smtp_from
-    message["To"] = to
-    message["Subject"] = subject
-    message.set_content(body)
 
     if settings.smtp_use_ssl:
         with SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20) as server:
@@ -36,6 +30,36 @@ def send_email(to: str, subject: str, body: str) -> None:
         if settings.smtp_username:
             server.login(settings.smtp_username, settings.smtp_password or "")
         server.send_message(message)
+
+
+def send_email(to: str, subject: str, body: str) -> None:
+    settings = get_settings()
+    message = EmailMessage()
+    message["From"] = settings.smtp_from or ""
+    message["To"] = to
+    message["Subject"] = subject
+    message.set_content(body)
+    _smtp_send(message)
+
+
+def send_email_with_attachment(
+    to: str,
+    subject: str,
+    body: str,
+    *,
+    filename: str,
+    content: bytes,
+    content_type: str = "application/pdf",
+) -> None:
+    settings = get_settings()
+    message = EmailMessage()
+    message["From"] = settings.smtp_from or ""
+    message["To"] = to
+    message["Subject"] = subject
+    message.set_content(body)
+    maintype, subtype = content_type.split("/", 1)
+    message.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
+    _smtp_send(message)
 
 
 def send_whatsapp(phone: str, message: str) -> str:
