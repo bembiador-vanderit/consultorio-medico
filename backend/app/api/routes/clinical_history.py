@@ -1,4 +1,7 @@
+from io import BytesIO
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -6,11 +9,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.db import get_db
 from app.models.appointment import Appointment
+from app.models.center import CareCenter
 from app.models.clinical_history import ClinicalHistory
+from app.models.identity import User
 from app.models.patient import Patient
 from app.models.requested_tests import RequestedTests
 from app.schemas.clinical_history import ClinicalHistoryCreate, ClinicalHistoryResponse
 from app.schemas.requested_tests import RequestedTestCreate, RequestedTestResponse
+from app.services.clinical_documents import build_requested_tests_pdf
 
 router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
 access = require_permission("patients:access")
@@ -159,6 +165,49 @@ def get_requested_tests(history_id: int, _=Depends(access), db: Session = Depend
     if not db.get(ClinicalHistory, history_id):
         raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
     return list(db.scalars(select(RequestedTests).where(RequestedTests.clinical_history_id == history_id).order_by(RequestedTests.id)))
+
+
+@router.get("/{history_id}/requested-tests/pdf")
+def get_requested_tests_pdf(history_id: int, _=Depends(access), db: Session = Depends(get_db)):
+    history = db.get(ClinicalHistory, history_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
+
+    tests = list(
+        db.scalars(
+            select(RequestedTests)
+            .where(RequestedTests.clinical_history_id == history_id)
+            .order_by(RequestedTests.id)
+        )
+    )
+    if not tests:
+        raise HTTPException(status_code=422, detail="La consulta no tiene estudios solicitados")
+
+    patient = db.get(Patient, history.patient_id)
+    doctor = db.get(User, history.doctor_id) if history.doctor_id is not None else None
+    center = db.get(CareCenter, history.center_id) if history.center_id is not None else None
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+    content = build_requested_tests_pdf(
+        history_id=history.id,
+        consultation_date=history.consultation_date,
+        patient_name=f"{patient.first_name} {patient.last_name}",
+        doctor_name=doctor.full_name if doctor else "Médico no especificado",
+        center_name=center.name if center else None,
+        center_address=(
+            ", ".join(part for part in (center.address, center.city) if part)
+            if center
+            else None
+        ),
+        test_names=[test.test_name for test in tests],
+    )
+    filename = f"orden-estudios-{history.id}.pdf"
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{history_id}/requested-tests", response_model=RequestedTestResponse, status_code=status.HTTP_201_CREATED)
