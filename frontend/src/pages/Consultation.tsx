@@ -46,4 +46,3 @@ export default function Consultation({ appointment, onBack }: Props) {
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="text-sm font-medium">{label}<textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className="mt-1 w-full rounded-lg border p-2.5" /></label>; }
 function Input({ label, value, disabled, onChange, type = "text" }: { label: string; value: string; disabled?: boolean; onChange: (value: string) => void; type?: string }) { return <label className="text-sm font-medium">{label}<input type={type} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" /></label>; }
 function escapeHtml(value: string) { return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;"); }
-
