@@ -10,9 +10,10 @@ from app.models.identity import Permission, Role, User
 from app.models.insurance import InsuranceCompany, PatientInsurance
 from app.models.locality import Locality
 from app.models.patient import Patient
+from app.models.prescription import Prescription
 
 __all__ = [
     "Permission", "Role", "User", "Locality", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
-    "PatientInsurance", "ClinicalHistory", "Diagnosis", "Appointment", "FollowUp", "Notification", "CommunicationLog",
+    "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "Appointment", "FollowUp", "Notification", "CommunicationLog",
     "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile",
 ]
