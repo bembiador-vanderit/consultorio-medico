@@ -451,3 +451,14 @@ Cuando haya conflictos, priorizar:
 Construir un sistema médico profesional que pueda comenzar en un consultorio de cardiología y evolucionar hacia una plataforma comercial para otros consultorios sin reconstruir el sistema desde cero.
 
 Este documento es una guía viva. Si una decisión posterior cambia estas reglas, actualizar AGENTS.md y documentar el motivo.
+
+
+## 31. Contexto operativo para Codex
+
+El estado técnico verificable y la siguiente tarea se mantienen en:
+
+- `docs/codex/PROJECT_CONTEXT.md`: arquitectura y reglas permanentes basadas en el código actual.
+- `docs/codex/CURRENT_STATE.md`: corte auditado de ramas, CI, funcionalidades y riesgos conocidos.
+- `docs/codex/CODEX_TASK.md`: única tarea activa y sus límites.
+
+Antes de iniciar trabajo nuevo, leer esos tres archivos en ese orden. `CURRENT_STATE.md` describe una fotografía y debe actualizarse cuando cambien el commit auditado, CI o el estado de integración. `CODEX_TASK.md` debe contener una sola tarea acotada; no ampliar su alcance sin autorización.
