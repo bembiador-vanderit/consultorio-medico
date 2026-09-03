@@ -9,7 +9,7 @@ from app.models.diagnosis import Diagnosis
 from app.schemas.diagnosis import DiagnosisCreate, DiagnosisResponse
 
 router = APIRouter(prefix="/clinical-history/{history_id}/diagnoses", tags=["Diagnósticos"])
-access = require_permission("patients:access")
+access = require_permission("clinical:access")
 
 
 @router.get("", response_model=list[DiagnosisResponse])

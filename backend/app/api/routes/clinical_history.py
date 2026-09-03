@@ -27,7 +27,7 @@ from app.services.clinical_documents import (
 )
 
 router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
-access = require_permission("patients:access")
+access = require_permission("clinical:access")
 
 
 class ConsultationContextResponse(BaseModel):

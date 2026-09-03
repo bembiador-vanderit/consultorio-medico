@@ -16,7 +16,7 @@ from app.schemas.prescription import PrescriptionCreate, PrescriptionResponse
 from app.services.clinical_documents import PrescriptionLine, build_prescription_pdf
 
 router = APIRouter(prefix="/clinical-history/{history_id}/prescriptions", tags=["Recetas"])
-access = require_permission("patients:access")
+access = require_permission("clinical:access")
 
 
 @router.get("", response_model=list[PrescriptionResponse])
