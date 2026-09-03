@@ -16,6 +16,7 @@ from app.models.identity import User
 from app.models.patient import Patient
 from app.models.prescription import Prescription
 from app.models.requested_tests import RequestedTests
+from app.models.vital_signs import VitalSigns
 from app.schemas.clinical_history import ClinicalHistoryCreate, ClinicalHistoryResponse
 from app.schemas.requested_tests import RequestedTestCreate, RequestedTestResponse
 from app.services.clinical_documents import (
@@ -200,6 +201,33 @@ def get_consultation_summary_pdf(history_id: int, _=Depends(access), db: Session
             .order_by(RequestedTests.id)
         )
     )
+    vital_signs = db.scalar(
+        select(VitalSigns).where(VitalSigns.clinical_history_id == history_id)
+    )
+
+    def measurement(value, unit: str) -> str:
+        normalized = format(value, "f").rstrip("0").rstrip(".")
+        return f"{normalized} {unit}"
+
+    vital_lines: list[tuple[str, str]] = []
+    if vital_signs is not None:
+        if vital_signs.systolic_pressure is not None or vital_signs.diastolic_pressure is not None:
+            systolic = vital_signs.systolic_pressure if vital_signs.systolic_pressure is not None else "-"
+            diastolic = vital_signs.diastolic_pressure if vital_signs.diastolic_pressure is not None else "-"
+            vital_lines.append(("Presión arterial", f"{systolic}/{diastolic} mmHg"))
+        values = [
+            ("Frecuencia cardíaca", vital_signs.heart_rate, "lpm"),
+            ("Frecuencia respiratoria", vital_signs.respiratory_rate, "rpm"),
+            ("Temperatura", vital_signs.temperature_c, "°C"),
+            ("Saturación de oxígeno", vital_signs.oxygen_saturation, "%"),
+            ("Peso", vital_signs.weight_kg, "kg"),
+            ("Talla", vital_signs.height_cm, "cm"),
+        ]
+        vital_lines.extend(
+            (label, measurement(value, unit))
+            for label, value, unit in values
+            if value is not None
+        )
 
     content = build_consultation_summary_pdf(
         history_id=history.id,
@@ -213,6 +241,7 @@ def get_consultation_summary_pdf(history_id: int, _=Depends(access), db: Session
             if center
             else None
         ),
+        vital_signs=vital_lines,
         clinical_fields=[
             ("Motivo de consulta", history.reason_for_visit),
             ("Enfermedad actual", history.current_illness),
