@@ -336,6 +336,7 @@ def build_consultation_summary_pdf(
     doctor_name: str,
     center_name: str | None,
     center_address: str | None,
+    vital_signs: list[tuple[str, str]],
     clinical_fields: list[tuple[str, str | None]],
     diagnosis_lines: list[DiagnosisLine],
     prescription_lines: list[PrescriptionLine],
@@ -433,12 +434,55 @@ def build_consultation_summary_pdf(
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 7),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ]
         )
     )
-    story.extend([context_table, Spacer(1, 5 * mm), Paragraph("HISTORIA CLÍNICA", section_style)])
+    story.extend([context_table, Spacer(1, 3 * mm), Paragraph("SIGNOS VITALES", section_style)])
+
+    if vital_signs:
+        vital_rows = []
+        for index in range(0, len(vital_signs), 2):
+            row = [
+                Paragraph(escape(vital_signs[index][0]), body_style),
+                Paragraph(escape(vital_signs[index][1]), body_style),
+            ]
+            if index + 1 < len(vital_signs):
+                row.extend(
+                    [
+                        Paragraph(escape(vital_signs[index + 1][0]), body_style),
+                        Paragraph(escape(vital_signs[index + 1][1]), body_style),
+                    ]
+                )
+            else:
+                row.extend(["", ""])
+            vital_rows.append(row)
+
+        vital_table = Table(vital_rows, colWidths=[42 * mm, 44 * mm, 42 * mm, 44 * mm])
+        vital_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#ecfeff")),
+                    ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#ecfeff")),
+                    ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#155e75")),
+                    ("TEXTCOLOR", (2, 0), (2, -1), colors.HexColor("#155e75")),
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+                    ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        story.extend([vital_table, Spacer(1, 2 * mm)])
+    else:
+        story.append(Paragraph("No se registraron signos vitales en esta consulta.", body_style))
+
+    story.append(Paragraph("HISTORIA CLÍNICA", section_style))
 
     populated_fields = [(label, value) for label, value in clinical_fields if value]
     if populated_fields:

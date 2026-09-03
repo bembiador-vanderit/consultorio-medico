@@ -12,6 +12,7 @@ from app.models.identity import User
 from app.models.patient import Patient
 from app.models.prescription import Prescription
 from app.models.requested_tests import RequestedTests
+from app.models.vital_signs import VitalSigns
 from app.services.clinical_documents import (
     DiagnosisLine,
     PrescriptionLine,
@@ -70,6 +71,18 @@ class FakeDB:
             )
         ]
         self.tests = [RequestedTests(id=31, clinical_history_id=17, test_name="Electrocardiograma")]
+        self.vital_signs = VitalSigns(
+            id=41,
+            clinical_history_id=17,
+            systolic_pressure=120,
+            diastolic_pressure=80,
+            heart_rate=72,
+            respiratory_rate=16,
+            temperature_c=36.7,
+            oxygen_saturation=98,
+            weight_kg=70.5,
+            height_cm=170,
+        )
         self.with_history = with_history
 
     def get(self, model, object_id):
@@ -88,6 +101,10 @@ class FakeDB:
             Prescription: self.prescriptions,
             RequestedTests: self.tests,
         }.get(entity, [])
+
+    def scalar(self, query):
+        entity = query.column_descriptions[0].get("entity")
+        return self.vital_signs if entity is VitalSigns else None
 
 
 def build_client(db: FakeDB) -> TestClient:
@@ -126,6 +143,7 @@ def test_consultation_summary_builder_escapes_all_clinical_text():
         doctor_name="Dra. María & Asociados",
         center_name="Centro <Norte>",
         center_address="Calle A & B",
+        vital_signs=[("Presión <arterial>", "120/80 & estable")],
         clinical_fields=[("Motivo", "Dolor <intenso> & mareo")],
         diagnosis_lines=[DiagnosisLine(description="Diagnóstico <principal>", is_primary=True)],
         prescription_lines=[
