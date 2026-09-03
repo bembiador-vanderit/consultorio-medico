@@ -7,6 +7,7 @@ from app.api.routes import appointments as appointment_routes
 from app.api.routes.appointments import (
     create_appointment,
     ensure_appointment_access,
+    list_available_doctors,
     list_appointments,
     update_appointment,
     validate_appointment_assignment,
@@ -83,6 +84,26 @@ class AppointmentDB:
         appointment.center = self.centers[appointment.center_id]
         appointment.created_at = datetime(2026, 9, 3, 10, 0)
         appointment.updated_at = datetime(2026, 9, 3, 10, 0)
+
+
+class DoctorListDB:
+    def __init__(self, center, users):
+        self.center = center
+        self.users = users
+
+    def get(self, model, object_id):
+        if model is CareCenter and object_id == self.center.id:
+            return self.center
+        return None
+
+    def scalars(self, _query):
+        return self
+
+    def all(self):
+        return self.users
+
+    def scalar(self, _query):
+        return None
 
 
 def test_doctor_can_access_own_appointment():
@@ -173,6 +194,19 @@ def test_admin_creates_appointment_for_valid_doctor():
     result = create_appointment(_payload(doctor.id, center.id), user=admin, db=db)
 
     assert result.doctor_id == doctor.id
+
+
+def test_new_appointment_lists_assigned_doctor_and_excludes_unassigned_doctor():
+    center = _center(5)
+    other_center = _center(6)
+    assigned_doctor = _user(11, "doctor", centers=[center])
+    unassigned_doctor = _user(12, "doctor", centers=[other_center])
+    admin = _user(1, "admin")
+    db = DoctorListDB(center, [assigned_doctor, unassigned_doctor])
+
+    result = list_available_doctors(center.id, date(2026, 9, 10), user=admin, db=db)
+
+    assert result == [{"id": assigned_doctor.id, "full_name": assigned_doctor.full_name}]
 
 
 @pytest.mark.parametrize(

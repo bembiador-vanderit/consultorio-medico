@@ -46,6 +46,10 @@ class CareCenterResponse(CareCenterBase):
     model_config = {"from_attributes": True}
 
 
+class CareCenterManagementResponse(CareCenterResponse):
+    assigned_user_ids: list[int]
+
+
 class CenterUserAssignment(BaseModel):
     user_id: int
     is_primary: bool = False

@@ -6,7 +6,13 @@ from app.api.deps import require_permission
 from app.db import get_db
 from app.models import CareCenter, Locality, User
 from app.models.center import user_centers
-from app.schemas.center import CareCenterCreate, CareCenterResponse, CareCenterUpdate, CenterUserAssignment
+from app.schemas.center import (
+    CareCenterCreate,
+    CareCenterManagementResponse,
+    CareCenterResponse,
+    CareCenterUpdate,
+    CenterUserAssignment,
+)
 
 router = APIRouter(prefix="/centers", tags=["Centros de atención"])
 access = require_permission("centers:access")
@@ -24,9 +30,18 @@ def list_my_centers(user: User = Depends(access), db: Session = Depends(get_db))
     return sorted([center for center in user.centers if center.is_active], key=lambda center: (center.city, center.name))
 
 
-@router.get("", response_model=list[CareCenterResponse])
+def management_response(center: CareCenter) -> CareCenterManagementResponse:
+    data = CareCenterResponse.model_validate(center).model_dump()
+    return CareCenterManagementResponse(
+        **data,
+        assigned_user_ids=[user.id for user in center.users],
+    )
+
+
+@router.get("", response_model=list[CareCenterManagementResponse])
 def list_centers(_: User = Depends(manage), db: Session = Depends(get_db)):
-    return list(db.scalars(select(CareCenter).order_by(CareCenter.city, CareCenter.name)).all())
+    centers = db.scalars(select(CareCenter).order_by(CareCenter.city, CareCenter.name)).all()
+    return [management_response(center) for center in centers]
 
 
 @router.post("", response_model=CareCenterResponse, status_code=status.HTTP_201_CREATED)
