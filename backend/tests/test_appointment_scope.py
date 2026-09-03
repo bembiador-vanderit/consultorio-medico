@@ -164,17 +164,18 @@ def test_doctor_can_select_same_center_substitute_and_backend_preserves_it():
     assert db.added.doctor_id == substitute.id
 
 
-def test_doctor_can_update_own_appointment_to_same_center_substitute():
+def test_doctor_cannot_reassign_own_appointment_from_regular_edit():
     center = _center(5)
     current_doctor = _user(11, "doctor", centers=[center])
     substitute = _user(12, "doctor", centers=[center])
     appointment = Appointment(id=42, patient_id=7, doctor_id=current_doctor.id, center_id=center.id)
     db = AppointmentDB([current_doctor, substitute], [center], appointment)
 
-    result = update_appointment(appointment.id, _payload(substitute.id, center.id), user=current_doctor, db=db)
+    with pytest.raises(HTTPException) as error:
+        update_appointment(appointment.id, _payload(substitute.id, center.id), user=current_doctor, db=db)
 
-    assert result.doctor_id == substitute.id
-    assert appointment.doctor_id == substitute.id
+    assert error.value.status_code == 403
+    assert appointment.doctor_id == current_doctor.id
 
 
 def test_secretary_creates_appointment_for_valid_doctor_in_assigned_center():

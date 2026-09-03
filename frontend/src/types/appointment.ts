@@ -4,6 +4,7 @@ export type Appointment = {
   appointment_date: string; appointment_time: string;
   reason: string | null; status: AppointmentStatus; notes: string | null;
   patient_name: string; patient_date_of_birth: string; doctor_name: string; center_name: string | null; center_city: string | null;
+  coverage_id: number | null; original_doctor_id: number | null; original_doctor_name: string | null;
   created_at: string; updated_at: string;
 };
 export type AppointmentInput = {

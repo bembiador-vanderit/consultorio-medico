@@ -72,12 +72,25 @@ def _appointment_context(appointment: Appointment, patient_id: int) -> dict[str,
     }
 
 
-def _ensure_appointment_attendable(appointment: Appointment) -> None:
+def _ensure_appointment_attendable(appointment: Appointment, db: Session) -> None:
     if appointment.status not in ATTENDABLE_APPOINTMENT_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Esta cita no puede ser atendida por su estado actual",
         )
+    transfer = appointment.coverage_transfer
+    if transfer is not None:
+        coverage = transfer.coverage
+        now = datetime.utcnow()
+        if coverage.revoked_at is not None or now < coverage.starts_at or now >= coverage.ends_at:
+            history_started = db.scalar(
+                select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)
+            ) is not None
+            if not history_started:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="La cobertura clínica de esta cita ya no está vigente",
+                )
 
 
 def _resolve_consultation_context(
@@ -94,7 +107,7 @@ def _resolve_consultation_context(
         raise HTTPException(status_code=404, detail="Cita no encontrada")
     if user is not None:
         ensure_appointment_access(user, appointment, db)
-        _ensure_appointment_attendable(appointment)
+        _ensure_appointment_attendable(appointment, db)
     return _appointment_context(appointment, patient_id)
 
 
@@ -162,7 +175,7 @@ def get_consultation_context(appointment_id: int, user: User = Depends(access), 
     if appointment is None:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
     ensure_appointment_access(user, appointment, db)
-    _ensure_appointment_attendable(appointment)
+    _ensure_appointment_attendable(appointment, db)
 
     histories_query = select(ClinicalHistory).where(ClinicalHistory.patient_id == appointment.patient_id)
     histories_query = scope_histories(histories_query, user).order_by(
@@ -249,7 +262,7 @@ def complete_clinical_history(history_id: int, user: User = Depends(access), db:
     if appointment is None:
         raise HTTPException(status_code=409, detail="La cita vinculada ya no está disponible")
     ensure_appointment_access(user, appointment, db)
-    _ensure_appointment_attendable(appointment)
+    _ensure_appointment_attendable(appointment, db)
     if (
         appointment.patient_id != history.patient_id
         or appointment.doctor_id != history.doctor_id

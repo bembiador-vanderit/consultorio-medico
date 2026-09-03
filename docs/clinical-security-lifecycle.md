@@ -24,13 +24,25 @@ Los estados admitidos son:
 - `in_progress`: permite edición clínica ordinaria.
 - `completed`: conserva lectura y documentos, pero rechaza toda edición clínica ordinaria.
 
-`POST /clinical-history/{history_id}/complete` finaliza la consulta y la cita asociada dentro de la misma transacción. Si el commit falla, ambos estados se revierten. Una cita no puede marcarse manualmente como completada mediante el editor general.
+`POST /clinical-history/{history_id}/complete` finaliza la consulta y la cita asociada dentro de la misma transacción. Si el commit falla, ambos estados se revierten. Una cita no puede marcarse manualmente como completada mediante el editor general ni reabrirse desde ese editor después de finalizar.
 
 Solo citas `scheduled` o `confirmed` pueden iniciar o continuar una atención. Citas `cancelled`, `no_show` o `completed` son rechazadas en backend y no muestran la acción **Atender** en la Agenda. Si ya existe una consulta, la cita tampoco puede pasar a cancelada o ausente.
 
 Por ahora se permite atender una cita futura. Esto es intencional para no imponer sin definición de producto una regla dependiente de zona horaria o tolerancias horarias. Antes del piloto debe decidirse si se permite pre-documentación y, si no, cuál es la ventana temporal válida.
 
 No existe reapertura ni modificación ordinaria de una consulta finalizada. Una futura función de enmienda deberá conservar el contenido original y registrar motivo, autor, fecha y cambios, conforme a la política clínica y legal que se defina.
+
+## Cobertura clínica
+
+Una cobertura es concedida exclusivamente por el médico principal para sí mismo, a otro médico activo asignado al mismo centro y durante un intervalo con inicio y fin. Su estado (`future`, `active`, `expired` o `revoked`) se deriva de esas fechas y de `revoked_at`; la expiración no necesita un proceso en segundo plano.
+
+Solo el médico principal crea, revoca y ejecuta la transferencia. El suplente no puede autoasignarse ni ampliar el período, y compartir centro no concede acceso. La transferencia solo acepta citas programadas o confirmadas, sin consulta iniciada, del principal y centro indicados, mientras la cobertura esté activa y cuando la fecha/hora de la cita caiga dentro del intervalo. Para el MVP se exige simultáneamente vigencia actual y vigencia de la cita. Las fechas se interpretan en la hora local configurada para la instalación; una política multi-zona queda pendiente.
+
+La transferencia conserva una fila inmutable con cita, cobertura, médico originalmente programado, suplente, ejecutor y fecha. La cita pasa al suplente, por lo que cualquier nueva consulta queda atribuida al médico que efectivamente la realiza. Una cita finalizada o con consulta iniciada nunca se reasigna.
+
+El acceso delegado es únicamente de lectura y requiere una cita concreta del mismo paciente transferida bajo esa cobertura. Solo abre historias previas del principal en el mismo centro; no abre todos sus pacientes. Al revocarse, expirar o antes de comenzar la cobertura, desaparece ese acceso delegado. Las consultas realizadas por el suplente permanecen bajo su acceso normal.
+
+Al revocar una cobertura, las citas transferidas que aún no iniciaron consulta regresan al médico principal. Una cobertura expirada puede cerrarse desde la misma pantalla para restaurar esas citas pendientes. La transferencia y la restauración permanecen registradas en la auditoría, y la cita puede transferirse de nuevo mediante otra cobertura válida. Si el suplente ya inició la consulta, la revocación no interrumpe esa atención propia: conserva el contexto transferido y puede completarla, sin conservar acceso delegado a otras historias previas. Transferencia y revocación bloquean las filas afectadas durante la transacción para evitar una aplicación concurrente parcial.
 
 Al aplicar la migración, las historias vinculadas a citas ya completadas se marcan como completadas usando su `updated_at`; `completed_by_id` queda vacío porque el autor histórico no puede deducirse con seguridad.
 

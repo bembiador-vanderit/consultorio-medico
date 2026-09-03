@@ -1,15 +1,42 @@
+from datetime import datetime
+
 from fastapi import HTTPException
-from sqlalchemy import Select, or_
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.models.clinical_audit import ClinicalAuditLog
+from app.models.clinical_coverage import AppointmentCoverageTransfer, ClinicalCoverage
 from app.models.clinical_history import ClinicalHistory
 from app.models.appointment import Appointment
 from app.models.identity import User
 from app.services.appointment_scope import is_role
 
 
-def can_access_history(db: Session, user: User, history: ClinicalHistory) -> bool:
+def delegated_coverage_id(db: Session, user: User, history: ClinicalHistory) -> int | None:
+    if not is_role(user, "doctor") or history.doctor_id is None or history.center_id is None:
+        return None
+    if history.center_id not in {center.id for center in user.centers}:
+        return None
+    now = datetime.utcnow()
+    query = (
+        select(ClinicalCoverage.id)
+        .join(AppointmentCoverageTransfer, AppointmentCoverageTransfer.coverage_id == ClinicalCoverage.id)
+        .join(Appointment, Appointment.id == AppointmentCoverageTransfer.appointment_id)
+        .where(
+            ClinicalCoverage.principal_doctor_id == history.doctor_id,
+            ClinicalCoverage.substitute_doctor_id == user.id,
+            ClinicalCoverage.center_id == history.center_id,
+            ClinicalCoverage.revoked_at.is_(None),
+            ClinicalCoverage.starts_at <= now,
+            ClinicalCoverage.ends_at > now,
+            Appointment.patient_id == history.patient_id,
+        )
+        .limit(1)
+    )
+    return db.scalar(query)
+
+
+def has_normal_history_access(db: Session, user: User, history: ClinicalHistory) -> bool:
     if is_role(user, "admin"):
         return True
     if not is_role(user, "doctor") or history.doctor_id != user.id:
@@ -33,15 +60,18 @@ def can_access_history(db: Session, user: User, history: ClinicalHistory) -> boo
     )
 
 
+def can_access_history(db: Session, user: User, history: ClinicalHistory) -> bool:
+    return has_normal_history_access(db, user, history) or delegated_coverage_id(db, user, history) is not None
+
+
 def scope_histories(query: Select, user: User) -> Select:
     if is_role(user, "admin"):
         return query
     if is_role(user, "doctor"):
-        center_ids = [center.id for center in user.centers]
-        center_scope = ClinicalHistory.center_id.is_(None)
-        if center_ids:
-            center_scope = or_(center_scope, ClinicalHistory.center_id.in_(center_ids))
-        return query.where(ClinicalHistory.doctor_id == user.id, center_scope)
+        # Callers already restrict by patient. Filtering each result through
+        # can_access_history is necessary because delegated access depends on a
+        # concrete transferred appointment for that patient.
+        return query
     return query.where(ClinicalHistory.id == -1)
 
 
@@ -107,7 +137,9 @@ def require_history_access(
     history = db.get(ClinicalHistory, history_id)
     if history is None:
         raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
-    if not can_access_history(db, user, history):
+    normal_access = has_normal_history_access(db, user, history)
+    coverage_id = None if normal_access else delegated_coverage_id(db, user, history)
+    if not normal_access and coverage_id is None:
         _deny(
             db,
             user,
@@ -118,6 +150,12 @@ def require_history_access(
             reason="outside_clinical_scope",
             status_code=403,
             detail="No tiene acceso a esta historia clínica",
+        )
+    if write and coverage_id is not None:
+        _deny(
+            db, user, action=action, history_id=history.id, resource_type=resource_type,
+            resource_id=resource_id, reason="delegated_access_is_read_only", status_code=403,
+            detail="La cobertura solo permite consultar el historial previo",
         )
     if write and history.status == "completed":
         _deny(
@@ -153,6 +191,7 @@ def require_history_access(
             resource_type=resource_type,
             resource_id=resource_id,
             history_id=history.id,
+            context={"coverage_id": coverage_id, "delegated": coverage_id is not None},
         )
         db.commit()
     return history
