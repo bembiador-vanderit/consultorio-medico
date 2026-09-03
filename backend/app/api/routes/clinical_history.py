@@ -11,12 +11,19 @@ from app.db import get_db
 from app.models.appointment import Appointment
 from app.models.center import CareCenter
 from app.models.clinical_history import ClinicalHistory
+from app.models.diagnosis import Diagnosis
 from app.models.identity import User
 from app.models.patient import Patient
+from app.models.prescription import Prescription
 from app.models.requested_tests import RequestedTests
 from app.schemas.clinical_history import ClinicalHistoryCreate, ClinicalHistoryResponse
 from app.schemas.requested_tests import RequestedTestCreate, RequestedTestResponse
-from app.services.clinical_documents import build_requested_tests_pdf
+from app.services.clinical_documents import (
+    DiagnosisLine,
+    PrescriptionLine,
+    build_consultation_summary_pdf,
+    build_requested_tests_pdf,
+)
 
 router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
 access = require_permission("patients:access")
@@ -158,6 +165,95 @@ def update_clinical_history(history_id: int, payload: ClinicalHistoryCreate, _=D
     db.commit()
     db.refresh(history)
     return history
+
+
+@router.get("/{history_id}/summary/pdf")
+def get_consultation_summary_pdf(history_id: int, _=Depends(access), db: Session = Depends(get_db)):
+    history = db.get(ClinicalHistory, history_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
+
+    patient = db.get(Patient, history.patient_id)
+    doctor = db.get(User, history.doctor_id) if history.doctor_id is not None else None
+    center = db.get(CareCenter, history.center_id) if history.center_id is not None else None
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+    diagnoses = list(
+        db.scalars(
+            select(Diagnosis)
+            .where(Diagnosis.clinical_history_id == history_id)
+            .order_by(Diagnosis.is_primary.desc(), Diagnosis.id)
+        )
+    )
+    prescriptions = list(
+        db.scalars(
+            select(Prescription)
+            .where(Prescription.clinical_history_id == history_id)
+            .order_by(Prescription.id)
+        )
+    )
+    tests = list(
+        db.scalars(
+            select(RequestedTests)
+            .where(RequestedTests.clinical_history_id == history_id)
+            .order_by(RequestedTests.id)
+        )
+    )
+
+    content = build_consultation_summary_pdf(
+        history_id=history.id,
+        appointment_id=history.appointment_id,
+        consultation_date=history.consultation_date,
+        patient_name=f"{patient.first_name} {patient.last_name}",
+        doctor_name=doctor.full_name if doctor else "Médico no especificado",
+        center_name=center.name if center else None,
+        center_address=(
+            ", ".join(part for part in (center.address, center.city) if part)
+            if center
+            else None
+        ),
+        clinical_fields=[
+            ("Motivo de consulta", history.reason_for_visit),
+            ("Enfermedad actual", history.current_illness),
+            ("Antecedentes personales", history.personal_history),
+            ("Antecedentes familiares", history.family_history),
+            ("Alergias", history.allergies),
+            ("Medicamentos habituales", history.current_medications),
+            ("Cirugías previas", history.previous_surgeries),
+            ("Enfermedades crónicas", history.chronic_conditions),
+            ("Hábitos", history.habits),
+            ("Notas clínicas", history.clinical_notes),
+        ],
+        diagnosis_lines=[
+            DiagnosisLine(
+                description=item.description,
+                icd10_code=item.icd10_code,
+                is_primary=item.is_primary,
+            )
+            for item in diagnoses
+        ],
+        prescription_lines=[
+            PrescriptionLine(
+                medication=item.medication,
+                presentation=item.presentation,
+                dose=item.dose,
+                route=item.route,
+                frequency=item.frequency,
+                duration=item.duration,
+                quantity=item.quantity,
+                instructions=item.instructions,
+            )
+            for item in prescriptions
+        ],
+        test_names=[item.test_name for item in tests],
+    )
+    filename = f"resumen-consulta-{history.id}.pdf"
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{history_id}/requested-tests", response_model=list[RequestedTestResponse])
