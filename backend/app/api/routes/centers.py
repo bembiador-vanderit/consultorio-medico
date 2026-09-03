@@ -75,6 +75,7 @@ def assign_user(center_id: int, payload: CenterUserAssignment, _: User = Depends
     center = db.get(CareCenter, center_id); user = db.get(User, payload.user_id)
     if not center: raise HTTPException(status_code=404, detail="Centro de atención no encontrado")
     if not user: raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if not user.is_active: raise HTTPException(status_code=422, detail="No se puede asignar un usuario inactivo")
     if center not in user.centers:
         user.centers.append(center); db.flush()
     if payload.is_primary:
