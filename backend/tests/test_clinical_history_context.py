@@ -5,10 +5,11 @@ from fastapi import HTTPException
 
 from app.api.routes.clinical_history import (
     _appointment_context,
+    _ensure_doctor_appointment_access,
     _ensure_appointment_available,
     _resolve_consultation_context,
 )
-from app.models import Appointment
+from app.models import Appointment, Role, User
 from app.schemas.clinical_history import ClinicalHistoryCreate
 
 
@@ -99,3 +100,28 @@ def test_existing_consultation_can_keep_its_appointment():
     db = FakeDB(appointment=None, existing_history_id=None)
 
     _ensure_appointment_available(42, db, exclude_history_id=51)
+
+
+def test_doctor_cannot_open_another_doctors_appointment_context():
+    appointment = Appointment(id=42, patient_id=7, doctor_id=11, center_id=5)
+    doctor = User(id=12, full_name="Dra. Ajena", roles=[Role(code="doctor", name="Médico")])
+
+    with pytest.raises(HTTPException) as error:
+        _ensure_doctor_appointment_access(appointment, doctor)
+
+    assert error.value.status_code == 403
+    assert error.value.detail == "No tiene acceso a esta cita"
+
+
+def test_doctor_can_open_own_appointment_context():
+    appointment = Appointment(id=42, patient_id=7, doctor_id=11, center_id=5)
+    doctor = User(id=11, full_name="Dra. Asignada", roles=[Role(code="doctor", name="Médico")])
+
+    _ensure_doctor_appointment_access(appointment, doctor)
+
+
+def test_admin_can_open_any_appointment_context():
+    appointment = Appointment(id=42, patient_id=7, doctor_id=11, center_id=5)
+    admin = User(id=1, full_name="Administrador", roles=[Role(code="admin", name="Administrador")])
+
+    _ensure_doctor_appointment_access(appointment, admin)

@@ -33,6 +33,15 @@ def assigned_center_ids(user: User) -> set[int]:
     return {center.id for center in user.centers if center.is_active}
 
 
+def ensure_appointment_access(user: User, appointment: Appointment) -> None:
+    if is_role(user, "admin"):
+        return
+    if is_role(user, "secretary") and appointment.center_id not in assigned_center_ids(user):
+        raise HTTPException(status_code=403, detail="No tiene acceso a esta cita")
+    if is_role(user, "doctor") and appointment.doctor_id != user.id:
+        raise HTTPException(status_code=403, detail="No tiene acceso a esta cita")
+
+
 def doctor_is_available(db: Session, doctor_id: int, center_id: int, appointment_date: date) -> bool:
     center_rule = db.scalar(select(DoctorAvailability).where(
         DoctorAvailability.doctor_id == doctor_id,
@@ -71,9 +80,13 @@ def list_appointments(start: date | None = None, end: date | None = None, user: 
     query = select(Appointment).order_by(Appointment.appointment_date, Appointment.appointment_time)
     if start: query = query.where(Appointment.appointment_date >= start)
     if end: query = query.where(Appointment.appointment_date <= end)
-    if is_role(user, "secretary"):
+    if is_role(user, "admin"):
+        pass
+    elif is_role(user, "secretary"):
         ids = assigned_center_ids(user)
         query = query.where(Appointment.center_id.in_(ids)) if ids else query.where(Appointment.id == -1)
+    elif is_role(user, "doctor"):
+        query = query.where(Appointment.doctor_id == user.id)
     return [response(a) for a in db.scalars(query).all()]
 
 
@@ -85,7 +98,9 @@ def create_appointment(payload: AppointmentCreate, user: User = Depends(access),
     doctor_id = payload.doctor_id
     center_id = payload.center_id
 
-    if is_role(user, "secretary"):
+    if is_role(user, "admin"):
+        pass
+    elif is_role(user, "secretary"):
         if center_id is None or center_id not in assigned_center_ids(user):
             raise HTTPException(status_code=403, detail="La cita debe pertenecer al centro asignado a la secretaria")
         if doctor_id is None:
@@ -123,12 +138,11 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
     appointment = db.get(Appointment, appointment_id)
     if not appointment: raise HTTPException(status_code=404, detail="Cita no encontrada")
     if not db.get(Patient, payload.patient_id): raise HTTPException(status_code=404, detail="Paciente no encontrado")
-    if is_role(user, "secretary") and appointment.center_id not in assigned_center_ids(user):
-        raise HTTPException(status_code=403, detail="No tiene acceso a esta cita")
+    ensure_appointment_access(user, appointment)
 
     doctor_id = payload.doctor_id or appointment.doctor_id
     center_id = payload.center_id or appointment.center_id
-    if is_role(user, "doctor"):
+    if is_role(user, "doctor") and not is_role(user, "admin"):
         doctor_id = user.id
     if not center_id:
         raise HTTPException(status_code=422, detail="Debe indicar el centro de atención")
@@ -153,6 +167,5 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
 def delete_appointment(appointment_id: int, user: User = Depends(access), db: Session = Depends(get_db)):
     appointment = db.get(Appointment, appointment_id)
     if not appointment: raise HTTPException(status_code=404, detail="Cita no encontrada")
-    if is_role(user, "secretary") and appointment.center_id not in assigned_center_ids(user):
-        raise HTTPException(status_code=403, detail="No tiene acceso a esta cita")
+    ensure_appointment_access(user, appointment)
     db.delete(appointment); db.commit()
