@@ -19,9 +19,13 @@ class AppointmentResponse(AppointmentBase):
     doctor_id: int
     center_id: int | None
     patient_name: str
+    patient_date_of_birth: date
     doctor_name: str
     center_name: str | None
     center_city: str | None
+    coverage_id: int | None = None
+    original_doctor_id: int | None = None
+    original_doctor_name: str | None = None
     created_at: datetime
     updated_at: datetime
 
