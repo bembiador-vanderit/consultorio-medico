@@ -69,6 +69,24 @@ def _resolve_consultation_context(
     return _appointment_context(appointment, patient_id)
 
 
+def _ensure_appointment_available(
+    appointment_id: int | None,
+    db: Session,
+    exclude_history_id: int | None = None,
+) -> None:
+    if appointment_id is None:
+        return
+
+    query = select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment_id)
+    if exclude_history_id is not None:
+        query = query.where(ClinicalHistory.id != exclude_history_id)
+    if db.scalar(query) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La cita ya tiene una consulta médica registrada",
+        )
+
+
 @router.get("/patients/{patient_id}", response_model=list[ClinicalHistoryResponse])
 def get_clinical_history(patient_id: int, _=Depends(access), db: Session = Depends(get_db)):
     if not db.get(Patient, patient_id):
@@ -142,6 +160,7 @@ def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, _=D
 
     data = payload.model_dump()
     context = _resolve_consultation_context(data.get("appointment_id"), patient_id, db)
+    _ensure_appointment_available(context["appointment_id"], db)
     data.update(context)
 
     history = ClinicalHistory(patient_id=patient_id, **data)
@@ -159,6 +178,7 @@ def update_clinical_history(history_id: int, payload: ClinicalHistoryCreate, _=D
 
     data = payload.model_dump()
     context = _resolve_consultation_context(data.get("appointment_id"), history.patient_id, db)
+    _ensure_appointment_available(context["appointment_id"], db, exclude_history_id=history.id)
     data.update(context)
 
     for field, value in data.items():
