@@ -33,6 +33,13 @@ def assigned_center_ids(user: User) -> set[int]:
     return {center.id for center in user.centers if center.is_active}
 
 
+def ensure_center_access(user: User, center_id: int) -> None:
+    if is_role(user, "admin"):
+        return
+    if center_id not in assigned_center_ids(user):
+        raise HTTPException(status_code=403, detail="No tiene acceso a este centro")
+
+
 def ensure_appointment_access(user: User, appointment: Appointment) -> None:
     if is_role(user, "admin"):
         return
@@ -58,13 +65,39 @@ def doctor_is_available(db: Session, doctor_id: int, center_id: int, appointment
     return global_rule.is_available if global_rule is not None else True
 
 
+def validate_appointment_assignment(
+    db: Session,
+    user: User,
+    doctor_id: int | None,
+    center_id: int | None,
+    appointment_date: date,
+) -> tuple[User, CareCenter]:
+    if center_id is None:
+        raise HTTPException(status_code=422, detail="Debe indicar el centro de atención")
+    if doctor_id is None:
+        raise HTTPException(status_code=422, detail="Debe seleccionar un médico")
+
+    center = db.get(CareCenter, center_id)
+    if not center or not center.is_active:
+        raise HTTPException(status_code=422, detail="Centro de atención inválido")
+    ensure_center_access(user, center.id)
+
+    doctor = db.get(User, doctor_id)
+    if not doctor or not doctor.is_active or not is_role(doctor, "doctor"):
+        raise HTTPException(status_code=422, detail="Médico inválido")
+    if center not in doctor.centers:
+        raise HTTPException(status_code=422, detail="El médico no está asignado a este centro")
+    if not doctor_is_available(db, doctor.id, center.id, appointment_date):
+        raise HTTPException(status_code=409, detail="El médico no está disponible en esta fecha para este centro")
+    return doctor, center
+
+
 @router.get("/doctors")
 def list_available_doctors(center_id: int, appointment_date: date, user: User = Depends(access), db: Session = Depends(get_db)):
     center = db.get(CareCenter, center_id)
     if not center or not center.is_active:
         raise HTTPException(status_code=404, detail="Centro de atención no encontrado")
-    if is_role(user, "secretary") and center_id not in assigned_center_ids(user):
-        raise HTTPException(status_code=403, detail="No tiene acceso a este centro")
+    ensure_center_access(user, center_id)
 
     doctors = []
     for doctor in db.scalars(select(User).where(User.is_active.is_(True))).all():
@@ -95,35 +128,9 @@ def create_appointment(payload: AppointmentCreate, user: User = Depends(access),
     if not db.get(Patient, payload.patient_id):
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
-    doctor_id = payload.doctor_id
-    center_id = payload.center_id
-
-    if is_role(user, "admin"):
-        pass
-    elif is_role(user, "secretary"):
-        if center_id is None or center_id not in assigned_center_ids(user):
-            raise HTTPException(status_code=403, detail="La cita debe pertenecer al centro asignado a la secretaria")
-        if doctor_id is None:
-            raise HTTPException(status_code=422, detail="Debe seleccionar un médico")
-    elif is_role(user, "doctor"):
-        doctor_id = user.id
-        if center_id is None:
-            primary = next((c for c in user.centers if c.is_active), None)
-            if primary:
-                center_id = primary.id
-    elif doctor_id is None:
-        raise HTTPException(status_code=422, detail="Debe seleccionar un médico")
-
-    doctor = db.get(User, doctor_id) if doctor_id else None
-    center = db.get(CareCenter, center_id) if center_id else None
-    if not doctor or not doctor.is_active or not is_role(doctor, "doctor"):
-        raise HTTPException(status_code=422, detail="Médico inválido")
-    if not center or not center.is_active:
-        raise HTTPException(status_code=422, detail="Centro de atención inválido")
-    if center not in doctor.centers:
-        raise HTTPException(status_code=422, detail="El médico no está asignado a este centro")
-    if not doctor_is_available(db, doctor.id, center.id, payload.appointment_date):
-        raise HTTPException(status_code=409, detail="El médico no está disponible en esta fecha para este centro")
+    doctor, center = validate_appointment_assignment(
+        db, user, payload.doctor_id, payload.center_id, payload.appointment_date
+    )
 
     data = payload.model_dump()
     data["doctor_id"] = doctor.id
@@ -140,20 +147,9 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
     if not db.get(Patient, payload.patient_id): raise HTTPException(status_code=404, detail="Paciente no encontrado")
     ensure_appointment_access(user, appointment)
 
-    doctor_id = payload.doctor_id or appointment.doctor_id
-    center_id = payload.center_id or appointment.center_id
-    if is_role(user, "doctor") and not is_role(user, "admin"):
-        doctor_id = user.id
-    if not center_id:
-        raise HTTPException(status_code=422, detail="Debe indicar el centro de atención")
-    doctor = db.get(User, doctor_id)
-    center = db.get(CareCenter, center_id)
-    if not doctor or not doctor.is_active or not is_role(doctor, "doctor") or not center or not center.is_active:
-        raise HTTPException(status_code=422, detail="Médico o centro inválido")
-    if center not in doctor.centers:
-        raise HTTPException(status_code=422, detail="El médico no está asignado a este centro")
-    if not doctor_is_available(db, doctor.id, center.id, payload.appointment_date):
-        raise HTTPException(status_code=409, detail="El médico no está disponible en esta fecha para este centro")
+    doctor, center = validate_appointment_assignment(
+        db, user, payload.doctor_id, payload.center_id, payload.appointment_date
+    )
 
     data = payload.model_dump()
     data["doctor_id"] = doctor.id
