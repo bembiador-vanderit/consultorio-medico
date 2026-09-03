@@ -9,7 +9,8 @@ type Props = {
   onCurrentUserChanged: (user: User) => void;
 };
 type RoleCode = "admin" | "doctor" | "secretary";
-type AdminUser = User & { center_ids: number[]; primary_center_id: number | null };
+type SecretaryScope = { center_id: number; manage_all_doctors: boolean; doctor_ids: number[] };
+type AdminUser = User & { center_ids: number[]; primary_center_id: number | null; secretary_scopes: SecretaryScope[] };
 type Center = { id: number; name: string; city: string; is_active: boolean };
 type EditForm = {
   full_name: string;
@@ -17,6 +18,7 @@ type EditForm = {
   roles: RoleCode[];
   center_ids: number[];
   primary_center_id: number | null;
+  secretary_scopes: SecretaryScope[];
 };
 
 const roles: { code: RoleCode; label: string; description: string }[] = [
@@ -39,6 +41,7 @@ function userEditForm(user: AdminUser): EditForm {
     roles: user.roles.filter((role): role is RoleCode => roles.some((item) => item.code === role)),
     center_ids: user.center_ids,
     primary_center_id: user.primary_center_id,
+    secretary_scopes: user.secretary_scopes ?? [],
   };
 }
 
@@ -153,6 +156,21 @@ export default function Users({ currentUser, onBack, onCurrentUserChanged }: Pro
     finally { setSaving(""); }
   }
 
+  async function saveSecretaryScopes() {
+    if (!editing || !editForm) return;
+    setSaving("secretary-scopes"); setModalError(""); setModalMessage("");
+    try {
+      const scopes = editForm.center_ids.map((centerId) => editForm.secretary_scopes.find((scope) => scope.center_id === centerId) ?? {
+        center_id: centerId,
+        manage_all_doctors: false,
+        doctor_ids: [],
+      });
+      const { data } = await api.put<AdminUser>(`/users/${editing.id}/secretary-scopes`, { scopes });
+      applyUpdatedUser(data, "Alcance de agenda actualizado.");
+    } catch (reason: any) { setModalError(apiError(reason, "No fue posible actualizar el alcance de agenda.")); }
+    finally { setSaving(""); }
+  }
+
   async function changeStatus() {
     if (!editing) return;
     setSaving("status"); setModalError(""); setModalMessage("");
@@ -191,6 +209,42 @@ export default function Users({ currentUser, onBack, onCurrentUserChanged }: Pro
       ...editForm,
       center_ids: assigned ? editForm.center_ids.filter((id) => id !== centerId) : [...editForm.center_ids, centerId],
       primary_center_id: assigned && editForm.primary_center_id === centerId ? null : editForm.primary_center_id,
+      secretary_scopes: assigned
+        ? editForm.secretary_scopes.filter((scope) => scope.center_id !== centerId)
+        : editForm.secretary_scopes,
+    });
+  }
+
+  function setManageAllDoctors(centerId: number, manageAllDoctors: boolean) {
+    if (!editForm) return;
+    const current = editForm.secretary_scopes.find((scope) => scope.center_id === centerId);
+    const updated = {
+      center_id: centerId,
+      manage_all_doctors: manageAllDoctors,
+      doctor_ids: manageAllDoctors ? [] : current?.doctor_ids ?? [],
+    };
+    setEditForm({
+      ...editForm,
+      secretary_scopes: [...editForm.secretary_scopes.filter((scope) => scope.center_id !== centerId), updated],
+    });
+  }
+
+  function toggleManagedDoctor(centerId: number, doctorId: number) {
+    if (!editForm) return;
+    const current = editForm.secretary_scopes.find((scope) => scope.center_id === centerId) ?? {
+      center_id: centerId,
+      manage_all_doctors: false,
+      doctor_ids: [],
+    };
+    const doctorIds = current.doctor_ids.includes(doctorId)
+      ? current.doctor_ids.filter((id) => id !== doctorId)
+      : [...current.doctor_ids, doctorId];
+    setEditForm({
+      ...editForm,
+      secretary_scopes: [
+        ...editForm.secretary_scopes.filter((scope) => scope.center_id !== centerId),
+        { ...current, manage_all_doctors: false, doctor_ids: doctorIds },
+      ],
     });
   }
 
@@ -212,6 +266,13 @@ export default function Users({ currentUser, onBack, onCurrentUserChanged }: Pro
       <div className="mt-4 rounded-xl border p-4"><h4 className="font-semibold">Roles</h4><div className="mt-3 grid gap-2 sm:grid-cols-3">{roles.map((role) => <label key={role.code} className="flex gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" checked={editForm.roles.includes(role.code)} disabled={editing.id === currentUser.id && role.code === "admin"} onChange={() => toggleRole(role.code)} /><span><span className="font-medium">{role.label}</span><span className="block text-xs text-slate-500">{role.description}</span></span></label>)}</div><button disabled={Boolean(saving)} onClick={() => void saveRoles()} className="mt-3 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{saving === "roles" ? "Guardando..." : "Guardar roles"}</button></div>
 
       <div className="mt-4 rounded-xl border p-4"><h4 className="font-semibold">Centros</h4><div className="mt-3 grid gap-2 sm:grid-cols-2">{centers.filter((center) => center.is_active || editForm.center_ids.includes(center.id)).map((center) => <label key={center.id} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" checked={editForm.center_ids.includes(center.id)} disabled={!editing.is_active && !editForm.center_ids.includes(center.id)} onChange={() => toggleCenter(center.id)} /><span>{center.name} — {center.city}{!center.is_active && <span className="text-red-600"> (inactivo)</span>}</span></label>)}</div><label className="mt-3 block text-sm font-medium">Centro principal<select value={editForm.primary_center_id ?? ""} onChange={(event) => setEditForm({ ...editForm, primary_center_id: Number(event.target.value) || null })} className="mt-1 w-full rounded-lg border p-2.5"><option value="">Sin centro principal</option>{centers.filter((center) => editForm.center_ids.includes(center.id)).map((center) => <option key={center.id} value={center.id}>{center.name} — {center.city}</option>)}</select></label>{!editing.is_active && <p className="mt-2 text-xs text-slate-500">Reactive el usuario antes de asignarle centros nuevos.</p>}<button disabled={Boolean(saving)} onClick={() => void saveCenters()} className="mt-3 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{saving === "centers" ? "Guardando..." : "Guardar centros"}</button></div>
+
+      {editForm.roles.includes("secretary") && <div className="mt-4 rounded-xl border p-4"><h4 className="font-semibold">Alcance de agenda (secretaria)</h4><p className="mt-1 text-xs text-slate-500">Defina qué médicos puede gestionar en cada centro asignado. Este alcance también limita reportes y PDF.</p>{editForm.center_ids.length === 0 ? <p className="mt-3 text-sm text-slate-500">Asigne y guarde al menos un centro para configurar el alcance.</p> : <div className="mt-3 space-y-3">{editForm.center_ids.map((centerId) => {
+        const center = centers.find((item) => item.id === centerId);
+        const scope = editForm.secretary_scopes.find((item) => item.center_id === centerId) ?? { center_id: centerId, manage_all_doctors: false, doctor_ids: [] };
+        const availableDoctors = users.filter((candidate) => candidate.is_active && candidate.roles.includes("doctor") && candidate.center_ids.includes(centerId));
+        return <div key={centerId} className="rounded-lg border bg-slate-50 p-3"><p className="text-sm font-semibold">{center?.name ?? `Centro ${centerId}`}{center?.city ? ` — ${center.city}` : ""}</p><label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={scope.manage_all_doctors} onChange={(event) => setManageAllDoctors(centerId, event.target.checked)} /><span>Gestionar todos los médicos de este centro</span></label>{!scope.manage_all_doctors && <div className="mt-2 grid gap-2 sm:grid-cols-2">{availableDoctors.length === 0 ? <p className="text-xs text-slate-500">No hay médicos activos asignados.</p> : availableDoctors.map((doctor) => <label key={doctor.id} className="flex items-center gap-2 rounded border bg-white p-2 text-sm"><input type="checkbox" checked={scope.doctor_ids.includes(doctor.id)} onChange={() => toggleManagedDoctor(centerId, doctor.id)} /><span>{doctor.full_name}</span></label>)}</div>}</div>;
+      })}</div>}<button disabled={Boolean(saving) || editForm.center_ids.some((id) => !editing.center_ids.includes(id))} onClick={() => void saveSecretaryScopes()} className="mt-3 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{saving === "secretary-scopes" ? "Guardando..." : "Guardar alcance de agenda"}</button>{editForm.center_ids.some((id) => !editing.center_ids.includes(id)) && <p className="mt-2 text-xs text-amber-700">Guarde primero los centros nuevos.</p>}</div>}
 
       <div className="mt-4 rounded-xl border p-4"><h4 className="font-semibold">Estado</h4><p className="mt-2 text-sm">Estado actual: <span className={editing.is_active ? "font-semibold text-emerald-700" : "font-semibold text-red-700"}>{editing.is_active ? "Activo" : "Inactivo"}</span></p><button disabled={Boolean(saving) || editing.id === currentUser.id} onClick={() => void changeStatus()} className={`mt-3 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${editing.is_active ? "bg-red-700" : "bg-emerald-700"}`}>{saving === "status" ? "Actualizando..." : editing.is_active ? "Desactivar usuario" : "Reactivar usuario"}</button>{editing.id === currentUser.id && <p className="mt-2 text-xs text-slate-500">No puede desactivar su propia cuenta.</p>}</div>
 

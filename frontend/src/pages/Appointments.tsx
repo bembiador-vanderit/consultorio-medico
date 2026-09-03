@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../services/api";
 import type { Appointment, AppointmentInput } from "../types/appointment";
 import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
+import { sortAppointments, type AppointmentSortKey, type SortDirection } from "../utils/appointmentSort";
 
 type Center = { id: number; name: string; city: string; center_type: string; is_active: boolean };
 type Doctor = { id: number; full_name: string };
@@ -34,6 +35,7 @@ export default function Appointments({ user, onBack, initialPatient, canAccessCl
   const [formError, setFormError] = useState("");
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [savingAppointment, setSavingAppointment] = useState(false);
+  const [sort, setSort] = useState<{ key: AppointmentSortKey; direction: SortDirection }>({ key: "dateTime", direction: "asc" });
   const doctorRequest = useRef(0);
   const initialPatientHandled = useRef(false);
 
@@ -84,10 +86,26 @@ export default function Appointments({ user, onBack, initialPatient, canAccessCl
   async function save() { if (savingAppointment) return; setFormError(""); setSavingAppointment(true); try { if (!form.patient_id) throw new Error("Seleccione un paciente."); if (!form.center_id) throw new Error("Seleccione el centro donde se realizará la cita."); if (!form.doctor_id) throw new Error("Seleccione el médico que atenderá la cita."); if (editing) await api.put(`/appointments/${editing.id}`, form); else await api.post("/appointments", form); setShowForm(false); setSelectedPatient(null); await load(); } catch (e: any) { setFormError(errorMessage(e, "No fue posible guardar la cita.")); } finally { setSavingAppointment(false); } }
   async function remove(id: number) { if (!confirm("¿Eliminar esta cita?")) return; try { await api.delete(`/appointments/${id}`); await load(); } catch (e: any) { setError(e?.response?.data?.detail || "No fue posible eliminar la cita."); } }
 
+  const sortedItems = useMemo(
+    () => sortAppointments(items, sort.key, sort.direction, labels),
+    [items, sort],
+  );
+
+  function toggleSort(key: AppointmentSortKey) {
+    setSort((current) => current.key === key
+      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: "asc" });
+  }
+
+  function sortableHeader(label: string, key: AppointmentSortKey, colSpan?: number) {
+    const active = sort.key === key;
+    return <th colSpan={colSpan} aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"} className="px-4 py-3"><button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 font-semibold hover:text-teal-700">{label}<span aria-hidden="true">{active ? (sort.direction === "asc" ? "↑" : "↓") : ""}</span></button></th>;
+  }
+
   return <section>
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button><h2 className="mt-2 text-2xl font-bold">Agenda de citas</h2><p className="mt-1 text-sm text-slate-500">Programa y administra las citas de los pacientes.</p></div><button onClick={() => openNew()} className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white">+ Nueva cita</button></div>
     {error && <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-    <div className="mt-6 overflow-hidden rounded-xl border bg-white shadow-sm">{loading ? <p className="p-6 text-slate-500">Cargando agenda...</p> : items.length === 0 ? <p className="p-10 text-center text-slate-500">No hay citas registradas.</p> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Hora</th><th className="px-4 py-3">Paciente</th><th className="px-4 py-3">Médico</th><th className="px-4 py-3">Centro</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Motivo</th><th className="px-4 py-3 text-right">Acciones</th></tr></thead><tbody className="divide-y divide-slate-100">{items.map((a) => <tr key={a.id}><td className="px-4 py-3">{a.appointment_date}</td><td className="px-4 py-3 font-medium">{a.appointment_time.slice(0, 5)}</td><td className="px-4 py-3 font-medium">{a.patient_name}</td><td className="px-4 py-3">{a.doctor_name}</td><td className="px-4 py-3">{a.center_name ? `${a.center_name} (${a.center_city})` : "—"}</td><td className="px-4 py-3">{labels[a.status]}</td><td className="px-4 py-3">{a.reason || "—"}</td><td className="px-4 py-3 text-right">{canAccessClinical && <button onClick={() => onAttendAppointment(a)} className="mr-3 rounded-md bg-teal-700 px-3 py-1.5 font-medium text-white">Atender</button>}<button onClick={() => void edit(a)} className="mr-3 font-medium text-teal-700">Editar</button><button onClick={() => void remove(a.id)} className="font-medium text-red-700">Eliminar</button></td></tr>)}</tbody></table></div>}</div>
+    <div className="mt-6 overflow-hidden rounded-xl border bg-white shadow-sm">{loading ? <p className="p-6 text-slate-500">Cargando agenda...</p> : items.length === 0 ? <p className="p-10 text-center text-slate-500">No hay citas registradas.</p> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr>{sortableHeader("Fecha / Hora", "dateTime", 2)}{sortableHeader("Paciente", "patient")}{sortableHeader("Médico", "doctor")}{sortableHeader("Centro", "center")}{sortableHeader("Estado", "status")}<th className="px-4 py-3">Motivo</th><th className="px-4 py-3 text-right">Acciones</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedItems.map((a) => <tr key={a.id}><td className="px-4 py-3">{a.appointment_date}</td><td className="px-4 py-3 font-medium">{a.appointment_time.slice(0, 5)}</td><td className="px-4 py-3 font-medium">{a.patient_name}</td><td className="px-4 py-3">{a.doctor_name}</td><td className="px-4 py-3">{a.center_name ? `${a.center_name} (${a.center_city})` : "—"}</td><td className="px-4 py-3">{labels[a.status]}</td><td className="px-4 py-3">{a.reason || "—"}</td><td className="px-4 py-3 text-right">{canAccessClinical && <button onClick={() => onAttendAppointment(a)} className="mr-3 rounded-md bg-teal-700 px-3 py-1.5 font-medium text-white">Atender</button>}<button onClick={() => void edit(a)} className="mr-3 font-medium text-teal-700">Editar</button><button onClick={() => void remove(a.id)} className="font-medium text-red-700">Eliminar</button></td></tr>)}</tbody></table></div>}</div>
     {showForm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"><h3 className="text-xl font-bold">{editing ? "Editar cita" : "Nueva cita"}</h3>
       <div className="relative mt-4"><label className="block text-sm font-medium">Paciente</label>{selectedPatient ? <div className="mt-1 flex items-center justify-between rounded-lg border bg-slate-50 p-2.5"><span className="font-medium">{selectedPatient.first_name} {selectedPatient.last_name}</span><button type="button" onClick={clearPatient} className="text-sm font-medium text-red-700">Cambiar</button></div> : <><input value={patientQuery} onChange={(e) => setPatientQuery(e.target.value)} placeholder="Escriba nombre o apellido..." className="mt-1 w-full rounded-lg border p-2.5" autoComplete="off" />{patientQuery.trim().length >= 2 && <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-lg border bg-white shadow-lg">{searchingPatients ? <p className="p-3 text-sm text-slate-500">Buscando...</p> : patientResults.length ? patientResults.map((p) => <button type="button" key={p.id} onClick={() => selectPatient(p)} className="block w-full border-b px-3 py-2 text-left hover:bg-slate-50"><span className="font-medium">{p.first_name} {p.last_name}</span>{p.phone && <span className="ml-2 text-xs text-slate-500">{p.phone}</span>}</button>) : <p className="p-3 text-sm text-slate-500">No se encontraron pacientes.</p>}</div>}</>}</div>
       <label className="mt-4 block text-sm font-medium">Centro de atención<select value={form.center_id || ""} onChange={(e) => { const id = Number(e.target.value) || null; setFormError(""); setForm((current) => ({ ...current, center_id: id, doctor_id: null })); void loadDoctors(id, form.appointment_date, null); }} className="mt-1 w-full rounded-lg border p-2.5" required><option value="">Seleccione...</option>{centers.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.city}</option>)}</select></label>

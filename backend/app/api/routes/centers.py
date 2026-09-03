@@ -13,6 +13,7 @@ from app.schemas.center import (
     CareCenterUpdate,
     CenterUserAssignment,
 )
+from app.services.appointment_scope import remove_center_membership_from_scopes
 
 router = APIRouter(prefix="/centers", tags=["Centros de atención"])
 access = require_permission("centers:access")
@@ -89,5 +90,7 @@ def assign_user(center_id: int, payload: CenterUserAssignment, _: User = Depends
 def unassign_user(center_id: int, user_id: int, _: User = Depends(manage), db: Session = Depends(get_db)):
     center = db.get(CareCenter, center_id); user = db.get(User, user_id)
     if not center or not user: raise HTTPException(status_code=404, detail="Centro o usuario no encontrado")
-    if center in user.centers: user.centers.remove(center)
+    if center in user.centers:
+        remove_center_membership_from_scopes(db, user, {center.id})
+        user.centers.remove(center)
     db.commit()

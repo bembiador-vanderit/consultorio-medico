@@ -3,9 +3,20 @@ from pydantic import BaseModel, EmailStr, Field
 from app.schemas.auth import UserResponse
 
 
+class SecretaryDoctorScope(BaseModel):
+    center_id: int
+    manage_all_doctors: bool = False
+    doctor_ids: list[int] = Field(default_factory=list)
+
+
+class SecretaryDoctorScopesUpdate(BaseModel):
+    scopes: list[SecretaryDoctorScope] = Field(default_factory=list)
+
+
 class UserAdminResponse(UserResponse):
     center_ids: list[int]
     primary_center_id: int | None = None
+    secretary_scopes: list[SecretaryDoctorScope] = Field(default_factory=list)
 
 
 class UserProfileUpdate(BaseModel):

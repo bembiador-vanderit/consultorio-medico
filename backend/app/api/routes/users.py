@@ -5,17 +5,19 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.core.security import hash_password
 from app.db import get_db
-from app.models import CareCenter, Role, User
+from app.models import CareCenter, Role, SecretaryCenterScope, User
 from app.models.center import user_centers
 from app.schemas.auth import UserCreate
 from app.schemas.user import (
     UserAdminResponse,
     UserCentersUpdate,
+    SecretaryDoctorScopesUpdate,
     UserPasswordUpdate,
     UserProfileUpdate,
     UserRolesUpdate,
     UserStatusUpdate,
 )
+from app.services.appointment_scope import remove_center_membership_from_scopes
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
 manage = require_permission("users:manage")
@@ -51,6 +53,11 @@ def serialize(user: User, db: Session) -> UserAdminResponse:
         .where(user_centers.c.user_id == user.id)
         .order_by(user_centers.c.center_id)
     ).all()
+    secretary_scopes = list(db.scalars(
+        select(SecretaryCenterScope)
+        .where(SecretaryCenterScope.secretary_id == user.id)
+        .order_by(SecretaryCenterScope.center_id)
+    ).all())
     return UserAdminResponse(
         id=user.id,
         email=user.email,
@@ -59,7 +66,23 @@ def serialize(user: User, db: Session) -> UserAdminResponse:
         roles=[role.code for role in user.roles],
         center_ids=[row.center_id for row in assignments],
         primary_center_id=next((row.center_id for row in assignments if row.is_primary), None),
+        secretary_scopes=[
+            {
+                "center_id": scope.center_id,
+                "manage_all_doctors": scope.manage_all_doctors,
+                "doctor_ids": sorted(doctor.id for doctor in scope.doctors),
+            }
+            for scope in secretary_scopes
+        ],
     )
+
+
+def delete_secretary_scopes(db: Session, user_id: int, center_ids: set[int] | None = None) -> None:
+    query = select(SecretaryCenterScope).where(SecretaryCenterScope.secretary_id == user_id)
+    if center_ids is not None:
+        query = query.where(SecretaryCenterScope.center_id.in_(center_ids))
+    for scope in db.scalars(query).all():
+        db.delete(scope)
 
 
 def validate_roles(db: Session, role_codes: list[str]) -> list[Role]:
@@ -148,6 +171,9 @@ def update_user_roles(user_id: int, payload: UserRolesUpdate, admin: User = Depe
         raise HTTPException(status_code=409, detail="No se puede quitar el rol al último administrador activo")
     if removing_admin and user.id == admin.id:
         raise HTTPException(status_code=422, detail="Un administrador no puede retirar su propio rol admin")
+    removing_secretary = is_role(user, "secretary") and not any(role.code == "secretary" for role in roles)
+    if removing_secretary:
+        delete_secretary_scopes(db, user.id)
     user.roles = roles
     db.commit()
     db.refresh(user)
@@ -172,6 +198,10 @@ def update_user_centers(user_id: int, payload: UserCentersUpdate, _: User = Depe
     if not user.is_active and not center_ids.issubset(current_ids):
         raise HTTPException(status_code=422, detail="No se pueden agregar centros a un usuario inactivo")
 
+    removed_ids = current_ids - center_ids
+    if removed_ids:
+        remove_center_membership_from_scopes(db, user, removed_ids)
+
     db.execute(delete(user_centers).where(user_centers.c.user_id == user.id))
     if center_ids:
         db.execute(insert(user_centers), [
@@ -180,3 +210,53 @@ def update_user_centers(user_id: int, payload: UserCentersUpdate, _: User = Depe
         ])
     db.commit()
     return serialize(user, db)
+
+
+@router.put("/{user_id}/secretary-scopes", response_model=UserAdminResponse)
+def update_secretary_scopes(
+    user_id: int,
+    payload: SecretaryDoctorScopesUpdate,
+    _: User = Depends(manage),
+    db: Session = Depends(get_db),
+):
+    secretary = require_user(db, user_id)
+    if not is_role(secretary, "secretary"):
+        raise HTTPException(status_code=422, detail="El usuario no tiene rol de secretaria")
+
+    assigned_ids = set(db.scalars(
+        select(user_centers.c.center_id).where(user_centers.c.user_id == secretary.id)
+    ).all())
+    requested_center_ids = [scope.center_id for scope in payload.scopes]
+    if len(set(requested_center_ids)) != len(requested_center_ids):
+        raise HTTPException(status_code=422, detail="El alcance de un centro no puede repetirse")
+    if not set(requested_center_ids).issubset(assigned_ids):
+        raise HTTPException(status_code=422, detail="La secretaria debe estar asignada a cada centro configurado")
+
+    prepared: list[tuple[int, bool, list[User]]] = []
+    for requested in payload.scopes:
+        center = db.get(CareCenter, requested.center_id)
+        if not center or not center.is_active:
+            raise HTTPException(status_code=422, detail="Centro de atención inválido")
+        if requested.manage_all_doctors and requested.doctor_ids:
+            raise HTTPException(status_code=422, detail="No indique médicos específicos al seleccionar todos los médicos")
+        if len(set(requested.doctor_ids)) != len(requested.doctor_ids):
+            raise HTTPException(status_code=422, detail="Los médicos no pueden repetirse")
+
+        doctors = list(db.scalars(select(User).where(User.id.in_(set(requested.doctor_ids)))).all()) if requested.doctor_ids else []
+        if len(doctors) != len(set(requested.doctor_ids)):
+            raise HTTPException(status_code=422, detail="Médico inválido")
+        if any(not doctor.is_active or not is_role(doctor, "doctor") or center not in doctor.centers for doctor in doctors):
+            raise HTTPException(status_code=422, detail="Todos los médicos deben estar activos y asignados al centro")
+        prepared.append((center.id, requested.manage_all_doctors, doctors))
+
+    delete_secretary_scopes(db, secretary.id)
+    db.flush()
+    for center_id, manage_all_doctors, doctors in prepared:
+        db.add(SecretaryCenterScope(
+            secretary_id=secretary.id,
+            center_id=center_id,
+            manage_all_doctors=manage_all_doctors,
+            doctors=doctors,
+        ))
+    db.commit()
+    return serialize(secretary, db)
