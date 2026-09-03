@@ -9,7 +9,7 @@ from app.models.vital_signs import VitalSigns
 from app.schemas.vital_signs import VitalSignsResponse, VitalSignsUpdate
 
 router = APIRouter(prefix="/clinical-history/{history_id}/vital-signs", tags=["Signos vitales"])
-access = require_permission("patients:access")
+access = require_permission("clinical:access")
 
 
 @router.get("", response_model=VitalSignsResponse | None)
