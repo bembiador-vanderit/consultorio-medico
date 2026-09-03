@@ -12,7 +12,7 @@ from app.api.routes.appointments import (
     update_appointment,
     validate_appointment_assignment,
 )
-from app.models import Appointment, CareCenter, Patient, Role, User
+from app.models import Appointment, CareCenter, Patient, Role, SecretaryCenterScope, User
 from app.schemas.appointment import AppointmentCreate
 
 
@@ -50,12 +50,13 @@ class QueryCaptureDB:
 
 
 class AppointmentDB:
-    def __init__(self, users, centers, appointment=None):
+    def __init__(self, users, centers, appointment=None, secretary_scopes=None):
         self.patient = Patient(id=7, first_name="Paciente", last_name="Prueba", date_of_birth=date(1990, 1, 1))
         self.users = {user.id: user for user in users}
         self.centers = {center.id: center for center in centers}
         self.appointment = appointment
         self.added = None
+        self.secretary_scopes = secretary_scopes or []
 
     def get(self, model, object_id):
         if model is Patient:
@@ -70,6 +71,9 @@ class AppointmentDB:
 
     def scalar(self, _query):
         return None
+
+    def scalars(self, _query):
+        return type("Result", (), {"all": lambda result: self.secretary_scopes})()
 
     def add(self, appointment):
         self.added = appointment
@@ -177,7 +181,8 @@ def test_secretary_creates_appointment_for_valid_doctor_in_assigned_center():
     center = _center(5)
     secretary = _user(21, "secretary", centers=[center])
     doctor = _user(11, "doctor", centers=[center])
-    db = AppointmentDB([secretary, doctor], [center])
+    scope = SecretaryCenterScope(secretary_id=secretary.id, center_id=center.id, manage_all_doctors=True)
+    db = AppointmentDB([secretary, doctor], [center], secretary_scopes=[scope])
 
     result = create_appointment(_payload(doctor.id, center.id), user=secretary, db=db)
 

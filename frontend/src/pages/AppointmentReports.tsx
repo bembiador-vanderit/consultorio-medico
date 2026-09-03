@@ -6,8 +6,9 @@ type Props = { onBack: () => void };
 const statuses: Record<string, string> = { scheduled: "Programada", confirmed: "Confirmada", completed: "Completada", cancelled: "Cancelada", no_show: "No asistió" };
 
 type ReportFilters = { from: string; to: string; status: string; search: string; doctorId: string; centerId: string };
-type ReportUser = { id: number; full_name: string; roles: string[]; is_active: boolean };
-type ReportCenter = { id: number; name: string; city?: string | null; is_active: boolean };
+type ReportDoctor = { id: number; full_name: string; center_ids: number[] };
+type ReportCenter = { id: number; name: string; city?: string | null };
+type ScopeOptions = { doctors: ReportDoctor[]; centers: ReportCenter[] };
 
 function formatDate(value: string) {
   if (!value) return "—";
@@ -17,7 +18,7 @@ function formatDate(value: string) {
 export default function AppointmentReports({ onBack }: Props) {
   const today = new Date().toISOString().slice(0, 10);
   const [items, setItems] = useState<Appointment[]>([]);
-  const [doctors, setDoctors] = useState<ReportUser[]>([]);
+  const [doctors, setDoctors] = useState<ReportDoctor[]>([]);
   const [centers, setCenters] = useState<ReportCenter[]>([]);
   const [filters, setFilters] = useState<ReportFilters>({ from: today, to: today, status: "", search: "", doctorId: "", centerId: "" });
   const [loading, setLoading] = useState(true);
@@ -29,14 +30,13 @@ export default function AppointmentReports({ onBack }: Props) {
     setLoading(true);
     setError("");
     try {
-      const [appointments, users, careCenters] = await Promise.all([
+      const [appointments, options] = await Promise.all([
         api.get<Appointment[]>("/appointments"),
-        api.get<ReportUser[]>("/users"),
-        api.get<ReportCenter[]>("/centers"),
+        api.get<ScopeOptions>("/appointments/scope-options"),
       ]);
       setItems(appointments.data);
-      setDoctors(users.data.filter((u) => u.is_active && u.roles.includes("doctor")));
-      setCenters(careCenters.data.filter((c) => c.is_active));
+      setDoctors(options.data.doctors);
+      setCenters(options.data.centers);
     } catch (e: any) {
       setError(e?.response?.data?.detail || "No fue posible cargar el reporte.");
     } finally {
@@ -62,6 +62,11 @@ export default function AppointmentReports({ onBack }: Props) {
     acc[item.status] = (acc[item.status] || 0) + 1;
     return acc;
   }, { total: 0 } as Record<string, number>), [filtered]);
+
+  const visibleDoctors = useMemo(
+    () => doctors.filter((doctor) => !filters.centerId || doctor.center_ids.includes(Number(filters.centerId))),
+    [doctors, filters.centerId],
+  );
 
   const reportText = `Reporte de citas\nPeriodo: ${formatDate(filters.from)} - ${formatDate(filters.to)}\nTotal: ${filtered.length}\n\n${filtered.map((a) => `${formatDate(a.appointment_date)} ${a.appointment_time.slice(0, 5)} — ${a.patient_name} — ${a.doctor_name} — ${a.center_name || "Sin centro"} — ${statuses[a.status] || a.status}`).join("\n")}`;
 
@@ -144,8 +149,8 @@ export default function AppointmentReports({ onBack }: Props) {
         <label className="text-sm font-medium">Desde<input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
         <label className="text-sm font-medium">Hasta<input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
         <label className="text-sm font-medium">Estado<select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="mt-1 w-full rounded-lg border p-2"><option value="">Todos</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <label className="text-sm font-medium">Médico<select value={filters.doctorId} onChange={(e) => setFilters({ ...filters, doctorId: e.target.value })} className="mt-1 w-full rounded-lg border p-2"><option value="">Todos los médicos</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.full_name}</option>)}</select></label>
-        <label className="text-sm font-medium">Centro<select value={filters.centerId} onChange={(e) => setFilters({ ...filters, centerId: e.target.value })} className="mt-1 w-full rounded-lg border p-2"><option value="">Todos los centros</option>{centers.map((center) => <option key={center.id} value={center.id}>{center.name}{center.city ? ` — ${center.city}` : ""}</option>)}</select></label>
+        <label className="text-sm font-medium">Médico<select value={filters.doctorId} onChange={(e) => setFilters({ ...filters, doctorId: e.target.value })} className="mt-1 w-full rounded-lg border p-2"><option value="">Todos los médicos</option>{visibleDoctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.full_name}</option>)}</select></label>
+        <label className="text-sm font-medium">Centro<select value={filters.centerId} onChange={(e) => { const centerId = e.target.value; const selectedDoctor = doctors.find((doctor) => String(doctor.id) === filters.doctorId); setFilters({ ...filters, centerId, doctorId: selectedDoctor && centerId && !selectedDoctor.center_ids.includes(Number(centerId)) ? "" : filters.doctorId }); }} className="mt-1 w-full rounded-lg border p-2"><option value="">Todos los centros</option>{centers.map((center) => <option key={center.id} value={center.id}>{center.name}{center.city ? ` — ${center.city}` : ""}</option>)}</select></label>
         <label className="text-sm font-medium">Buscar<input value={filters.search} onChange={(e) => setFilters({ ...filters, search: e.target.value })} placeholder="Paciente, médico, centro o motivo" className="mt-1 w-full rounded-lg border p-2" /></label>
         <div className="flex items-end"><button onClick={clearFilters} className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-slate-50">Limpiar filtros</button></div>
       </div>

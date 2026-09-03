@@ -26,3 +26,20 @@ class AppointmentResponse(AppointmentBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AppointmentScopeCenter(BaseModel):
+    id: int
+    name: str
+    city: str | None = None
+
+
+class AppointmentScopeDoctor(BaseModel):
+    id: int
+    full_name: str
+    center_ids: list[int]
+
+
+class AppointmentScopeOptions(BaseModel):
+    centers: list[AppointmentScopeCenter]
+    doctors: list[AppointmentScopeDoctor]

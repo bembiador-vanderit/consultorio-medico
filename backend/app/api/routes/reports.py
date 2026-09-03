@@ -17,18 +17,11 @@ from app.api.deps import require_permission
 from app.core.config import get_settings
 from app.db import get_db
 from app.models import Appointment, CommunicationLog, User
+from app.services.appointment_scope import apply_appointment_scope
 from app.services.communication import send_email_with_attachment, send_whatsapp_document
 
 router = APIRouter(prefix="/reports", tags=["Reportes"])
 access = require_permission("patients:access")
-
-
-def is_role(user: User, code: str) -> bool:
-    return any(role.code == code for role in user.roles)
-
-
-def assigned_center_ids(user: User) -> set[int]:
-    return {center.id for center in user.centers if center.is_active}
 
 
 def fmt_date(value: date) -> str:
@@ -58,11 +51,7 @@ def get_appointment_rows(
     if center_id:
         query = query.where(Appointment.center_id == center_id)
 
-    if is_role(user, "secretary"):
-        ids = assigned_center_ids(user)
-        query = query.where(Appointment.center_id.in_(ids)) if ids else query.where(Appointment.id == -1)
-    elif is_role(user, "doctor"):
-        query = query.where(Appointment.doctor_id == user.id)
+    query = apply_appointment_scope(query, user, db)
 
     appointments = list(db.scalars(query).all())
     needle = (search or "").strip().lower()
