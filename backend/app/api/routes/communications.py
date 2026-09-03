@@ -69,12 +69,18 @@ def communication_history(
     if communication_status is not None:
         query = query.where(CommunicationLog.status == communication_status)
 
-    if is_role(user, "secretary"):
+    if is_role(user, "admin"):
+        pass
+    elif is_role(user, "secretary"):
         center_ids = assigned_center_ids(user)
         if not center_ids:
             return []
         query = query.join(CommunicationLog.appointment, isouter=True).where(
             Appointment.center_id.in_(center_ids)
+        )
+    elif is_role(user, "doctor"):
+        query = query.join(CommunicationLog.appointment, isouter=True).where(
+            Appointment.doctor_id == user.id
         )
 
     logs = db.scalars(
@@ -121,7 +127,11 @@ def deliver_appointment(appointment_id: int, channel: str, user: User = Depends(
     if not appointment:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
 
-    if is_role(user, "secretary") and appointment.center_id not in assigned_center_ids(user):
+    if is_role(user, "admin"):
+        pass
+    elif is_role(user, "secretary") and appointment.center_id not in assigned_center_ids(user):
+        raise HTTPException(status_code=403, detail="No tiene acceso a esta cita")
+    elif is_role(user, "doctor") and appointment.doctor_id != user.id:
         raise HTTPException(status_code=403, detail="No tiene acceso a esta cita")
 
     message = appointment_message(appointment)

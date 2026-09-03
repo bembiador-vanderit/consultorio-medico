@@ -55,10 +55,18 @@ def _appointment_context(appointment: Appointment, patient_id: int) -> dict[str,
     }
 
 
+def _ensure_doctor_appointment_access(appointment: Appointment, user: User) -> None:
+    if any(role.code == "admin" for role in user.roles):
+        return
+    if any(role.code == "doctor" for role in user.roles) and appointment.doctor_id != user.id:
+        raise HTTPException(status_code=403, detail="No tiene acceso a esta cita")
+
+
 def _resolve_consultation_context(
     appointment_id: int | None,
     patient_id: int,
     db: Session,
+    user: User | None = None,
 ) -> dict[str, int | None]:
     if appointment_id is None:
         return {"appointment_id": None, "doctor_id": None, "center_id": None}
@@ -66,6 +74,8 @@ def _resolve_consultation_context(
     appointment = db.get(Appointment, appointment_id)
     if appointment is None:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
+    if user is not None:
+        _ensure_doctor_appointment_access(appointment, user)
     return _appointment_context(appointment, patient_id)
 
 
@@ -114,10 +124,11 @@ def get_clinical_history(patient_id: int, _=Depends(access), db: Session = Depen
 
 
 @router.get("/appointments/{appointment_id}/context", response_model=ConsultationContextResponse)
-def get_consultation_context(appointment_id: int, _=Depends(access), db: Session = Depends(get_db)):
+def get_consultation_context(appointment_id: int, user: User = Depends(access), db: Session = Depends(get_db)):
     appointment = db.get(Appointment, appointment_id)
     if appointment is None:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
+    _ensure_doctor_appointment_access(appointment, user)
 
     histories = list(
         db.scalars(
@@ -154,12 +165,12 @@ def get_consultation_context(appointment_id: int, _=Depends(access), db: Session
 
 
 @router.post("/patients/{patient_id}", response_model=ClinicalHistoryResponse, status_code=status.HTTP_201_CREATED)
-def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, _=Depends(access), db: Session = Depends(get_db)):
+def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, user: User = Depends(access), db: Session = Depends(get_db)):
     if not db.get(Patient, patient_id):
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
     data = payload.model_dump()
-    context = _resolve_consultation_context(data.get("appointment_id"), patient_id, db)
+    context = _resolve_consultation_context(data.get("appointment_id"), patient_id, db, user)
     _ensure_appointment_available(context["appointment_id"], db)
     data.update(context)
 
@@ -171,13 +182,13 @@ def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, _=D
 
 
 @router.put("/{history_id}", response_model=ClinicalHistoryResponse)
-def update_clinical_history(history_id: int, payload: ClinicalHistoryCreate, _=Depends(access), db: Session = Depends(get_db)):
+def update_clinical_history(history_id: int, payload: ClinicalHistoryCreate, user: User = Depends(access), db: Session = Depends(get_db)):
     history = db.get(ClinicalHistory, history_id)
     if history is None:
         raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
 
     data = payload.model_dump()
-    context = _resolve_consultation_context(data.get("appointment_id"), history.patient_id, db)
+    context = _resolve_consultation_context(data.get("appointment_id"), history.patient_id, db, user)
     _ensure_appointment_available(context["appointment_id"], db, exclude_history_id=history.id)
     data.update(context)
 
