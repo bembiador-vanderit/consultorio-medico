@@ -11,9 +11,10 @@ from app.models.insurance import InsuranceCompany, PatientInsurance
 from app.models.locality import Locality
 from app.models.patient import Patient
 from app.models.prescription import Prescription
+from app.models.vital_signs import VitalSigns
 
 __all__ = [
     "Permission", "Role", "User", "Locality", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
-    "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "Appointment", "FollowUp", "Notification", "CommunicationLog",
+    "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "VitalSigns", "Appointment", "FollowUp", "Notification", "CommunicationLog",
     "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile",
 ]
