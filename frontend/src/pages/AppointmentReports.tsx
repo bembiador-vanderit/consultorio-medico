@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
 import type { Appointment } from "../types/appointment";
+import { sortAppointments, type AppointmentSortKey, type SortDirection } from "../utils/appointmentSort";
 
 type Props = { onBack: () => void };
 const statuses: Record<string, string> = { scheduled: "Programada", confirmed: "Confirmada", completed: "Completada", cancelled: "Cancelada", no_show: "No asistió" };
@@ -25,6 +26,7 @@ export default function AppointmentReports({ onBack }: Props) {
   const [error, setError] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
+  const [sort, setSort] = useState<{ key: AppointmentSortKey; direction: SortDirection }>({ key: "dateTime", direction: "desc" });
 
   async function load() {
     setLoading(true);
@@ -46,7 +48,7 @@ export default function AppointmentReports({ onBack }: Props) {
 
   useEffect(() => { void load(); }, []);
 
-  const filtered = useMemo(() => items.filter((item) => {
+  const filtered = useMemo(() => sortAppointments(items.filter((item) => {
     if (filters.from && item.appointment_date < filters.from) return false;
     if (filters.to && item.appointment_date > filters.to) return false;
     if (filters.status && item.status !== filters.status) return false;
@@ -55,7 +57,7 @@ export default function AppointmentReports({ onBack }: Props) {
     const q = filters.search.trim().toLowerCase();
     if (q && !`${item.patient_name} ${item.doctor_name} ${item.center_name || ""} ${item.reason || ""}`.toLowerCase().includes(q)) return false;
     return true;
-  }).sort((a, b) => `${a.appointment_date} ${a.appointment_time}`.localeCompare(`${b.appointment_date} ${b.appointment_time}`)), [items, filters]);
+  }), sort.key, sort.direction, statuses), [items, filters, sort]);
 
   const summary = useMemo(() => filtered.reduce((acc, item) => {
     acc.total += 1;
@@ -138,6 +140,17 @@ export default function AppointmentReports({ onBack }: Props) {
     setFilters({ from: today, to: today, status: "", search: "", doctorId: "", centerId: "" });
   }
 
+  function toggleSort(key: AppointmentSortKey) {
+    setSort((current) => current.key === key
+      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: "asc" });
+  }
+
+  function sortableHeader(label: string, key: AppointmentSortKey, colSpan?: number) {
+    const active = sort.key === key;
+    return <th colSpan={colSpan} aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"} className="px-4 py-3"><button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 font-semibold hover:text-teal-700 print:text-inherit">{label}<span aria-hidden="true" className="print:hidden">{active ? (sort.direction === "asc" ? "↑" : "↓") : ""}</span></button></th>;
+  }
+
   return <section>
     <div className="print:hidden">
       <button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button>
@@ -159,7 +172,7 @@ export default function AppointmentReports({ onBack }: Props) {
 
     <div className="mt-6 rounded-xl border bg-white shadow-sm print:mt-0 print:border-0 print:shadow-none">
       <div className="hidden border-b pb-4 print:block"><h1 className="text-2xl font-bold">Reporte de citas</h1><p className="text-sm text-slate-600">Periodo: {formatDate(filters.from)} - {formatDate(filters.to)}</p><p className="text-sm text-slate-600">Total de citas: {filtered.length}</p></div>
-      {loading ? <p className="p-6 text-slate-500">Cargando reporte...</p> : error ? <p className="p-6 text-red-700">{error}</p> : filtered.length === 0 ? <p className="p-10 text-center text-slate-500">No hay citas para los filtros seleccionados.</p> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 print:bg-white"><tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Hora</th><th className="px-4 py-3">Paciente</th><th className="px-4 py-3">Médico</th><th className="px-4 py-3">Centro</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3">Motivo</th></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((a) => <tr key={a.id}><td className="px-4 py-3">{formatDate(a.appointment_date)}</td><td className="px-4 py-3">{a.appointment_time.slice(0, 5)}</td><td className="px-4 py-3 font-medium">{a.patient_name}</td><td className="px-4 py-3">{a.doctor_name}</td><td className="px-4 py-3">{a.center_name ? `${a.center_name} (${a.center_city})` : "—"}</td><td className="px-4 py-3">{statuses[a.status] || a.status}</td><td className="px-4 py-3">{a.reason || "—"}</td></tr>)}</tbody></table></div>}
+      {loading ? <p className="p-6 text-slate-500">Cargando reporte...</p> : error ? <p className="p-6 text-red-700">{error}</p> : filtered.length === 0 ? <p className="p-10 text-center text-slate-500">No hay citas para los filtros seleccionados.</p> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 print:bg-white"><tr>{sortableHeader("Fecha / Hora", "dateTime", 2)}{sortableHeader("Paciente", "patient")}{sortableHeader("Médico", "doctor")}{sortableHeader("Centro", "center")}{sortableHeader("Estado", "status")}<th className="px-4 py-3">Motivo</th></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((a) => <tr key={a.id}><td className="px-4 py-3">{formatDate(a.appointment_date)}</td><td className="px-4 py-3">{a.appointment_time.slice(0, 5)}</td><td className="px-4 py-3 font-medium">{a.patient_name}</td><td className="px-4 py-3">{a.doctor_name}</td><td className="px-4 py-3">{a.center_name ? `${a.center_name} (${a.center_city})` : "—"}</td><td className="px-4 py-3">{statuses[a.status] || a.status}</td><td className="px-4 py-3">{a.reason || "—"}</td></tr>)}</tbody></table></div>}
     </div>
   </section>;
 }
