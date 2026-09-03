@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.db import get_db
-from app.models import Appointment, CareCenter, Patient, User
+from app.models import Appointment, CareCenter, ClinicalHistory, Patient, User
 from app.models.doctor_availability import DoctorAvailability
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse, AppointmentScopeOptions
 from app.services.appointment_scope import (
@@ -26,6 +26,7 @@ def response(a: Appointment) -> AppointmentResponse:
         appointment_date=a.appointment_date, appointment_time=a.appointment_time,
         reason=a.reason, status=a.status, notes=a.notes,
         patient_name=f"{a.patient.first_name} {a.patient.last_name}",
+        patient_date_of_birth=a.patient.date_of_birth,
         doctor_name=a.doctor.full_name,
         center_name=a.center.name if a.center else None,
         center_city=a.center.city if a.center else None,
@@ -172,6 +173,11 @@ def list_appointments(
 
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
 def create_appointment(payload: AppointmentCreate, user: User = Depends(access), db: Session = Depends(get_db)):
+    if payload.status == "completed":
+        raise HTTPException(
+            status_code=409,
+            detail="Una cita nueva no puede crearse como completada",
+        )
     if not db.get(Patient, payload.patient_id):
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
@@ -193,6 +199,29 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
     if not appointment: raise HTTPException(status_code=404, detail="Cita no encontrada")
     if not db.get(Patient, payload.patient_id): raise HTTPException(status_code=404, detail="Paciente no encontrado")
     ensure_appointment_access(user, appointment, db)
+    if payload.status == "completed" and appointment.status != "completed":
+        raise HTTPException(
+            status_code=409,
+            detail="La cita debe completarse mediante la finalización de su consulta clínica",
+        )
+    clinical_history = db.scalar(
+        select(ClinicalHistory).where(ClinicalHistory.appointment_id == appointment.id)
+    )
+    if clinical_history is not None:
+        if (
+            payload.patient_id != appointment.patient_id
+            or payload.doctor_id != appointment.doctor_id
+            or payload.center_id != appointment.center_id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="El contexto de una cita con consulta clínica no puede modificarse",
+            )
+        if payload.status in {"cancelled", "no_show"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Una cita con consulta clínica iniciada no puede cancelarse ni marcarse ausente",
+            )
 
     doctor, center = validate_appointment_assignment(
         db, user, payload.doctor_id, payload.center_id, payload.appointment_date
@@ -211,4 +240,6 @@ def delete_appointment(appointment_id: int, user: User = Depends(access), db: Se
     appointment = db.get(Appointment, appointment_id)
     if not appointment: raise HTTPException(status_code=404, detail="Cita no encontrada")
     ensure_appointment_access(user, appointment, db)
+    if db.scalar(select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)) is not None:
+        raise HTTPException(status_code=409, detail="No se puede eliminar una cita con consulta clínica")
     db.delete(appointment); db.commit()

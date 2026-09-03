@@ -95,3 +95,5 @@ El proyecto contiene en Git el código fuente, Dockerfiles, Compose, migraciones
 No se deben incorporar pacientes reales, datos clínicos, contraseñas ni archivos `.env` al repositorio.
 
 Consulta [la arquitectura inicial](docs/architecture.md).
+
+La política implementada para autorización clínica, contexto inmutable, finalización y auditoría está documentada en [Seguridad clínica y ciclo de vida de consulta](docs/clinical-security-lifecycle.md).

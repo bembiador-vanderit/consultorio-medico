@@ -1,6 +1,7 @@
 from app.models.appointment import Appointment
 from app.models.center import CareCenter
 from app.models.clinical_catalog import AnatomicalRegion, DoctorProfile, MedicalStudy, Specialty
+from app.models.clinical_audit import ClinicalAuditLog
 from app.models.clinical_history import ClinicalHistory
 from app.models.diagnosis import Diagnosis
 from app.models.doctor_availability import DoctorAvailability
@@ -17,5 +18,5 @@ from app.models.vital_signs import VitalSigns
 __all__ = [
     "Permission", "Role", "User", "Locality", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
     "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "VitalSigns", "Appointment", "FollowUp", "Notification", "CommunicationLog",
-    "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile", "SecretaryCenterScope",
+    "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile", "SecretaryCenterScope", "ClinicalAuditLog",
 ]

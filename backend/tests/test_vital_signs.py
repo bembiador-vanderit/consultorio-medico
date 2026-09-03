@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 from app.api.routes import vital_signs
 from app.db import get_db
 from app.models.clinical_history import ClinicalHistory
+from app.models.clinical_audit import ClinicalAuditLog
+from app.models.identity import Role, User
 
 
 class FakeDB:
@@ -24,10 +26,15 @@ class FakeDB:
         return self.record
 
     def add(self, record):
+        if isinstance(record, ClinicalAuditLog):
+            return
         self.record = record
         self.added += 1
 
     def commit(self):
+        pass
+
+    def flush(self):
         pass
 
     def refresh(self, record):
@@ -42,7 +49,9 @@ class FakeDB:
 def build_client(db: FakeDB) -> TestClient:
     app = FastAPI()
     app.include_router(vital_signs.router, prefix="/api/v1")
-    app.dependency_overrides[vital_signs.access] = lambda: None
+    app.dependency_overrides[vital_signs.access] = lambda: User(
+        id=1, full_name="Admin", roles=[Role(code="admin", name="Administrador")]
+    )
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app)
 

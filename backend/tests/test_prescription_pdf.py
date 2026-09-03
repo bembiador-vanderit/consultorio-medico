@@ -7,7 +7,7 @@ from app.api.routes import prescriptions
 from app.db import get_db
 from app.models.center import CareCenter
 from app.models.clinical_history import ClinicalHistory
-from app.models.identity import User
+from app.models.identity import Role, User
 from app.models.patient import Patient
 from app.models.prescription import Prescription
 from app.services.clinical_documents import PrescriptionLine, build_prescription_pdf
@@ -66,11 +66,19 @@ class FakeDB:
     def scalars(self, _query):
         return self.prescriptions
 
+    def add(self, _item):
+        pass
+
+    def commit(self):
+        pass
+
 
 def build_client(db: FakeDB) -> TestClient:
     app = FastAPI()
     app.include_router(prescriptions.router, prefix="/api/v1")
-    app.dependency_overrides[prescriptions.access] = lambda: None
+    app.dependency_overrides[prescriptions.access] = lambda: User(
+        id=1, full_name="Admin", roles=[Role(code="admin", name="Administrador")]
+    )
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app)
 
