@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../services/api";
-import type { ClinicalHistory, ClinicalHistoryInput } from "../../types/clinicalHistory";
+import type { ClinicalHistory, ClinicalHistoryInput, RequestedTest } from "../../types/clinicalHistory";
 
 type Props = { patientId: number; patientName: string; onClose: () => void };
-type RequestedTest = { id?: number; test_name: string };
+type Diagnosis = { id: number; description: string; icd10_code: string | null; is_primary: boolean };
+type Prescription = {
+  id: number;
+  medication: string;
+  presentation: string | null;
+  dose: string | null;
+  route: string | null;
+  frequency: string | null;
+  duration: string | null;
+  quantity: number | null;
+  instructions: string | null;
+};
+type ClinicalDetails = { diagnoses: Diagnosis[]; prescriptions: Prescription[]; tests: string[] };
 
 type FollowUpForm = {
   due_at: string;
@@ -72,10 +84,14 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
   const [form, setForm] = useState<ClinicalHistoryInput>(emptyHistory);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isNew, setIsNew] = useState(false);
   const [showTests, setShowTests] = useState(false);
   const [showFullPrevious, setShowFullPrevious] = useState<number | null>(null);
   const [previousTests, setPreviousTests] = useState<Record<number, string[]>>({});
+  const [detailsByHistory, setDetailsByHistory] = useState<Record<number, ClinicalDetails>>({});
+  const [loadingDetailsId, setLoadingDetailsId] = useState<number | null>(null);
+  const [downloadingDocument, setDownloadingDocument] = useState("");
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUp, setFollowUp] = useState<FollowUpForm>(emptyFollowUp);
   const [savingFollowUp, setSavingFollowUp] = useState(false);
@@ -84,11 +100,32 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
   const [followUpError, setFollowUpError] = useState("");
 
   const current = records[index];
-  const positionLabel = useMemo(() => (records.length ? `Consulta ${index + 1} de ${records.length}` : "Nueva consulta"), [index, records.length]);
+  const currentDetails = current ? detailsByHistory[current.id] : undefined;
+  const positionLabel = useMemo(
+    () => (isNew || !records.length ? "Nueva consulta" : `Consulta ${index + 1} de ${records.length}`),
+    [index, isNew, records.length],
+  );
 
   async function loadTests(historyId: number) {
     const { data } = await api.get<RequestedTest[]>(`/clinical-history/${historyId}/requested-tests`);
     return data.map((item) => item.test_name);
+  }
+
+  async function loadClinicalDetails(historyId: number) {
+    setLoadingDetailsId(historyId);
+    try {
+      const [{ data: diagnoses }, { data: prescriptions }, tests] = await Promise.all([
+        api.get<Diagnosis[]>(`/clinical-history/${historyId}/diagnoses`),
+        api.get<Prescription[]>(`/clinical-history/${historyId}/prescriptions`),
+        loadTests(historyId),
+      ]);
+      const details = { diagnoses, prescriptions, tests };
+      setDetailsByHistory((currentDetails) => ({ ...currentDetails, [historyId]: details }));
+      setPreviousTests((currentTests) => ({ ...currentTests, [historyId]: tests }));
+      return details;
+    } finally {
+      setLoadingDetailsId((currentId) => currentId === historyId ? null : currentId);
+    }
   }
 
   async function load() {
@@ -96,12 +133,19 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
       const { data } = await api.get<ClinicalHistory[]>(`/clinical-history/patients/${patientId}`);
       setRecords(data);
       if (data.length) {
-        const tests = await loadTests(data[0].id);
+        const initialTests = data[0].requested_tests.map((item) => item.test_name);
         setIndex(0);
-        setForm({ ...data[0], requested_tests: tests.join("\n") });
+        setForm({ ...data[0], requested_tests: initialTests.join("\n") });
         setIsNew(false);
-        setShowTests(Boolean(tests.length));
-        setPreviousTests({ [data[0].id]: tests });
+        setHasUnsavedChanges(false);
+        setShowTests(Boolean(initialTests.length));
+        setPreviousTests({ [data[0].id]: initialTests });
+        try {
+          const { tests } = await loadClinicalDetails(data[0].id);
+          setForm({ ...data[0], requested_tests: tests.join("\n") });
+        } catch (err: any) {
+          setError(err?.response?.data?.detail || "La historia se cargó, pero no fue posible obtener diagnósticos y recetas.");
+        }
       } else {
         setForm(emptyHistory());
         setIsNew(true);
@@ -117,43 +161,64 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
 
   async function showRecord(nextIndex: number) {
     const record = records[nextIndex];
-    const tests = await loadTests(record.id);
+    const initialTests = record.requested_tests.map((item) => item.test_name);
     setIndex(nextIndex);
-    setForm({ ...record, requested_tests: tests.join("\n") });
+    setForm({ ...record, requested_tests: initialTests.join("\n") });
     setIsNew(false);
-    setShowTests(Boolean(tests.length));
+    setHasUnsavedChanges(false);
+    setShowTests(Boolean(initialTests.length));
     setMessage("");
     setError("");
+    try {
+      const { tests } = detailsByHistory[record.id] || await loadClinicalDetails(record.id);
+      setForm({ ...record, requested_tests: tests.join("\n") });
+      setShowTests(Boolean(tests.length));
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "La consulta se cargó, pero no fue posible obtener diagnósticos y recetas.");
+    }
   }
 
   function newConsultation() {
     setForm(emptyHistory());
     setIsNew(true);
+    setHasUnsavedChanges(false);
     setShowTests(false);
     setMessage("");
     setError("");
   }
 
-  async function loadPreviousTests(historyId: number) {
-    if (previousTests[historyId]) return previousTests[historyId];
-    try {
-      const tests = await loadTests(historyId);
-      setPreviousTests((currentTests) => ({ ...currentTests, [historyId]: tests }));
-      return tests;
-    } catch { return []; }
-  }
-
   async function openPreviousRecord(historyId: number) {
-    await loadPreviousTests(historyId);
-    setShowFullPrevious((currentValue) => (currentValue === historyId ? null : historyId));
+    if (showFullPrevious === historyId) {
+      setShowFullPrevious(null);
+      return;
+    }
+    try {
+      if (!detailsByHistory[historyId]) await loadClinicalDetails(historyId);
+      setShowFullPrevious(historyId);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "No fue posible cargar el detalle de la consulta.");
+    }
   }
 
   async function syncTests(historyId: number) {
     const { data } = await api.get<RequestedTest[]>(`/clinical-history/${historyId}/requested-tests`);
     for (const item of data) if (item.id) await api.delete(`/clinical-history/requested-tests/${item.id}`);
     const tests = (form.requested_tests || "").split("\n").map((value) => value.trim()).filter(Boolean);
-    for (const test_name of tests) await api.post(`/clinical-history/${historyId}/requested-tests`, { test_name });
+    const savedTests: RequestedTest[] = [];
+    for (const test_name of tests) {
+      const { data: savedTest } = await api.post<RequestedTest>(`/clinical-history/${historyId}/requested-tests`, { test_name });
+      savedTests.push(savedTest);
+    }
     setPreviousTests((currentTests) => ({ ...currentTests, [historyId]: tests }));
+    setDetailsByHistory((currentDetails) => ({
+      ...currentDetails,
+      [historyId]: {
+        diagnoses: currentDetails[historyId]?.diagnoses || [],
+        prescriptions: currentDetails[historyId]?.prescriptions || [],
+        tests,
+      },
+    }));
+    return savedTests;
   }
 
   async function save() {
@@ -169,13 +234,15 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
         const { data } = await api.put<ClinicalHistory>(`/clinical-history/${current.id}`, historyPayload);
         saved = data;
       } else return;
-      await syncTests(saved.id);
+      const savedTests = await syncTests(saved.id);
+      saved = { ...saved, requested_tests: savedTests };
       const nextRecords = (isNew ? [saved, ...records] : records.map((record) => record.id === saved.id ? saved : record))
         .sort((a, b) => b.consultation_date.localeCompare(a.consultation_date) || b.id - a.id);
       setRecords(nextRecords);
       setIndex(nextRecords.findIndex((record) => record.id === saved.id));
       setForm({ ...saved, requested_tests: form.requested_tests || "" });
       setIsNew(false);
+      setHasUnsavedChanges(false);
       setMessage("Historia clínica y análisis/pruebas guardados correctamente.");
     } catch (err: any) {
       setError(err?.response?.data?.detail || "No fue posible guardar la historia clínica.");
@@ -214,14 +281,35 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
     } finally { setSavingFollowUp(false); }
   }
 
-  function printTests() {
-    const items = (form.requested_tests || "").split("\n").map((value) => value.trim()).filter(Boolean);
-    if (!items.length) return;
-    const popup = window.open("", "_blank", "width=800,height=900");
-    if (!popup) return;
-    const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
-    popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Orden de análisis y pruebas</title><style>body{font-family:Arial,sans-serif;margin:48px;color:#111}h1{font-size:22px}.muted{color:#555;font-size:13px}.item{padding:10px 0;border-bottom:1px solid #ddd}footer{margin-top:70px;color:#666;font-size:12px}</style></head><body><h1>Orden de análisis y pruebas</h1><p class="muted"><strong>Paciente:</strong> ${escape(patientName)}</p><p class="muted"><strong>Fecha de consulta:</strong> ${escape(formatDate(form.consultation_date))}</p><hr/>${items.map((item) => `<div class="item">☐ ${escape(item)}</div>`).join("")}<footer>Documento emitido por el médico tratante.</footer><script>window.onload=()=>window.print()</script></body></html>`);
-    popup.document.close();
+  async function downloadPdf(historyId: number, kind: "summary" | "prescription" | "tests") {
+    const documentKey = `${historyId}:${kind}`;
+    const endpoints = {
+      summary: `/clinical-history/${historyId}/summary/pdf`,
+      prescription: `/clinical-history/${historyId}/prescriptions/pdf`,
+      tests: `/clinical-history/${historyId}/requested-tests/pdf`,
+    };
+    const filenames = {
+      summary: `resumen-consulta-${historyId}.pdf`,
+      prescription: `receta-${historyId}.pdf`,
+      tests: `orden-estudios-${historyId}.pdf`,
+    };
+    setDownloadingDocument(documentKey);
+    setError("");
+    try {
+      const response = await api.get<Blob>(endpoints[kind], { responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filenames[kind];
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "No fue posible descargar el documento clínico.");
+    } finally {
+      setDownloadingDocument("");
+    }
   }
 
   const previousRecords = records.filter((record) => record.id !== current?.id).slice(0, 6);
@@ -239,7 +327,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
             <section className="min-w-0 space-y-5">
               <div className="rounded-xl border bg-slate-50 p-4">
                 <div className="flex flex-wrap items-end justify-between gap-4">
-                  <div><label className="mb-1 block text-sm font-medium">Fecha de la consulta</label><input type="date" value={form.consultation_date} onChange={(event) => setForm({ ...form, consultation_date: event.target.value })} className="rounded-lg border px-3 py-2" /><p className="mt-1 text-xs text-slate-500">{positionLabel}</p></div>
+                  <div><label className="mb-1 block text-sm font-medium">Fecha de la consulta</label><input type="date" value={form.consultation_date} onChange={(event) => { setForm({ ...form, consultation_date: event.target.value }); setHasUnsavedChanges(true); }} className="rounded-lg border px-3 py-2" /><p className="mt-1 text-xs text-slate-500">{positionLabel}</p></div>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => void showRecord(index + 1)} disabled={isNew || index >= records.length - 1} className="rounded-lg border px-4 py-2 disabled:opacity-40">← Anterior</button>
                     <button type="button" onClick={() => void showRecord(index - 1)} disabled={isNew || index <= 0} className="rounded-lg border px-4 py-2 disabled:opacity-40">Siguiente →</button>
@@ -249,11 +337,16 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
                 </div>
               </div>
 
-              {fields.map(([name, label]) => <label key={name} className="block"><span className="mb-1 block text-sm font-medium">{label}</span><textarea value={form[name] ?? ""} onChange={(event) => setForm({ ...form, [name]: event.target.value })} rows={3} className="w-full rounded-lg border px-3 py-2" /></label>)}
+              {fields.map(([name, label]) => <label key={name} className="block"><span className="mb-1 block text-sm font-medium">{label}</span><textarea value={form[name] ?? ""} onChange={(event) => { setForm({ ...form, [name]: event.target.value }); setHasUnsavedChanges(true); }} rows={3} className="w-full rounded-lg border px-3 py-2" /></label>)}
+
+              {!isNew && current && <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-semibold text-teal-950">Contenido clínico vinculado</h4><p className="text-xs text-teal-700">Diagnósticos, receta y documentos de esta consulta.</p>{hasUnsavedChanges && <p className="mt-1 text-xs font-medium text-amber-700">Guarda los cambios antes de generar documentos.</p>}</div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void downloadPdf(current.id, "summary")} disabled={hasUnsavedChanges || Boolean(downloadingDocument)} className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">{downloadingDocument === `${current.id}:summary` ? "Generando..." : "Resumen PDF"}</button><button type="button" onClick={() => void downloadPdf(current.id, "prescription")} disabled={hasUnsavedChanges || !currentDetails?.prescriptions.length || Boolean(downloadingDocument)} className="rounded-lg border border-teal-300 bg-white px-3 py-2 text-sm font-medium text-teal-800 disabled:opacity-40">{downloadingDocument === `${current.id}:prescription` ? "Generando..." : "Receta PDF"}</button></div></div>
+                {loadingDetailsId === current.id ? <p className="mt-4 text-sm text-slate-500">Cargando contenido clínico...</p> : <div className="mt-4 grid gap-4 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Diagnósticos</p>{currentDetails?.diagnoses.length ? <div className="mt-2 space-y-2">{currentDetails.diagnoses.map((item) => <div key={item.id} className="rounded-lg border bg-white p-3 text-sm"><p className="font-medium">{item.description}{item.is_primary && <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-800">Principal</span>}</p>{item.icd10_code && <p className="mt-1 text-xs text-slate-500">CIE-10: {item.icd10_code}</p>}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin diagnósticos registrados.</p>}</div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Medicamentos recetados</p>{currentDetails?.prescriptions.length ? <div className="mt-2 space-y-2">{currentDetails.prescriptions.map((item) => <div key={item.id} className="rounded-lg border bg-white p-3 text-sm"><p className="font-medium">{item.medication}{item.presentation ? ` · ${item.presentation}` : ""}</p><p className="mt-1 text-xs text-slate-600">{[item.dose, item.route, item.frequency, item.duration].filter(Boolean).join(" · ") || "Pauta no especificada"}</p>{item.quantity && <p className="mt-1 text-xs text-slate-500">Cantidad: {item.quantity}</p>}{item.instructions && <p className="mt-1 text-xs text-slate-500">{item.instructions}</p>}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin medicamentos recetados.</p>}</div></div>}
+              </div>}
 
               <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-semibold text-indigo-900">Análisis y pruebas indicadas</h4><p className="text-xs text-indigo-700">Opcional y asociado a esta consulta.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setShowTests((value) => !value)} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-800">{showTests ? "Ocultar" : "Agregar análisis / pruebas"}</button><button type="button" onClick={printTests} disabled={!form.requested_tests?.trim()} className="rounded-lg bg-indigo-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">🖨️ Imprimir orden</button></div></div>
-                {showTests && <label className="mt-4 block"><span className="mb-1 block text-sm font-medium">Un análisis o prueba por línea</span><textarea value={form.requested_tests ?? ""} onChange={(event) => setForm({ ...form, requested_tests: event.target.value })} rows={7} placeholder={'Hemograma\nGlucosa en sangre\nPerfil lipídico\nRadiografía de tórax'} className="w-full rounded-lg border bg-white px-3 py-2" /></label>}
+                <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-semibold text-indigo-900">Análisis y pruebas indicadas</h4><p className="text-xs text-indigo-700">Opcional y asociado a esta consulta.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setShowTests((value) => !value)} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-800">{showTests ? "Ocultar" : "Agregar análisis / pruebas"}</button><button type="button" onClick={() => current && void downloadPdf(current.id, "tests")} disabled={hasUnsavedChanges || isNew || !current || !form.requested_tests?.trim() || Boolean(downloadingDocument)} className="rounded-lg bg-indigo-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">{current && downloadingDocument === `${current.id}:tests` ? "Generando PDF..." : "Descargar orden PDF"}</button></div></div>
+                {showTests && <label className="mt-4 block"><span className="mb-1 block text-sm font-medium">Un análisis o prueba por línea</span><textarea value={form.requested_tests ?? ""} onChange={(event) => { setForm({ ...form, requested_tests: event.target.value }); setHasUnsavedChanges(true); }} rows={7} placeholder={'Hemograma\nGlucosa en sangre\nPerfil lipídico\nRadiografía de tórax'} className="w-full rounded-lg border bg-white px-3 py-2" /></label>}
               </div>
 
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
@@ -261,9 +354,28 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
               <div className="flex justify-end gap-3 border-t pt-5"><button onClick={onClose} className="rounded-lg border px-5 py-2">Cerrar</button><button onClick={() => void save()} disabled={saving} className="rounded-lg bg-teal-700 px-5 py-2 text-white disabled:opacity-50">{saving ? "Guardando..." : isNew ? "Guardar consulta" : "Guardar cambios"}</button></div>
             </section>
 
-            <aside className="lg:sticky lg:top-20 lg:self-start"><div className="rounded-xl border bg-slate-50 p-4"><div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold">Consultas anteriores</h4><p className="text-xs text-slate-500">Historial reciente del paciente</p></div><span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{previousRecords.length}</span></div>
-              {previousRecords.length === 0 ? <p className="mt-4 rounded-lg border border-dashed bg-white p-4 text-sm text-slate-500">No hay consultas anteriores para mostrar.</p> : <div className="mt-4 space-y-3">{previousRecords.map((record) => { const tests = previousTests[record.id] || []; const isExpanded = showFullPrevious === record.id; return <article key={record.id} className="rounded-lg border bg-white p-3 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{formatDate(record.consultation_date)}</p><p className="mt-1 font-medium text-slate-900">{historySummary(record)}</p></div><button type="button" onClick={() => void openPreviousRecord(record.id)} className="shrink-0 text-xs font-semibold text-indigo-700 hover:underline">{isExpanded ? "Ocultar" : "Ver completa"}</button></div><div className="mt-2 space-y-1 text-xs text-slate-600">{record.chronic_conditions && <p><strong>Crónicas:</strong> {record.chronic_conditions}</p>}{record.allergies && <p><strong>Alergias:</strong> {record.allergies}</p>}{record.current_medications && <p><strong>Medicamentos:</strong> {record.current_medications}</p>}{tests.length > 0 && <p><strong>Pruebas:</strong> {tests.length}</p>}</div>{isExpanded && <div className="mt-3 space-y-2 border-t pt-3 text-xs text-slate-700">{record.current_illness && <p><strong>Enfermedad actual:</strong> {record.current_illness}</p>}{record.personal_history && <p><strong>Antecedentes personales:</strong> {record.personal_history}</p>}{record.family_history && <p><strong>Antecedentes familiares:</strong> {record.family_history}</p>}{record.previous_surgeries && <p><strong>Cirugías:</strong> {record.previous_surgeries}</p>}{record.habits && <p><strong>Hábitos:</strong> {record.habits}</p>}{record.clinical_notes && <p><strong>Observaciones:</strong> {record.clinical_notes}</p>}{tests.length > 0 && <div><p className="font-semibold">Análisis/pruebas:</p><ul className="mt-1 list-disc pl-4">{tests.map((test) => <li key={test}>{test}</li>)}</ul></div>}</div>}</article>; })}</div>}
-            </div></aside>
+            <aside className="lg:sticky lg:top-20 lg:self-start">
+              <div className="rounded-xl border bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold">Consultas anteriores</h4><p className="text-xs text-slate-500">Historial clínico reciente del paciente</p></div><span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{previousRecords.length}</span></div>
+                {previousRecords.length === 0 ? <p className="mt-4 rounded-lg border border-dashed bg-white p-4 text-sm text-slate-500">No hay consultas anteriores para mostrar.</p> : <div className="mt-4 space-y-3">{previousRecords.map((record) => {
+                  const details = detailsByHistory[record.id];
+                  const tests = details?.tests || previousTests[record.id] || [];
+                  const isExpanded = showFullPrevious === record.id;
+                  const isLoading = loadingDetailsId === record.id;
+                  return <article key={record.id} className="rounded-lg border bg-white p-3 shadow-sm">
+                    <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{formatDate(record.consultation_date)}</p><p className="mt-1 font-medium text-slate-900">{historySummary(record)}</p>{record.appointment_id && <p className="mt-1 text-xs text-slate-400">Cita #{record.appointment_id}</p>}</div><button type="button" onClick={() => void openPreviousRecord(record.id)} disabled={isLoading} className="shrink-0 text-xs font-semibold text-indigo-700 hover:underline disabled:opacity-40">{isLoading ? "Cargando..." : isExpanded ? "Ocultar" : "Ver completa"}</button></div>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-600">{record.chronic_conditions && <span className="rounded-full bg-slate-100 px-2 py-1">Condición crónica</span>}{record.allergies && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-800">Alergias</span>}{details?.diagnoses.length ? <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-800">{details.diagnoses.length} diagnóstico{details.diagnoses.length === 1 ? "" : "s"}</span> : null}{details?.prescriptions.length ? <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-800">{details.prescriptions.length} medicamento{details.prescriptions.length === 1 ? "" : "s"}</span> : null}{tests.length > 0 && <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-800">{tests.length} estudio{tests.length === 1 ? "" : "s"}</span>}</div>
+                    {isExpanded && details && <div className="mt-3 space-y-3 border-t pt-3 text-xs text-slate-700">
+                      {record.current_illness && <p><strong>Enfermedad actual:</strong> {record.current_illness}</p>}{record.personal_history && <p><strong>Antecedentes personales:</strong> {record.personal_history}</p>}{record.family_history && <p><strong>Antecedentes familiares:</strong> {record.family_history}</p>}{record.previous_surgeries && <p><strong>Cirugías:</strong> {record.previous_surgeries}</p>}{record.habits && <p><strong>Hábitos:</strong> {record.habits}</p>}{record.clinical_notes && <p><strong>Observaciones:</strong> {record.clinical_notes}</p>}
+                      <div><p className="font-semibold">Diagnósticos:</p>{details.diagnoses.length ? <ul className="mt-1 list-disc pl-4">{details.diagnoses.map((item) => <li key={item.id}>{item.description}{item.icd10_code ? ` · CIE-10 ${item.icd10_code}` : ""}{item.is_primary ? " · Principal" : ""}</li>)}</ul> : <p className="mt-1 text-slate-500">Sin diagnósticos.</p>}</div>
+                      <div><p className="font-semibold">Receta:</p>{details.prescriptions.length ? <ul className="mt-1 list-disc pl-4">{details.prescriptions.map((item) => <li key={item.id}>{item.medication}{item.presentation ? ` · ${item.presentation}` : ""}{item.dose ? ` · ${item.dose}` : ""}</li>)}</ul> : <p className="mt-1 text-slate-500">Sin medicamentos.</p>}</div>
+                      {tests.length > 0 && <div><p className="font-semibold">Estudios/análisis:</p><ul className="mt-1 list-disc pl-4">{tests.map((test) => <li key={test}>{test}</li>)}</ul></div>}
+                      <div className="flex flex-wrap gap-2 pt-1"><button type="button" onClick={() => void downloadPdf(record.id, "summary")} disabled={Boolean(downloadingDocument)} className="rounded-md bg-teal-700 px-2.5 py-1.5 font-medium text-white disabled:opacity-40">{downloadingDocument === `${record.id}:summary` ? "Generando..." : "Resumen PDF"}</button><button type="button" onClick={() => void downloadPdf(record.id, "prescription")} disabled={!details.prescriptions.length || Boolean(downloadingDocument)} className="rounded-md border border-blue-200 px-2.5 py-1.5 font-medium text-blue-700 disabled:opacity-40">Receta PDF</button><button type="button" onClick={() => void downloadPdf(record.id, "tests")} disabled={!tests.length || Boolean(downloadingDocument)} className="rounded-md border border-indigo-200 px-2.5 py-1.5 font-medium text-indigo-700 disabled:opacity-40">Orden PDF</button></div>
+                    </div>}
+                  </article>;
+                })}</div>}
+              </div>
+            </aside>
           </div>
         )}
 
