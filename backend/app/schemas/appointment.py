@@ -5,6 +5,7 @@ class AppointmentBase(BaseModel):
     patient_id: int
     doctor_id: int | None = None
     center_id: int | None = None
+    specialty_id: int | None = Field(default=None, gt=0)
     appointment_date: date
     appointment_time: time
     reason: str | None = Field(default=None, max_length=5000)
@@ -18,6 +19,8 @@ class AppointmentResponse(AppointmentBase):
     id: int
     doctor_id: int
     center_id: int | None
+    specialty_id: int | None
+    specialty_name: str
     patient_name: str
     patient_date_of_birth: date
     doctor_name: str
@@ -42,6 +45,12 @@ class AppointmentScopeDoctor(BaseModel):
     id: int
     full_name: str
     center_ids: list[int]
+    specialties: list["AppointmentScopeSpecialty"]
+
+
+class AppointmentScopeSpecialty(BaseModel):
+    id: int
+    name: str
 
 
 class AppointmentScopeOptions(BaseModel):

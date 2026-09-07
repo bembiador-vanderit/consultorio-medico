@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 
@@ -26,6 +26,9 @@ class ClinicalHistory(Base):
     center_id: Mapped[int | None] = mapped_column(
         ForeignKey("care_centers.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    specialty_id: Mapped[int | None] = mapped_column(
+        ForeignKey("specialties.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     consultation_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), default="in_progress", nullable=False, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -44,3 +47,19 @@ class ClinicalHistory(Base):
     clinical_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    specialty = relationship("Specialty")
+    doctor = relationship("User", foreign_keys=[doctor_id])
+    center = relationship("CareCenter")
+
+    @property
+    def specialty_name(self) -> str:
+        return self.specialty.name if self.specialty else "No especificada (registro histórico)"
+
+    @property
+    def doctor_name(self) -> str | None:
+        return self.doctor.full_name if self.doctor else None
+
+    @property
+    def center_name(self) -> str | None:
+        return self.center.name if self.center else None

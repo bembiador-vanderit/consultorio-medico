@@ -1,9 +1,17 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+
+doctor_specialties = Table(
+    "doctor_specialties",
+    Base.metadata,
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("specialty_id", ForeignKey("specialties.id", ondelete="RESTRICT"), primary_key=True),
+)
 
 
 class Specialty(Base):
@@ -51,5 +59,5 @@ class DoctorProfile(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
     specialty_id: Mapped[int] = mapped_column(ForeignKey("specialties.id", ondelete="RESTRICT"), index=True)
 
-    user = relationship("User")
+    user = relationship("User", back_populates="doctor_profile")
     specialty: Mapped[Specialty] = relationship()

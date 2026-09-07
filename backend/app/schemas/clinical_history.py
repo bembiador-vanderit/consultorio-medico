@@ -39,6 +39,10 @@ class ClinicalHistoryResponse(ClinicalHistoryBase):
     appointment_id: int | None = None
     doctor_id: int | None = None
     center_id: int | None = None
+    specialty_id: int | None
+    specialty_name: str
+    doctor_name: str | None = None
+    center_name: str | None = None
     status: Literal["in_progress", "completed"]
     completed_at: datetime | None = None
     completed_by_id: int | None = None

@@ -16,6 +16,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     roles: Mapped[list["Role"]] = relationship(secondary=user_roles, back_populates="users")
     centers: Mapped[list["CareCenter"]] = relationship(secondary="user_centers", back_populates="users")
+    specialties: Mapped[list["Specialty"]] = relationship(secondary="doctor_specialties")
+    doctor_profile = relationship("DoctorProfile", back_populates="user", uselist=False)
 
 class Role(Base):
     __tablename__ = "roles"

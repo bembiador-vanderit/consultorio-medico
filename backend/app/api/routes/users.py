@@ -16,8 +16,10 @@ from app.schemas.user import (
     UserProfileUpdate,
     UserRolesUpdate,
     UserStatusUpdate,
+    UserSpecialtiesUpdate,
 )
 from app.services.appointment_scope import remove_center_membership_from_scopes
+from app.services.clinical_specialties import set_doctor_specialties
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
 manage = require_permission("users:manage")
@@ -74,6 +76,9 @@ def serialize(user: User, db: Session) -> UserAdminResponse:
             }
             for scope in secretary_scopes
         ],
+        primary_specialty_id=user.doctor_profile.specialty_id if user.doctor_profile else None,
+        specialty_ids=[specialty.id for specialty in sorted(user.specialties, key=lambda item: (item.name.lower(), item.id))],
+        specialty_names=[specialty.name for specialty in sorted(user.specialties, key=lambda item: (item.name.lower(), item.id))],
     )
 
 
@@ -108,6 +113,11 @@ def create_user(payload: UserCreate, _: User = Depends(manage), db: Session = De
         raise HTTPException(status_code=409, detail="El correo ya está registrado")
     roles = validate_roles(db, payload.role_codes)
     validate_password_strength(payload.password)
+    is_doctor = any(role.code == "doctor" for role in roles)
+    if is_doctor and (payload.primary_specialty_id is None or not payload.specialty_ids):
+        raise HTTPException(status_code=422, detail="Un médico debe tener una especialidad principal")
+    if not is_doctor and (payload.primary_specialty_id is not None or payload.specialty_ids):
+        raise HTTPException(status_code=422, detail="Solo un médico puede tener especialidades")
     user = User(
         email=email,
         full_name=full_name,
@@ -115,6 +125,9 @@ def create_user(payload: UserCreate, _: User = Depends(manage), db: Session = De
         roles=roles,
     )
     db.add(user)
+    db.flush()
+    if is_doctor:
+        set_doctor_specialties(db, user, payload.primary_specialty_id, payload.specialty_ids)
     db.commit()
     db.refresh(user)
     return serialize(user, db)
@@ -174,7 +187,23 @@ def update_user_roles(user_id: int, payload: UserRolesUpdate, admin: User = Depe
     removing_secretary = is_role(user, "secretary") and not any(role.code == "secretary" for role in roles)
     if removing_secretary:
         delete_secretary_scopes(db, user.id)
+    removing_doctor = is_role(user, "doctor") and not any(role.code == "doctor" for role in roles)
+    if removing_doctor:
+        user.specialties = []
+        if user.doctor_profile:
+            db.delete(user.doctor_profile)
     user.roles = roles
+    db.commit()
+    db.refresh(user)
+    return serialize(user, db)
+
+
+@router.put("/{user_id}/specialties", response_model=UserAdminResponse)
+def update_user_specialties(user_id: int, payload: UserSpecialtiesUpdate, _: User = Depends(manage), db: Session = Depends(get_db)):
+    user = require_user(db, user_id)
+    if not is_role(user, "doctor"):
+        raise HTTPException(status_code=422, detail="El usuario debe tener el rol de médico")
+    set_doctor_specialties(db, user, payload.primary_specialty_id, payload.specialty_ids)
     db.commit()
     db.refresh(user)
     return serialize(user, db)

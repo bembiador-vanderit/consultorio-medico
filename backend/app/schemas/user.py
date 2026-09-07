@@ -36,6 +36,11 @@ class UserRolesUpdate(BaseModel):
     role_codes: list[str] = Field(min_length=1)
 
 
+class UserSpecialtiesUpdate(BaseModel):
+    primary_specialty_id: int = Field(gt=0)
+    specialty_ids: list[int] = Field(min_length=1)
+
+
 class UserCentersUpdate(BaseModel):
     center_ids: list[int]
     primary_center_id: int | None = None

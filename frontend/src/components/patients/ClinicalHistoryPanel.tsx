@@ -128,6 +128,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [followUpError, setFollowUpError] = useState("");
+  const [specialtyFilter, setSpecialtyFilter] = useState("");
 
   const current = records[index];
   const currentDetails = current ? detailsByHistory[current.id] : undefined;
@@ -334,7 +335,11 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
     }
   }
 
-  const previousRecords = records.filter((record) => record.id !== current?.id).slice(0, 6);
+  const historySpecialties = Array.from(new Map(records.map((record) => [record.specialty_id, record.specialty_name])).entries());
+  const previousRecords = records
+    .filter((record) => record.id !== current?.id)
+    .filter((record) => !specialtyFilter || record.specialty_id === Number(specialtyFilter))
+    .slice(0, 6);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
@@ -349,7 +354,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
             <section className="min-w-0 space-y-5">
               <div className="rounded-xl border bg-slate-50 p-4">
                 <div className="flex flex-wrap items-end justify-between gap-4">
-                  <div><label className="mb-1 block text-sm font-medium">Fecha de la consulta</label><input type="date" value={form.consultation_date} disabled={isNew || current?.status === "completed"} onChange={(event) => { setForm({ ...form, consultation_date: event.target.value }); setHasUnsavedChanges(true); }} className="rounded-lg border px-3 py-2 disabled:bg-slate-100" /><p className="mt-1 text-xs text-slate-500">{positionLabel}{current?.status === "completed" ? " · Finalizada" : ""}</p></div>
+                  <div><label className="mb-1 block text-sm font-medium">Fecha de la consulta</label><input type="date" value={form.consultation_date} disabled={isNew || current?.status === "completed"} onChange={(event) => { setForm({ ...form, consultation_date: event.target.value }); setHasUnsavedChanges(true); }} className="rounded-lg border px-3 py-2 disabled:bg-slate-100" /><p className="mt-1 text-xs text-slate-500">{positionLabel}{current?.status === "completed" ? " · Finalizada" : ""}</p>{current && <p className="mt-1 text-xs font-medium text-teal-700">{current.specialty_name} · {current.doctor_name ?? "Médico no disponible"} · {current.center_name ?? "Centro no disponible"}</p>}</div>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => void showRecord(index + 1)} disabled={isNew || index >= records.length - 1} className="rounded-lg border px-4 py-2 disabled:opacity-40">← Anterior</button>
                     <button type="button" onClick={() => void showRecord(index - 1)} disabled={isNew || index <= 0} className="rounded-lg border px-4 py-2 disabled:opacity-40">Siguiente →</button>
@@ -378,7 +383,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
 
             <aside className="lg:sticky lg:top-20 lg:self-start">
               <div className="rounded-xl border bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold">Consultas anteriores</h4><p className="text-xs text-slate-500">Historial clínico reciente del paciente</p></div><span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{previousRecords.length}</span></div>
+                <div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold">Consultas anteriores</h4><p className="text-xs text-slate-500">Historial clínico reciente del paciente</p></div><span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{previousRecords.length}</span></div>{historySpecialties.length > 1 && <label className="mt-3 block text-xs font-medium text-slate-600">Filtrar por especialidad<select value={specialtyFilter} onChange={(event) => setSpecialtyFilter(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 text-sm"><option value="">Todas</option>{historySpecialties.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>}
                 {previousRecords.length === 0 ? <p className="mt-4 rounded-lg border border-dashed bg-white p-4 text-sm text-slate-500">No hay consultas anteriores para mostrar.</p> : <div className="mt-4 space-y-3">{previousRecords.map((record) => {
                   const details = detailsByHistory[record.id];
                   const tests = details?.tests || previousTests[record.id] || [];
@@ -386,7 +391,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
                   const isExpanded = showFullPrevious === record.id;
                   const isLoading = loadingDetailsId === record.id;
                   return <article key={record.id} className="rounded-lg border bg-white p-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{formatDate(record.consultation_date)}</p><p className="mt-1 font-medium text-slate-900">{historySummary(record)}</p>{record.appointment_id && <p className="mt-1 text-xs text-slate-400">Cita #{record.appointment_id}</p>}</div><button type="button" onClick={() => void openPreviousRecord(record.id)} disabled={isLoading} className="shrink-0 text-xs font-semibold text-indigo-700 hover:underline disabled:opacity-40">{isLoading ? "Cargando..." : isExpanded ? "Ocultar" : "Ver completa"}</button></div>
+                    <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{formatDate(record.consultation_date)}</p><p className="mt-1 text-xs font-medium text-slate-600">{record.specialty_name} · {record.doctor_name ?? "Médico no disponible"} · {record.center_name ?? "Centro no disponible"}</p><p className="mt-1 font-medium text-slate-900">{historySummary(record)}</p>{record.appointment_id && <p className="mt-1 text-xs text-slate-400">Cita #{record.appointment_id}</p>}</div><button type="button" onClick={() => void openPreviousRecord(record.id)} disabled={isLoading} className="shrink-0 text-xs font-semibold text-indigo-700 hover:underline disabled:opacity-40">{isLoading ? "Cargando..." : isExpanded ? "Ocultar" : "Ver completa"}</button></div>
                     <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-600">{record.chronic_conditions && <span className="rounded-full bg-slate-100 px-2 py-1">Condición crónica</span>}{record.allergies && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-800">Alergias</span>}{vitalItems.length > 0 && <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">Signos vitales</span>}{details?.diagnoses.length ? <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-800">{details.diagnoses.length} diagnóstico{details.diagnoses.length === 1 ? "" : "s"}</span> : null}{details?.prescriptions.length ? <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-800">{details.prescriptions.length} medicamento{details.prescriptions.length === 1 ? "" : "s"}</span> : null}{tests.length > 0 && <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-800">{tests.length} estudio{tests.length === 1 ? "" : "s"}</span>}</div>
                     {isExpanded && details && <div className="mt-3 space-y-3 border-t pt-3 text-xs text-slate-700">
                       {record.current_illness && <p><strong>Enfermedad actual:</strong> {record.current_illness}</p>}{record.personal_history && <p><strong>Antecedentes personales:</strong> {record.personal_history}</p>}{record.family_history && <p><strong>Antecedentes familiares:</strong> {record.family_history}</p>}{record.previous_surgeries && <p><strong>Cirugías:</strong> {record.previous_surgeries}</p>}{record.habits && <p><strong>Hábitos:</strong> {record.habits}</p>}{record.clinical_notes && <p><strong>Observaciones:</strong> {record.clinical_notes}</p>}
