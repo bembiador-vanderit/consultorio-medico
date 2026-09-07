@@ -1,9 +1,10 @@
 @import "tailwindcss";
+@import "./styles/design-tokens.css";
 
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #0f172a;
-  background: #f8fafc;
+  font-family: var(--font-family-base);
+  color: var(--atlas-text-primary);
+  background: var(--atlas-background);
 }
 
 body {
