@@ -11,20 +11,10 @@ from app.models import Appointment, AppointmentCoverageTransfer, CareCenter, Cli
 from app.schemas.clinical_coverage import ClinicalCoverageCreate, ClinicalCoverageResponse, EligibleSubstituteResponse
 from app.services.appointment_scope import is_role
 from app.services.clinical_access import add_clinical_audit
+from app.services.clinical_coverage import appointment_is_within_coverage, coverage_status, installation_now
 
 router = APIRouter(prefix="/clinical-coverages", tags=["Cobertura clínica"])
 access = require_permission("clinical:access")
-
-
-def coverage_status(coverage: ClinicalCoverage, now: datetime | None = None) -> str:
-    now = now or datetime.utcnow()
-    if coverage.revoked_at is not None:
-        return "revoked"
-    if now < coverage.starts_at:
-        return "future"
-    if now >= coverage.ends_at:
-        return "expired"
-    return "active"
 
 
 def serialize(coverage: ClinicalCoverage) -> ClinicalCoverageResponse:
@@ -112,7 +102,7 @@ def revoke_coverage(coverage_id: int, user: User = Depends(access), db: Session 
     if coverage.principal_doctor_id != user.id:
         raise HTTPException(status_code=403, detail="Solo el médico principal puede revocar esta cobertura")
     if coverage.revoked_at is None:
-        coverage.revoked_at = datetime.utcnow()
+        coverage.revoked_at = installation_now()
         transfers = list(db.scalars(
             select(AppointmentCoverageTransfer).where(
                 AppointmentCoverageTransfer.coverage_id == coverage.id
@@ -179,7 +169,7 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
     if db.scalar(select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)) is not None:
         raise HTTPException(status_code=409, detail="Una cita con consulta iniciada no puede transferirse")
     appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
-    if not coverage.starts_at <= appointment_at < coverage.ends_at:
+    if not appointment_is_within_coverage(coverage, appointment_at):
         raise HTTPException(status_code=409, detail="La cita está fuera del período de cobertura")
     transfer = AppointmentCoverageTransfer(
         appointment_id=appointment.id, coverage_id=coverage.id,

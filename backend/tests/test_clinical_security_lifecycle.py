@@ -15,6 +15,7 @@ from app.models import (
     AppointmentCoverageTransfer,
     CareCenter,
     ClinicalAuditLog,
+    ClinicalCoverage,
     ClinicalHistory,
     Diagnosis,
     Patient,
@@ -23,6 +24,7 @@ from app.models import (
     User,
     VitalSigns,
 )
+from app.services.clinical_coverage import coverage_status, installation_now
 from app.models.requested_tests import RequestedTests
 from app.schemas.appointment import AppointmentCreate
 
@@ -402,7 +404,7 @@ def test_explicit_coverage_grants_only_patient_specific_read_access_and_revocati
     doctor_b = clinical_app["doctor_b"]
     center = clinical_app["center"]
     history_a = clinical_app["history_a"]
-    now = datetime.utcnow()
+    now = installation_now()
 
     unrelated_patient = Patient(first_name="Paciente", last_name="Sin cobertura", date_of_birth=date(1990, 1, 1))
     db.add(unrelated_patient); db.flush()
@@ -419,7 +421,8 @@ def test_explicit_coverage_grants_only_patient_specific_read_access_and_revocati
         patient_id=clinical_app["patient_a"].id, doctor_id=doctor_a.id, center_id=center.id,
         appointment_date=now.date(), appointment_time=now.time().replace(microsecond=0), status="scheduled",
     )
-    db.add_all([unrelated_history, transfer_appointment]); db.commit()
+    prior_requested_test = RequestedTests(clinical_history_id=history_a.id, test_name="Hemograma previo")
+    db.add_all([unrelated_history, transfer_appointment, prior_requested_test]); db.commit()
 
     coverage_response = client.post("/api/v1/clinical-coverages", json={
         "substitute_doctor_id": doctor_b.id,
@@ -439,12 +442,22 @@ def test_explicit_coverage_grants_only_patient_specific_read_access_and_revocati
     assert transfer_appointment.coverage_transfer.original_doctor_id == doctor_a.id
 
     clinical_app["active_user"]["value"] = doctor_b
+    context = client.get(
+        f"/api/v1/clinical-history/appointments/{transfer_appointment.id}/context"
+    )
+    assert context.status_code == 200
+    assert history_a.id in {item["id"] for item in context.json()["previous_consultations"]}
     assert client.get(f"/api/v1/clinical-history/{history_a.id}/summary/pdf").status_code == 200
+    assert client.get(f"/api/v1/clinical-history/{history_a.id}/prescriptions/pdf").status_code == 200
+    assert client.get(f"/api/v1/clinical-history/{history_a.id}/requested-tests/pdf").status_code == 200
     assert client.get(f"/api/v1/clinical-history/{history_a.id}/vital-signs").status_code == 200
     assert client.get(f"/api/v1/clinical-history/{history_a.id}/diagnoses").status_code == 200
     assert client.get(f"/api/v1/clinical-history/{history_a.id}/prescriptions").status_code == 200
     assert client.get(f"/api/v1/clinical-history/{history_a.id}/requested-tests").status_code == 200
     assert client.get(f"/api/v1/clinical-history/{unrelated_history.id}/summary/pdf").status_code == 403
+    unrelated_list = client.get(f"/api/v1/clinical-history/patients/{unrelated_patient.id}")
+    assert unrelated_list.status_code == 200
+    assert unrelated_list.json() == []
     assert client.put(
         f"/api/v1/clinical-history/{history_a.id}",
         json={"consultation_date": now.date().isoformat(), "clinical_notes": "No permitido"},
@@ -466,6 +479,9 @@ def test_explicit_coverage_grants_only_patient_specific_read_access_and_revocati
 
     clinical_app["active_user"]["value"] = doctor_a
     assert client.post(f"/api/v1/clinical-coverages/{coverage_id}/revoke").status_code == 200
+    db.refresh(transfer_appointment)
+    assert transfer_appointment.doctor_id == doctor_b.id
+    assert transfer_appointment.coverage_transfer is not None
     clinical_app["active_user"]["value"] = doctor_b
     assert client.get(f"/api/v1/clinical-history/{history_a.id}/summary/pdf").status_code == 403
     assert client.get(
@@ -479,7 +495,7 @@ def test_revoking_coverage_restores_unstarted_appointment_and_preserves_audit(cl
     doctor_a = clinical_app["doctor_a"]
     doctor_b = clinical_app["doctor_b"]
     center = clinical_app["center"]
-    now = datetime.utcnow()
+    now = installation_now()
     appointment = Appointment(
         patient_id=clinical_app["patient_a"].id,
         doctor_id=doctor_a.id,
@@ -509,6 +525,9 @@ def test_revoking_coverage_restores_unstarted_appointment_and_preserves_audit(cl
     assert db.scalar(select(AppointmentCoverageTransfer).where(
         AppointmentCoverageTransfer.appointment_id == appointment.id
     )) is None
+    assert client.post(
+        f"/api/v1/clinical-coverages/{coverage_id}/appointments/{appointment.id}/transfer"
+    ).status_code == 409
     logs = list(db.scalars(select(ClinicalAuditLog).where(
         ClinicalAuditLog.resource_id == appointment.id
     )).all())
@@ -522,7 +541,7 @@ def test_transferred_appointment_context_schedule_and_deletion_are_immutable(cli
     doctor_a = clinical_app["doctor_a"]
     doctor_b = clinical_app["doctor_b"]
     center = clinical_app["center"]
-    now = datetime.utcnow()
+    now = installation_now()
     appointment = Appointment(
         patient_id=clinical_app["patient_a"].id,
         doctor_id=doctor_a.id,
@@ -556,11 +575,11 @@ def test_transferred_appointment_context_schedule_and_deletion_are_immutable(cli
     assert client.delete(f"/api/v1/appointments/{appointment.id}").status_code == 409
 
 
-@pytest.mark.parametrize("appointment_status", ["cancelled", "no_show"])
-def test_cancelled_or_no_show_appointment_cannot_be_transferred(clinical_app, appointment_status):
+@pytest.mark.parametrize("appointment_status", ["cancelled", "no_show", "completed"])
+def test_non_eligible_appointment_status_cannot_be_transferred(clinical_app, appointment_status):
     client = clinical_app["client"]
     db = clinical_app["db"]
-    now = datetime.utcnow()
+    now = installation_now()
     appointment = Appointment(
         patient_id=clinical_app["patient_a"].id,
         doctor_id=clinical_app["doctor_a"].id,
@@ -582,13 +601,27 @@ def test_cancelled_or_no_show_appointment_cannot_be_transferred(clinical_app, ap
     ).status_code == 409
 
 
+def test_appointment_with_started_consultation_cannot_be_transferred(clinical_app):
+    now = installation_now()
+    coverage = clinical_app["client"].post("/api/v1/clinical-coverages", json={
+        "substitute_doctor_id": clinical_app["doctor_b"].id,
+        "center_id": clinical_app["center"].id,
+        "starts_at": (now - timedelta(hours=1)).isoformat(),
+        "ends_at": (now + timedelta(hours=2)).isoformat(),
+    })
+    assert coverage.status_code == 201
+    assert clinical_app["client"].post(
+        f"/api/v1/clinical-coverages/{coverage.json()['id']}/appointments/{clinical_app['appointment_a'].id}/transfer"
+    ).status_code == 409
+
+
 def test_failed_coverage_transfer_rolls_back_appointment_and_relation(clinical_app):
     client = clinical_app["client"]
     db = clinical_app["db"]
     doctor_a = clinical_app["doctor_a"]
     doctor_b = clinical_app["doctor_b"]
     center = clinical_app["center"]
-    now = datetime.utcnow()
+    now = installation_now()
     appointment = Appointment(
         patient_id=clinical_app["patient_a"].id,
         doctor_id=doctor_a.id,
@@ -627,7 +660,7 @@ def test_failed_coverage_transfer_rolls_back_appointment_and_relation(clinical_a
 
 @pytest.mark.parametrize("offsets", [(-3, -2), (2, 3)])
 def test_expired_or_future_coverage_cannot_transfer_an_appointment(clinical_app, offsets):
-    now = datetime.utcnow()
+    now = installation_now()
     response = clinical_app["client"].post("/api/v1/clinical-coverages", json={
         "substitute_doctor_id": clinical_app["doctor_b"].id,
         "center_id": clinical_app["center"].id,
@@ -642,7 +675,7 @@ def test_expired_or_future_coverage_cannot_transfer_an_appointment(clinical_app,
 
 
 def test_doctor_cannot_grant_coverage_to_self(clinical_app):
-    now = datetime.utcnow()
+    now = installation_now()
     response = clinical_app["client"].post("/api/v1/clinical-coverages", json={
         "substitute_doctor_id": clinical_app["doctor_a"].id,
         "center_id": clinical_app["center"].id,
@@ -660,7 +693,7 @@ def test_secretary_cannot_create_clinical_coverage(clinical_app):
     )
     clinical_app["db"].add(secretary); clinical_app["db"].commit()
     clinical_app["active_user"]["value"] = secretary
-    now = datetime.utcnow()
+    now = installation_now()
     response = clinical_app["client"].post("/api/v1/clinical-coverages", json={
         "substitute_doctor_id": clinical_app["doctor_b"].id,
         "center_id": clinical_app["center"].id,
@@ -671,7 +704,7 @@ def test_secretary_cannot_create_clinical_coverage(clinical_app):
 
 def test_coverage_in_another_center_does_not_open_history(clinical_app):
     db = clinical_app["db"]
-    now = datetime.utcnow()
+    now = installation_now()
     other_center = CareCenter(name="Otro centro", city="Santiago", is_active=True)
     clinical_app["doctor_a"].centers.append(other_center)
     clinical_app["doctor_b"].centers.append(other_center)
@@ -694,3 +727,25 @@ def test_coverage_in_another_center_does_not_open_history(clinical_app):
     assert clinical_app["client"].get(
         f"/api/v1/clinical-history/{clinical_app['history_a'].id}/summary/pdf"
     ).status_code == 403
+
+
+def test_coverage_status_uses_exact_documented_boundaries():
+    start = datetime(2026, 9, 3, 23, 21)
+    end = datetime(2026, 9, 4, 23, 0)
+    coverage = ClinicalCoverage(
+        principal_doctor_id=1,
+        substitute_doctor_id=2,
+        center_id=3,
+        starts_at=start,
+        ends_at=end,
+        created_by_id=1,
+    )
+
+    assert coverage_status(coverage, start - timedelta(microseconds=1)) == "future"
+    assert coverage_status(coverage, start) == "active"
+    assert coverage_status(coverage, start + timedelta(hours=1)) == "active"
+    assert coverage_status(coverage, end) == "expired"
+    assert coverage_status(coverage, end + timedelta(microseconds=1)) == "expired"
+
+    coverage.revoked_at = start + timedelta(minutes=30)
+    assert coverage_status(coverage, start + timedelta(hours=1)) == "revoked"

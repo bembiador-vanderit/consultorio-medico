@@ -152,16 +152,28 @@ def test_doctor_creates_appointment_for_self():
     assert db.added.doctor_id == doctor.id
 
 
-def test_doctor_can_select_same_center_substitute_and_backend_preserves_it():
+def test_doctor_cannot_select_same_center_substitute_without_explicit_coverage():
     center = _center(5)
     current_doctor = _user(11, "doctor", centers=[center])
     substitute = _user(12, "doctor", centers=[center])
     db = AppointmentDB([current_doctor, substitute], [center])
 
-    result = create_appointment(_payload(substitute.id, center.id), user=current_doctor, db=db)
+    with pytest.raises(HTTPException) as error:
+        create_appointment(_payload(substitute.id, center.id), user=current_doctor, db=db)
 
-    assert result.doctor_id == substitute.id
-    assert db.added.doctor_id == substitute.id
+    assert error.value.status_code == 403
+    assert db.added is None
+
+
+def test_doctor_available_list_only_contains_authenticated_doctor():
+    center = _center(5)
+    current_doctor = _user(11, "doctor", centers=[center])
+    other_doctor = _user(12, "doctor", centers=[center])
+    db = DoctorListDB(center, [current_doctor, other_doctor])
+
+    result = list_available_doctors(center.id, date(2026, 9, 10), user=current_doctor, db=db)
+
+    assert result == [{"id": current_doctor.id, "full_name": current_doctor.full_name}]
 
 
 def test_doctor_cannot_reassign_own_appointment_from_regular_edit():

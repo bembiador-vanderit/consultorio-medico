@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from fastapi import HTTPException
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
@@ -10,6 +8,7 @@ from app.models.clinical_history import ClinicalHistory
 from app.models.appointment import Appointment
 from app.models.identity import User
 from app.services.appointment_scope import is_role
+from app.services.clinical_coverage import installation_now
 
 
 def delegated_coverage_id(db: Session, user: User, history: ClinicalHistory) -> int | None:
@@ -17,7 +16,7 @@ def delegated_coverage_id(db: Session, user: User, history: ClinicalHistory) -> 
         return None
     if history.center_id not in {center.id for center in user.centers}:
         return None
-    now = datetime.utcnow()
+    now = installation_now()
     query = (
         select(ClinicalCoverage.id)
         .join(AppointmentCoverageTransfer, AppointmentCoverageTransfer.coverage_id == ClinicalCoverage.id)

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
@@ -132,7 +133,12 @@ def sync_notifications(db: Session = Depends(get_db), user: User = Depends(curre
         created += 1
 
     if created:
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # A reminder worker may have inserted the same logical event.
+            db.rollback()
+            return {"created": 0}
     return {"created": created}
 
 

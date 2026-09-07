@@ -40,6 +40,7 @@ from app.services.clinical_access import (
     require_history_access,
     scope_histories,
 )
+from app.services.clinical_coverage import coverage_status
 
 router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
 access = require_permission("clinical:access")
@@ -81,8 +82,7 @@ def _ensure_appointment_attendable(appointment: Appointment, db: Session) -> Non
     transfer = appointment.coverage_transfer
     if transfer is not None:
         coverage = transfer.coverage
-        now = datetime.utcnow()
-        if coverage.revoked_at is not None or now < coverage.starts_at or now >= coverage.ends_at:
+        if coverage_status(coverage) != "active":
             history_started = db.scalar(
                 select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)
             ) is not None

@@ -80,6 +80,8 @@ def validate_appointment_assignment(
     doctor = db.get(User, doctor_id)
     if not doctor or not doctor.is_active or not is_role(doctor, "doctor"):
         raise HTTPException(status_code=422, detail="Médico inválido")
+    if is_role(user, "doctor") and not is_role(user, "admin") and not is_role(user, "secretary") and doctor.id != user.id:
+        raise HTTPException(status_code=403, detail="El médico solo puede crear y gestionar sus propias citas")
     if center not in doctor.centers:
         raise HTTPException(status_code=422, detail="El médico no está asignado a este centro")
     if is_role(user, "secretary") and not is_role(user, "admin") and not secretary_can_manage(
@@ -105,6 +107,8 @@ def list_available_doctors(center_id: int, appointment_date: date, user: User = 
         else None
     )
     for doctor in db.scalars(select(User).where(User.is_active.is_(True))).all():
+        if is_role(user, "doctor") and not is_role(user, "admin") and not is_role(user, "secretary") and doctor.id != user.id:
+            continue
         if not is_role(doctor, "doctor") or center not in doctor.centers:
             continue
         if secretary_scope is not None and doctor.id not in secretary_scope:
@@ -217,7 +221,7 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
         raise HTTPException(status_code=409, detail="Una cita finalizada no puede reabrirse desde la edición")
     if appointment.coverage_transfer is not None and (context_changed or schedule_changed):
         raise HTTPException(status_code=409, detail="Una cita transferida conserva su contexto y horario autorizados")
-    if is_role(user, "doctor") and not is_role(user, "admin") and context_changed:
+    if is_role(user, "doctor") and not is_role(user, "admin") and not is_role(user, "secretary") and context_changed:
         raise HTTPException(status_code=403, detail="El médico no puede reasignar una cita desde la edición ordinaria")
     if payload.status == "completed" and appointment.status != "completed":
         raise HTTPException(
