@@ -8,7 +8,7 @@ from app.db import get_db
 from app.models.center import CareCenter
 from app.models.clinical_history import ClinicalHistory
 from app.models.diagnosis import Diagnosis
-from app.models.identity import User
+from app.models.identity import Role, User
 from app.models.patient import Patient
 from app.models.prescription import Prescription
 from app.models.requested_tests import RequestedTests
@@ -106,11 +106,19 @@ class FakeDB:
         entity = query.column_descriptions[0].get("entity")
         return self.vital_signs if entity is VitalSigns else None
 
+    def add(self, _item):
+        pass
+
+    def commit(self):
+        pass
+
 
 def build_client(db: FakeDB) -> TestClient:
     app = FastAPI()
     app.include_router(clinical_history.router, prefix="/api/v1")
-    app.dependency_overrides[clinical_history.access] = lambda: None
+    app.dependency_overrides[clinical_history.access] = lambda: User(
+        id=1, full_name="Admin", roles=[Role(code="admin", name="Administrador")]
+    )
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app)
 

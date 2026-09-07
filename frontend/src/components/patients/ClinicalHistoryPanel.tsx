@@ -210,15 +210,6 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
     }
   }
 
-  function newConsultation() {
-    setForm(emptyHistory());
-    setIsNew(true);
-    setHasUnsavedChanges(false);
-    setShowTests(false);
-    setMessage("");
-    setError("");
-  }
-
   async function openPreviousRecord(historyId: number) {
     if (showFullPrevious === historyId) {
       setShowFullPrevious(null);
@@ -255,21 +246,19 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
   }
 
   async function save() {
+    if (isNew || current?.status === "completed") return;
     setSaving(true); setMessage(""); setError("");
     try {
       const historyPayload = { ...form };
       delete (historyPayload as any).requested_tests;
       let saved: ClinicalHistory;
-      if (isNew) {
-        const { data } = await api.post<ClinicalHistory>(`/clinical-history/patients/${patientId}`, historyPayload);
-        saved = data;
-      } else if (current) {
+      if (current) {
         const { data } = await api.put<ClinicalHistory>(`/clinical-history/${current.id}`, historyPayload);
         saved = data;
       } else return;
       const savedTests = await syncTests(saved.id);
       saved = { ...saved, requested_tests: savedTests };
-      const nextRecords = (isNew ? [saved, ...records] : records.map((record) => record.id === saved.id ? saved : record))
+      const nextRecords = records.map((record) => record.id === saved.id ? saved : record)
         .sort((a, b) => b.consultation_date.localeCompare(a.consultation_date) || b.id - a.id);
       setRecords(nextRecords);
       setIndex(nextRecords.findIndex((record) => record.id === saved.id));
@@ -360,31 +349,31 @@ export default function ClinicalHistoryPanel({ patientId, patientName, onClose }
             <section className="min-w-0 space-y-5">
               <div className="rounded-xl border bg-slate-50 p-4">
                 <div className="flex flex-wrap items-end justify-between gap-4">
-                  <div><label className="mb-1 block text-sm font-medium">Fecha de la consulta</label><input type="date" value={form.consultation_date} onChange={(event) => { setForm({ ...form, consultation_date: event.target.value }); setHasUnsavedChanges(true); }} className="rounded-lg border px-3 py-2" /><p className="mt-1 text-xs text-slate-500">{positionLabel}</p></div>
+                  <div><label className="mb-1 block text-sm font-medium">Fecha de la consulta</label><input type="date" value={form.consultation_date} disabled={isNew || current?.status === "completed"} onChange={(event) => { setForm({ ...form, consultation_date: event.target.value }); setHasUnsavedChanges(true); }} className="rounded-lg border px-3 py-2 disabled:bg-slate-100" /><p className="mt-1 text-xs text-slate-500">{positionLabel}{current?.status === "completed" ? " · Finalizada" : ""}</p></div>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => void showRecord(index + 1)} disabled={isNew || index >= records.length - 1} className="rounded-lg border px-4 py-2 disabled:opacity-40">← Anterior</button>
                     <button type="button" onClick={() => void showRecord(index - 1)} disabled={isNew || index <= 0} className="rounded-lg border px-4 py-2 disabled:opacity-40">Siguiente →</button>
-                    <button type="button" onClick={newConsultation} className="rounded-lg bg-slate-700 px-4 py-2 text-white">Nueva consulta</button>
                     <button type="button" onClick={openFollowUp} disabled={isNew || !current} className="rounded-lg bg-amber-600 px-4 py-2 font-medium text-white disabled:opacity-40">⏰ Programar seguimiento</button>
                   </div>
                 </div>
               </div>
 
-              {fields.map(([name, label]) => <label key={name} className="block"><span className="mb-1 block text-sm font-medium">{label}</span><textarea value={form[name] ?? ""} onChange={(event) => { setForm({ ...form, [name]: event.target.value }); setHasUnsavedChanges(true); }} rows={3} className="w-full rounded-lg border px-3 py-2" /></label>)}
+              {isNew && <div className="rounded-lg border border-dashed bg-slate-50 p-5 text-sm text-slate-600">No hay consultas vinculadas a citas para este paciente. Las nuevas consultas deben iniciarse desde la Agenda.</div>}
+              {!isNew && fields.map(([name, label]) => <label key={name} className="block"><span className="mb-1 block text-sm font-medium">{label}</span><textarea value={form[name] ?? ""} disabled={current?.status === "completed"} onChange={(event) => { setForm({ ...form, [name]: event.target.value }); setHasUnsavedChanges(true); }} rows={3} className="w-full rounded-lg border px-3 py-2 disabled:bg-slate-100" /></label>)}
 
               {!isNew && current && <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-semibold text-teal-950">Contenido clínico vinculado</h4><p className="text-xs text-teal-700">Diagnósticos, receta y documentos de esta consulta.</p>{hasUnsavedChanges && <p className="mt-1 text-xs font-medium text-amber-700">Guarda los cambios antes de generar documentos.</p>}</div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void downloadPdf(current.id, "summary")} disabled={hasUnsavedChanges || Boolean(downloadingDocument)} className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">{downloadingDocument === `${current.id}:summary` ? "Generando..." : "Resumen PDF"}</button><button type="button" onClick={() => void downloadPdf(current.id, "prescription")} disabled={hasUnsavedChanges || !currentDetails?.prescriptions.length || Boolean(downloadingDocument)} className="rounded-lg border border-teal-300 bg-white px-3 py-2 text-sm font-medium text-teal-800 disabled:opacity-40">{downloadingDocument === `${current.id}:prescription` ? "Generando..." : "Receta PDF"}</button></div></div>
                 {loadingDetailsId === current.id ? <p className="mt-4 text-sm text-slate-500">Cargando contenido clínico...</p> : <><div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Signos vitales</p>{currentVitalSigns.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{currentVitalSigns.map(([label, value]) => <div key={label} className="rounded-lg border border-cyan-100 bg-white p-3 text-sm"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-semibold text-cyan-900">{value}</p></div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin signos vitales registrados.</p>}</div><div className="mt-4 grid gap-4 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Diagnósticos</p>{currentDetails?.diagnoses.length ? <div className="mt-2 space-y-2">{currentDetails.diagnoses.map((item) => <div key={item.id} className="rounded-lg border bg-white p-3 text-sm"><p className="font-medium">{item.description}{item.is_primary && <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-800">Principal</span>}</p>{item.icd10_code && <p className="mt-1 text-xs text-slate-500">CIE-10: {item.icd10_code}</p>}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin diagnósticos registrados.</p>}</div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Medicamentos recetados</p>{currentDetails?.prescriptions.length ? <div className="mt-2 space-y-2">{currentDetails.prescriptions.map((item) => <div key={item.id} className="rounded-lg border bg-white p-3 text-sm"><p className="font-medium">{item.medication}{item.presentation ? ` · ${item.presentation}` : ""}</p><p className="mt-1 text-xs text-slate-600">{[item.dose, item.route, item.frequency, item.duration].filter(Boolean).join(" · ") || "Pauta no especificada"}</p>{item.quantity && <p className="mt-1 text-xs text-slate-500">Cantidad: {item.quantity}</p>}{item.instructions && <p className="mt-1 text-xs text-slate-500">{item.instructions}</p>}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin medicamentos recetados.</p>}</div></div></>}
               </div>}
 
-              <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+              {!isNew && <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-semibold text-indigo-900">Análisis y pruebas indicadas</h4><p className="text-xs text-indigo-700">Opcional y asociado a esta consulta.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setShowTests((value) => !value)} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-800">{showTests ? "Ocultar" : "Agregar análisis / pruebas"}</button><button type="button" onClick={() => current && void downloadPdf(current.id, "tests")} disabled={hasUnsavedChanges || isNew || !current || !form.requested_tests?.trim() || Boolean(downloadingDocument)} className="rounded-lg bg-indigo-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">{current && downloadingDocument === `${current.id}:tests` ? "Generando PDF..." : "Descargar orden PDF"}</button></div></div>
-                {showTests && <label className="mt-4 block"><span className="mb-1 block text-sm font-medium">Un análisis o prueba por línea</span><textarea value={form.requested_tests ?? ""} onChange={(event) => { setForm({ ...form, requested_tests: event.target.value }); setHasUnsavedChanges(true); }} rows={7} placeholder={'Hemograma\nGlucosa en sangre\nPerfil lipídico\nRadiografía de tórax'} className="w-full rounded-lg border bg-white px-3 py-2" /></label>}
-              </div>
+                {showTests && <label className="mt-4 block"><span className="mb-1 block text-sm font-medium">Un análisis o prueba por línea</span><textarea value={form.requested_tests ?? ""} disabled={current?.status === "completed"} onChange={(event) => { setForm({ ...form, requested_tests: event.target.value }); setHasUnsavedChanges(true); }} rows={7} placeholder={'Hemograma\nGlucosa en sangre\nPerfil lipídico\nRadiografía de tórax'} className="w-full rounded-lg border bg-white px-3 py-2 disabled:bg-slate-100" /></label>}
+              </div>}
 
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
               {message && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{message}</div>}
-              <div className="flex justify-end gap-3 border-t pt-5"><button onClick={onClose} className="rounded-lg border px-5 py-2">Cerrar</button><button onClick={() => void save()} disabled={saving} className="rounded-lg bg-teal-700 px-5 py-2 text-white disabled:opacity-50">{saving ? "Guardando..." : isNew ? "Guardar consulta" : "Guardar cambios"}</button></div>
+              <div className="flex justify-end gap-3 border-t pt-5"><button onClick={onClose} className="rounded-lg border px-5 py-2">Cerrar</button>{!isNew && current?.status !== "completed" && <button onClick={() => void save()} disabled={saving} className="rounded-lg bg-teal-700 px-5 py-2 text-white disabled:opacity-50">{saving ? "Guardando..." : "Guardar cambios"}</button>}</div>
             </section>
 
             <aside className="lg:sticky lg:top-20 lg:self-start">

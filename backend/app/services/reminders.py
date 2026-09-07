@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Appointment, CommunicationLog, Notification, User
@@ -139,5 +140,11 @@ def sync_appointment_reminders(db: Session, *, now: datetime | None = None, hori
                     _log_delivery(db, appointment, "whatsapp", appointment.patient.phone, "pending", "WhatsApp API no configurada; se generó enlace wa.me")
 
     if created or db.new:
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # The dashboard sync and the worker can race. The database key is
+            # the final arbiter; a competing transaction already created it.
+            db.rollback()
+            return 0
     return created

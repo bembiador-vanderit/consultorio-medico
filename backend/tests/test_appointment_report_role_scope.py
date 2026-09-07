@@ -121,10 +121,11 @@ def test_secretary_new_appointment_doctor_options_and_validation_are_scoped(scop
     assert error.value.status_code == 403
 
 
-def test_doctor_can_still_select_same_center_substitute(scoped_db):
+def test_doctor_cannot_select_same_center_substitute_without_coverage(scoped_db):
     db, _, doctor_one, doctor_two, *_, center_one, _ = scoped_db
-    selected, _ = validate_appointment_assignment(db, doctor_one, doctor_two.id, center_one.id, date(2026, 9, 10))
-    assert selected.id == doctor_two.id
+    with pytest.raises(HTTPException) as error:
+        validate_appointment_assignment(db, doctor_one, doctor_two.id, center_one.id, date(2026, 9, 10))
+    assert error.value.status_code == 403
 
 
 def test_scope_options_do_not_require_admin_catalog_endpoints(scoped_db):

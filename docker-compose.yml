@@ -17,6 +17,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Santo_Domingo}
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set in .env}
       INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Administrador inicial}

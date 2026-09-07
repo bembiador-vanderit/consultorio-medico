@@ -19,3 +19,4 @@ class Appointment(Base):
     patient = relationship("Patient")
     doctor = relationship("User")
     center = relationship("CareCenter")
+    coverage_transfer = relationship("AppointmentCoverageTransfer", back_populates="appointment", uselist=False)

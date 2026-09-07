@@ -10,6 +10,9 @@ export type ClinicalHistory = {
   appointment_id: number | null;
   doctor_id: number | null;
   center_id: number | null;
+  status: "in_progress" | "completed";
+  completed_at: string | null;
+  completed_by_id: number | null;
   consultation_date: string;
   reason_for_visit: string | null;
   current_illness: string | null;
@@ -28,7 +31,7 @@ export type ClinicalHistory = {
 
 export type ClinicalHistoryInput = Omit<
   ClinicalHistory,
-  "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "created_at" | "updated_at" | "requested_tests"
+  "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "status" | "completed_at" | "completed_by_id" | "created_at" | "updated_at" | "requested_tests"
 > & {
   appointment_id?: number | null;
   requested_tests?: string;

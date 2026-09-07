@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str
     secret_key: str
     access_token_expire_minutes: int = 30
+    app_timezone: str = "America/Santo_Domingo"
     initial_admin_email: str | None = None
     initial_admin_password: str | None = None
     initial_admin_name: str = "Administrador inicial"

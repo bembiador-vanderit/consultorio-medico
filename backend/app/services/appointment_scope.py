@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy import Select, and_, delete, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Appointment, SecretaryCenterScope, User
+from app.models import Appointment, AppointmentCoverageTransfer, SecretaryCenterScope, User
 
 
 def is_role(user: User, code: str) -> bool:
@@ -65,7 +65,15 @@ def apply_appointment_scope(query: Select, user: User, db: Session) -> Select:
             if doctor_ids is None:
                 conditions.append(Appointment.center_id == center_id)
             elif doctor_ids:
-                conditions.append(and_(Appointment.center_id == center_id, Appointment.doctor_id.in_(doctor_ids)))
+                conditions.append(and_(
+                    Appointment.center_id == center_id,
+                    or_(
+                        Appointment.doctor_id.in_(doctor_ids),
+                        Appointment.coverage_transfer.has(
+                            AppointmentCoverageTransfer.original_doctor_id.in_(doctor_ids)
+                        ),
+                    ),
+                ))
         return query.where(or_(*conditions)) if conditions else query.where(Appointment.id == -1)
     if is_role(user, "doctor"):
         return query.where(Appointment.doctor_id == user.id)
@@ -80,6 +88,11 @@ def ensure_appointment_access(user: User, appointment: Appointment, db: Session 
     if is_role(user, "secretary"):
         if db is not None and appointment.center_id is not None and secretary_can_manage(
             user, appointment.center_id, appointment.doctor_id, db
+        ):
+            return
+        transfer = appointment.coverage_transfer
+        if db is not None and transfer is not None and appointment.center_id is not None and secretary_can_manage(
+            user, appointment.center_id, transfer.original_doctor_id, db
         ):
             return
         raise HTTPException(status_code=403, detail="No tiene acceso a esta cita")

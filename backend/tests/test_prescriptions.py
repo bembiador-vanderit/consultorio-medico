@@ -6,12 +6,17 @@ from fastapi.testclient import TestClient
 from app.api.routes import prescriptions
 from app.db import get_db
 from app.models.clinical_history import ClinicalHistory
+from app.models.clinical_audit import ClinicalAuditLog
+from app.models.identity import Role, User
 from app.models.prescription import Prescription
 
 
 class FakeDB:
     def __init__(self):
-        self.histories = {10: object(), 20: object()}
+        self.histories = {
+            10: ClinicalHistory(id=10, patient_id=1, doctor_id=5, consultation_date="2026-09-01", status="in_progress"),
+            20: ClinicalHistory(id=20, patient_id=2, doctor_id=6, consultation_date="2026-09-01", status="in_progress"),
+        }
         self.prescriptions: dict[int, Prescription] = {}
         self.next_id = 1
 
@@ -26,6 +31,8 @@ class FakeDB:
         return sorted(self.prescriptions.values(), key=lambda item: item.id)
 
     def add(self, prescription):
+        if isinstance(prescription, ClinicalAuditLog):
+            return
         prescription.id = self.next_id
         prescription.created_at = datetime(2026, 9, 1, 9, 0)
         prescription.updated_at = prescription.created_at
@@ -33,6 +40,9 @@ class FakeDB:
         self.next_id += 1
 
     def commit(self):
+        return None
+
+    def flush(self):
         return None
 
     def refresh(self, prescription):
@@ -45,7 +55,9 @@ class FakeDB:
 def build_client(db: FakeDB) -> TestClient:
     app = FastAPI()
     app.include_router(prescriptions.router, prefix="/api/v1")
-    app.dependency_overrides[prescriptions.access] = lambda: None
+    app.dependency_overrides[prescriptions.access] = lambda: User(
+        id=1, full_name="Admin", roles=[Role(code="admin", name="Administrador")]
+    )
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app)
 
