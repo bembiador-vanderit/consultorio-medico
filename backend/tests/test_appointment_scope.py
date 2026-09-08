@@ -12,18 +12,21 @@ from app.api.routes.appointments import (
     update_appointment,
     validate_appointment_assignment,
 )
-from app.models import Appointment, CareCenter, Patient, Role, SecretaryCenterScope, User
+from app.models import Appointment, CareCenter, Patient, Role, SecretaryCenterScope, Specialty, User
 from app.schemas.appointment import AppointmentCreate
 
 
 def _user(user_id: int, role_code: str, *, active: bool = True, centers=None) -> User:
-    return User(
+    user = User(
         id=user_id,
         full_name=f"Usuario {user_id}",
         is_active=active,
         roles=[Role(code=role_code, name=role_code)],
         centers=centers or [],
     )
+    if role_code == "doctor":
+        user.specialties = [Specialty(id=1, name="Cardiología", is_active=True)]
+    return user
 
 
 def _center(center_id: int, *, active: bool = True) -> CareCenter:
@@ -173,7 +176,7 @@ def test_doctor_available_list_only_contains_authenticated_doctor():
 
     result = list_available_doctors(center.id, date(2026, 9, 10), user=current_doctor, db=db)
 
-    assert result == [{"id": current_doctor.id, "full_name": current_doctor.full_name}]
+    assert result == [{"id": current_doctor.id, "full_name": current_doctor.full_name, "specialties": [{"id": 1, "name": "Cardiología"}]}]
 
 
 def test_doctor_cannot_reassign_own_appointment_from_regular_edit():
@@ -224,7 +227,7 @@ def test_new_appointment_lists_assigned_doctor_and_excludes_unassigned_doctor():
 
     result = list_available_doctors(center.id, date(2026, 9, 10), user=admin, db=db)
 
-    assert result == [{"id": assigned_doctor.id, "full_name": assigned_doctor.full_name}]
+    assert result == [{"id": assigned_doctor.id, "full_name": assigned_doctor.full_name, "specialties": [{"id": 1, "name": "Cardiología"}]}]
 
 
 @pytest.mark.parametrize(

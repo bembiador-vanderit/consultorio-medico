@@ -42,6 +42,7 @@ def test_consultation_context_is_derived_from_appointment():
         "appointment_id": 42,
         "doctor_id": 11,
         "center_id": 5,
+        "specialty_id": None,
     }
 
 

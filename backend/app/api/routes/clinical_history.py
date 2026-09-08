@@ -53,6 +53,8 @@ class ConsultationContextResponse(BaseModel):
     patient_id: int
     doctor_id: int
     center_id: int | None
+    specialty_id: int | None
+    specialty_name: str
     appointment_date: str
     appointment_time: str
     appointment_reason: str | None
@@ -70,6 +72,7 @@ def _appointment_context(appointment: Appointment, patient_id: int) -> dict[str,
         "appointment_id": appointment.id,
         "doctor_id": appointment.doctor_id,
         "center_id": appointment.center_id,
+        "specialty_id": appointment.specialty_id,
     }
 
 
@@ -100,7 +103,7 @@ def _resolve_consultation_context(
     user: User | None = None,
 ) -> dict[str, int | None]:
     if appointment_id is None:
-        return {"appointment_id": None, "doctor_id": None, "center_id": None}
+        return {"appointment_id": None, "doctor_id": None, "center_id": None, "specialty_id": None}
 
     appointment = db.get(Appointment, appointment_id)
     if appointment is None:
@@ -201,6 +204,8 @@ def get_consultation_context(appointment_id: int, user: User = Depends(access), 
         patient_id=appointment.patient_id,
         doctor_id=appointment.doctor_id,
         center_id=appointment.center_id,
+        specialty_id=appointment.specialty_id,
+        specialty_name=appointment.specialty.name if appointment.specialty else "No especificada (registro histórico)",
         appointment_date=appointment.appointment_date.isoformat(),
         appointment_time=appointment.appointment_time.isoformat(),
         appointment_reason=appointment.reason,
@@ -231,7 +236,7 @@ def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, use
     add_clinical_audit(
         db, user, action="history.create", resource_type="clinical_history",
         resource_id=history.id, history_id=history.id,
-        context={"appointment_id": history.appointment_id, "doctor_id": history.doctor_id, "center_id": history.center_id},
+        context={"appointment_id": history.appointment_id, "doctor_id": history.doctor_id, "center_id": history.center_id, "specialty_id": history.specialty_id},
     )
     db.commit()
     db.refresh(history)
@@ -267,6 +272,7 @@ def complete_clinical_history(history_id: int, user: User = Depends(access), db:
         appointment.patient_id != history.patient_id
         or appointment.doctor_id != history.doctor_id
         or appointment.center_id != history.center_id
+        or appointment.specialty_id != history.specialty_id
     ):
         raise HTTPException(status_code=409, detail="El contexto de la consulta no coincide con la cita")
 
@@ -397,6 +403,7 @@ def get_consultation_summary_pdf(history_id: int, user: User = Depends(access), 
             for item in prescriptions
         ],
         test_names=[item.test_name for item in tests],
+        specialty_name=history.specialty_name,
     )
     filename = f"resumen-consulta-{history.id}.pdf"
     return StreamingResponse(

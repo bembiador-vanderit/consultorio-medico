@@ -27,11 +27,27 @@ class MedicalStudyResponse(BaseModel):
 
 
 class DoctorProfileCreate(BaseModel):
-    specialty_id: int = Field(gt=0)
+    primary_specialty_id: int | None = Field(default=None, gt=0)
+    specialty_ids: list[int] = Field(default_factory=list)
+    # Compatibilidad con el contrato anterior de una sola especialidad.
+    specialty_id: int | None = Field(default=None, gt=0)
 
 
 class DoctorProfileResponse(BaseModel):
     user_id: int
     specialty_id: int
     specialty: SpecialtyResponse
+    specialties: list[SpecialtyResponse]
     model_config = {"from_attributes": True}
+
+
+class SpecialtyCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+
+class SpecialtyUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+
+class SpecialtyStatusUpdate(BaseModel):
+    is_active: bool

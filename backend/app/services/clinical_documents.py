@@ -341,6 +341,7 @@ def build_consultation_summary_pdf(
     diagnosis_lines: list[DiagnosisLine],
     prescription_lines: list[PrescriptionLine],
     test_names: list[str],
+    specialty_name: str | None = None,
 ) -> bytes:
     """Build a complete printable summary for one clinical consultation."""
     buffer = BytesIO()
@@ -416,6 +417,7 @@ def build_consultation_summary_pdf(
     context_rows = [
         [Paragraph("Paciente", body_style), Paragraph(escape(patient_name), body_style)],
         [Paragraph("Médico tratante", body_style), Paragraph(escape(doctor_name), body_style)],
+        [Paragraph("Especialidad", body_style), Paragraph(escape(specialty_name or "No especificada"), body_style)],
         [Paragraph("Fecha", body_style), Paragraph(consultation_date.strftime("%d/%m/%Y"), body_style)],
         [Paragraph("Historia clínica", body_style), Paragraph(f"#{history_id}", body_style)],
         [

@@ -58,6 +58,7 @@ export default function Dashboard({ user, patientsVersion }: { user: User; patie
     <section>
       <p className="text-sm font-medium text-teal-700">Dashboard</p>
       <h2 className="mt-1 text-3xl font-bold">Bienvenido, {user.full_name}</h2>
+      {user.roles.includes("doctor") && <p className="mt-1 font-medium text-teal-700">{user.specialty_names?.join(" · ") || "Especialidad pendiente de configurar"}</p>}
       <p className="mt-2 text-slate-500">Resumen general del consultorio.</p>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

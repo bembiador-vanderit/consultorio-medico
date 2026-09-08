@@ -16,7 +16,7 @@ from app.api.routes import reports as report_routes
 from app.api.routes.centers import unassign_user
 from app.api.routes.users import update_secretary_scopes
 from app.db import Base
-from app.models import Appointment, CareCenter, Patient, Role, SecretaryCenterScope, User
+from app.models import Appointment, CareCenter, Patient, Role, SecretaryCenterScope, Specialty, User
 from app.schemas.user import SecretaryDoctorScopesUpdate
 
 
@@ -31,11 +31,12 @@ def scoped_db():
         center_one = CareCenter(name="CEMER", city="Santo Domingo", center_type="consultorio", is_active=True)
         center_two = CareCenter(name="Centro Norte", city="Santiago", center_type="clinica", is_active=True)
         center_three = CareCenter(name="Centro Sur", city="Baní", center_type="clinica", is_active=True)
-        doctor_one = User(email="one@example.com", full_name="Doctora Uno", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_one])
-        doctor_two = User(email="two@example.com", full_name="Doctor Dos", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_one])
-        doctor_three = User(email="three@example.com", full_name="Doctora Tres", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_two])
-        doctor_four = User(email="four@example.com", full_name="Doctor Fuera de Alcance", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_one])
-        doctor_five = User(email="five@example.com", full_name="Doctor Otro Centro", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_three])
+        specialty = Specialty(name="Cardiología", is_active=True)
+        doctor_one = User(email="one@example.com", full_name="Doctora Uno", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_one], specialties=[specialty])
+        doctor_two = User(email="two@example.com", full_name="Doctor Dos", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_one], specialties=[specialty])
+        doctor_three = User(email="three@example.com", full_name="Doctora Tres", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_two], specialties=[specialty])
+        doctor_four = User(email="four@example.com", full_name="Doctor Fuera de Alcance", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_one], specialties=[specialty])
+        doctor_five = User(email="five@example.com", full_name="Doctor Otro Centro", password_hash="hash", is_active=True, roles=[doctor_role], centers=[center_three], specialties=[specialty])
         admin = User(email="admin@example.com", full_name="Admin", password_hash="hash", is_active=True, roles=[admin_role])
         secretary = User(email="secretary@example.com", full_name="Secretaria", password_hash="hash", is_active=True, roles=[secretary_role], centers=[center_one, center_two])
         secretary_all = User(email="all@example.com", full_name="Secretaria Todo", password_hash="hash", is_active=True, roles=[secretary_role], centers=[center_one])

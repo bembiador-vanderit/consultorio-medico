@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.db import get_db
-from app.models import Appointment, CareCenter, ClinicalHistory, Patient, User
+from app.models import Appointment, CareCenter, ClinicalHistory, Patient, Specialty, User
 from app.models.doctor_availability import DoctorAvailability
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse, AppointmentScopeOptions
 from app.services.appointment_scope import (
@@ -15,6 +15,7 @@ from app.services.appointment_scope import (
     secretary_can_manage,
     secretary_doctor_ids_by_center,
 )
+from app.services.clinical_specialties import active_doctor_specialties, resolve_appointment_specialty
 
 router = APIRouter(prefix="/appointments", tags=["Citas"])
 access = require_permission("patients:access")
@@ -23,6 +24,7 @@ access = require_permission("patients:access")
 def response(a: Appointment) -> AppointmentResponse:
     return AppointmentResponse(
         id=a.id, patient_id=a.patient_id, doctor_id=a.doctor_id, center_id=a.center_id,
+        specialty_id=a.specialty_id, specialty_name=a.specialty.name if a.specialty else "No especificada (registro histórico)",
         appointment_date=a.appointment_date, appointment_time=a.appointment_time,
         reason=a.reason, status=a.status, notes=a.notes,
         patient_name=f"{a.patient.first_name} {a.patient.last_name}",
@@ -66,7 +68,8 @@ def validate_appointment_assignment(
     doctor_id: int | None,
     center_id: int | None,
     appointment_date: date,
-) -> tuple[User, CareCenter]:
+    specialty_id: int | None = None,
+) -> tuple[User, CareCenter, Specialty]:
     if center_id is None:
         raise HTTPException(status_code=422, detail="Debe indicar el centro de atención")
     if doctor_id is None:
@@ -90,7 +93,8 @@ def validate_appointment_assignment(
         raise HTTPException(status_code=403, detail="No tiene autorización para gestionar citas de este médico")
     if not doctor_is_available(db, doctor.id, center.id, appointment_date):
         raise HTTPException(status_code=409, detail="El médico no está disponible en esta fecha para este centro")
-    return doctor, center
+    specialty = resolve_appointment_specialty(db, doctor, specialty_id)
+    return doctor, center, specialty
 
 
 @router.get("/doctors")
@@ -113,8 +117,13 @@ def list_available_doctors(center_id: int, appointment_date: date, user: User = 
             continue
         if secretary_scope is not None and doctor.id not in secretary_scope:
             continue
-        if doctor_is_available(db, doctor.id, center_id, appointment_date):
-            doctors.append({"id": doctor.id, "full_name": doctor.full_name})
+        specialties = active_doctor_specialties(doctor)
+        if doctor_is_available(db, doctor.id, center_id, appointment_date) and specialties:
+            doctors.append({
+                "id": doctor.id,
+                "full_name": doctor.full_name,
+                "specialties": [{"id": item.id, "name": item.name} for item in specialties],
+            })
     return doctors
 
 
@@ -140,6 +149,9 @@ def appointment_scope_options(user: User = Depends(access), db: Session = Depend
     for doctor in candidates:
         if not doctor.is_active or not is_role(doctor, "doctor"):
             continue
+        specialties = active_doctor_specialties(doctor)
+        if not specialties:
+            continue
         doctor_centers = []
         for center in doctor.centers:
             if center.id not in center_ids or not center.is_active:
@@ -152,7 +164,12 @@ def appointment_scope_options(user: User = Depends(access), db: Session = Depend
                 continue
             doctor_centers.append(center.id)
         if doctor_centers:
-            doctors.append({"id": doctor.id, "full_name": doctor.full_name, "center_ids": sorted(doctor_centers)})
+            doctors.append({
+                "id": doctor.id,
+                "full_name": doctor.full_name,
+                "center_ids": sorted(doctor_centers),
+                "specialties": [{"id": item.id, "name": item.name} for item in specialties],
+            })
 
     return {
         "centers": [{"id": center.id, "name": center.name, "city": center.city} for center in active_centers],
@@ -188,13 +205,14 @@ def create_appointment(payload: AppointmentCreate, user: User = Depends(access),
     if not db.get(Patient, payload.patient_id):
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
-    doctor, center = validate_appointment_assignment(
-        db, user, payload.doctor_id, payload.center_id, payload.appointment_date
+    doctor, center, specialty = validate_appointment_assignment(
+        db, user, payload.doctor_id, payload.center_id, payload.appointment_date, payload.specialty_id
     )
 
     data = payload.model_dump()
     data["doctor_id"] = doctor.id
     data["center_id"] = center.id
+    data["specialty_id"] = specialty.id
     appointment = Appointment(**data)
     db.add(appointment); db.commit(); db.refresh(appointment)
     return response(appointment)
@@ -206,10 +224,12 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
     if not appointment: raise HTTPException(status_code=404, detail="Cita no encontrada")
     ensure_appointment_access(user, appointment, db)
     if not db.get(Patient, payload.patient_id): raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    requested_specialty_id = payload.specialty_id if payload.specialty_id is not None else appointment.specialty_id
     context_changed = (
         payload.patient_id != appointment.patient_id
         or payload.doctor_id != appointment.doctor_id
         or payload.center_id != appointment.center_id
+        or requested_specialty_id != appointment.specialty_id
     )
     schedule_changed = (
         payload.appointment_date != appointment.appointment_date
@@ -243,13 +263,14 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
                 detail="Una cita con consulta clínica iniciada no puede cancelarse ni marcarse ausente",
             )
 
-    doctor, center = validate_appointment_assignment(
-        db, user, payload.doctor_id, payload.center_id, payload.appointment_date
+    doctor, center, specialty = validate_appointment_assignment(
+        db, user, payload.doctor_id, payload.center_id, payload.appointment_date, requested_specialty_id
     )
 
     data = payload.model_dump()
     data["doctor_id"] = doctor.id
     data["center_id"] = center.id
+    data["specialty_id"] = specialty.id
     for field, value in data.items(): setattr(appointment, field, value)
     db.commit(); db.refresh(appointment)
     return response(appointment)
