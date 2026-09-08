@@ -28,7 +28,7 @@ Una cobertura programada permite transferir anticipadamente una cita cuya fecha 
 
 Mientras la cobertura permanezca vigente, completar la cita transferida no elimina el acceso delegado al historial previo de ese paciente. Cuando expira o se revoca, el suplente pierde dicho acceso ajeno, aunque sus propios episodios permanecen registrados con su autoría real. El médico principal conserva acceso de solo lectura a los episodios realizados bajo la transferencia concreta para continuidad asistencial.
 
-Una secretaria puede ejecutar la transferencia anticipada únicamente cuando su configuración autoriza, en el mismo centro, tanto al médico principal como al suplente. Esta gestión de agenda no concede acceso a información clínica.
+Una secretaria puede ver y ejecutar la transferencia anticipada cuando su configuración autoriza al médico principal en el centro de la cobertura. Esa cobertura explícita limita su gestión a las citas concretas del principal transferidas al suplente: no le concede alcance general sobre la agenda del suplente ni acceso a información clínica. Puede reprogramar una cita transferida solo dentro del mismo período de cobertura y mientras no se haya iniciado una consulta; paciente, centro, especialidad y médicos de origen/destino permanecen inmutables.
 
 ## Búsqueda restringida y duplicados
 

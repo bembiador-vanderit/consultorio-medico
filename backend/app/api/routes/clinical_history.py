@@ -87,14 +87,21 @@ def _ensure_appointment_attendable(appointment: Appointment, db: Session) -> Non
     transfer = appointment.coverage_transfer
     if transfer is not None:
         coverage = transfer.coverage
-        if coverage_status(coverage) != "active":
+        current_status = coverage_status(coverage)
+        if current_status != "active":
             history_started = db.scalar(
                 select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)
             ) is not None
             if not history_started:
+                if current_status == "future":
+                    detail = f"La cobertura clínica de esta cita aún no está activa; inicia el {coverage.starts_at:%d/%m/%Y %H:%M}"
+                elif current_status == "revoked":
+                    detail = "La cobertura clínica de esta cita fue revocada"
+                else:
+                    detail = "La cobertura clínica de esta cita ya no está vigente"
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="La cobertura clínica de esta cita ya no está vigente",
+                    detail=detail,
                 )
 
 

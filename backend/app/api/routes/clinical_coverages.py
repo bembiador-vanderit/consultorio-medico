@@ -53,7 +53,6 @@ def list_coverages(user: User = Depends(agenda_access), db: Session = Depends(ge
             serialize(item)
             for item in db.scalars(query)
             if secretary_can_manage(user, item.center_id, item.principal_doctor_id, db)
-            and secretary_can_manage(user, item.center_id, item.substitute_doctor_id, db)
         ]
     raise HTTPException(status_code=403, detail="No tiene acceso a coberturas clínicas")
 
@@ -171,7 +170,6 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
     secretary_authorized = (
         is_role(user, "secretary")
         and secretary_can_manage(user, coverage.center_id, coverage.principal_doctor_id, db)
-        and secretary_can_manage(user, coverage.center_id, coverage.substitute_doctor_id, db)
     )
     if not principal_authorized and not secretary_authorized:
         raise HTTPException(status_code=403, detail="No puede transferir citas con esta cobertura")
