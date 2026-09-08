@@ -136,7 +136,7 @@ def test_history_exposes_specialty_doctor_and_center(specialty_context):
         doctor,
         db,
     )
-    histories = get_clinical_history(patient.id, admin, db)
+    histories = get_clinical_history(patient.id, doctor, db)
     assert histories[0].specialty_name == "Pediatría"
     assert histories[0].doctor_name == doctor.full_name
     assert histories[0].center_name == center.name

@@ -37,10 +37,12 @@ from app.services.appointment_scope import ensure_appointment_access
 from app.services.clinical_access import (
     add_clinical_audit,
     can_access_history,
+    ensure_attending_doctor,
     require_history_access,
     scope_histories,
 )
 from app.services.clinical_coverage import coverage_status
+from app.services.patient_scope import require_patient_clinical_scope
 
 router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
 access = require_permission("clinical:access")
@@ -110,6 +112,7 @@ def _resolve_consultation_context(
         raise HTTPException(status_code=404, detail="Cita no encontrada")
     if user is not None:
         ensure_appointment_access(user, appointment, db)
+        ensure_attending_doctor(user, appointment)
         _ensure_appointment_attendable(appointment, db)
     return _appointment_context(appointment, patient_id)
 
@@ -147,8 +150,7 @@ def list_clinical_audit_logs(
 
 @router.get("/patients/{patient_id}", response_model=list[ClinicalHistoryResponse])
 def get_clinical_history(patient_id: int, user: User = Depends(access), db: Session = Depends(get_db)):
-    if not db.get(Patient, patient_id):
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    require_patient_clinical_scope(db, user, patient_id)
     query = select(ClinicalHistory).where(ClinicalHistory.patient_id == patient_id)
     query = scope_histories(query, user).order_by(ClinicalHistory.consultation_date.desc(), ClinicalHistory.id.desc())
     histories = [history for history in db.scalars(query) if can_access_history(db, user, history)]
@@ -178,6 +180,7 @@ def get_consultation_context(appointment_id: int, user: User = Depends(access), 
     if appointment is None:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
     ensure_appointment_access(user, appointment, db)
+    ensure_attending_doctor(user, appointment)
     _ensure_appointment_attendable(appointment, db)
 
     histories_query = select(ClinicalHistory).where(ClinicalHistory.patient_id == appointment.patient_id)
@@ -224,6 +227,8 @@ def get_consultation_context(appointment_id: int, user: User = Depends(access), 
 def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, user: User = Depends(access), db: Session = Depends(get_db)):
     if not db.get(Patient, patient_id):
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    if payload.appointment_id is None:
+        raise HTTPException(status_code=422, detail="La consulta debe iniciarse desde una cita autorizada")
 
     data = payload.model_dump()
     context = _resolve_consultation_context(data.get("appointment_id"), patient_id, db, user)

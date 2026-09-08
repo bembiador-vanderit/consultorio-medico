@@ -2,14 +2,19 @@ import { FormEvent, useEffect, useState } from "react";
 import { api } from "../../services/api";
 import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
 import type { Patient } from "../../types/patient";
+import type { User } from "../../types/user";
+
+type PatientIdentity = { id: number; first_name: string; last_name: string; date_of_birth: string; phone_masked: string | null; email_masked: string | null };
 
 type Props = {
   patient: Patient | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (patient: Patient) => void;
+  onExistingSelected: (patient: Patient) => void;
+  user: User;
 };
 
-export default function PatientForm({ patient, onClose, onSaved }: Props) {
+export default function PatientForm({ patient, onClose, onSaved, onExistingSelected, user }: Props) {
   const [firstName, setFirstName] = useState(patient?.first_name || "");
   const [lastName, setLastName] = useState(patient?.last_name || "");
   const [dateOfBirth, setDateOfBirth] = useState(patient?.date_of_birth || "");
@@ -24,6 +29,7 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
   const [loadingInsurance, setLoadingInsurance] = useState(Boolean(patient));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [identityMatches, setIdentityMatches] = useState<PatientIdentity[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,12 +109,23 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
     };
 
     try {
-      if (patient) {
-        await api.put(`/patients/${patient.id}`, payload);
-      } else {
-        await api.post("/patients", payload);
+      if (!patient && dateOfBirth && (phone.trim() || email.trim()) && (user.roles.includes("doctor") || user.roles.includes("admin"))) {
+        const identifier = email.trim() || phone.trim();
+        const { data } = await api.get<PatientIdentity[]>("/patients/identity-search", { params: {
+          date_of_birth: dateOfBirth,
+          phone: identifier.includes("@") ? undefined : identifier,
+          email: identifier.includes("@") ? identifier : undefined,
+        } });
+        if (data.length) {
+          setIdentityMatches(data);
+          setError("Ya existe una identidad coincidente. Seleccione el registro existente para evitar duplicarlo.");
+          return;
+        }
       }
-      onSaved();
+      const response = patient
+        ? await api.put<Patient>(`/patients/${patient.id}`, payload)
+        : await api.post<Patient>("/patients", payload);
+      onSaved(response.data);
     } catch (err: any) {
       console.error(err);
       const detail = err?.response?.data?.detail;
@@ -129,6 +146,8 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
         <p className="mt-1 text-sm text-slate-500">Complete los datos del paciente y su cobertura médica.</p>
 
         {error && <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        {identityMatches.length > 0 && <div className="mt-3 rounded-lg border bg-amber-50 p-3">{identityMatches.map((match) => <button type="button" key={match.id} onClick={() => onExistingSelected({ id: match.id, first_name: match.first_name, last_name: match.last_name, date_of_birth: match.date_of_birth, phone: match.phone_masked, email: null, created_at: new Date().toISOString() })} className="block w-full rounded border bg-white p-2 text-left text-sm"><span className="font-medium">Usar {match.first_name} {match.last_name}</span><span className="ml-2 text-xs text-slate-500">{match.date_of_birth}{match.phone_masked ? ` · ${match.phone_masked}` : ""}</span></button>)}</div>}
+        {!patient && user.roles.includes("secretary") && <p className="mt-3 text-xs text-slate-500">Para buscar un paciente existente, use Nueva cita y seleccione primero el centro y el médico autorizado.</p>}
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <label className="text-sm font-medium">Nombre *

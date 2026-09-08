@@ -56,7 +56,7 @@ def build_client(db: FakeDB) -> TestClient:
     app = FastAPI()
     app.include_router(prescriptions.router, prefix="/api/v1")
     app.dependency_overrides[prescriptions.access] = lambda: User(
-        id=1, full_name="Admin", roles=[Role(code="admin", name="Administrador")]
+        id=5, full_name="Doctor", roles=[Role(code="doctor", name="Doctor")]
     )
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app)
@@ -109,8 +109,8 @@ def test_prescription_cannot_be_changed_from_another_history():
         f"/api/v1/clinical-history/20/prescriptions/{created['id']}"
     )
 
-    assert update_response.status_code == 404
-    assert delete_response.status_code == 404
+    assert update_response.status_code == 403
+    assert delete_response.status_code == 403
     assert db.prescriptions[created["id"]].clinical_history_id == 10
 
 

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes import clinical_history
 from app.db import get_db
+from app.models.appointment import Appointment
 from app.models.center import CareCenter
 from app.models.clinical_history import ClinicalHistory
 from app.models.diagnosis import Diagnosis
@@ -47,6 +48,7 @@ class FakeDB:
             password_hash="not-a-real-hash",
         )
         self.center = CareCenter(id=7, name="Centro Norte", city="Santiago", address="Calle Principal 1")
+        self.appointment = Appointment(id=19, patient_id=3, doctor_id=5, center_id=7)
         self.diagnoses = [
             Diagnosis(
                 id=21,
@@ -91,6 +93,7 @@ class FakeDB:
             (Patient, 3): self.patient,
             (User, 5): self.doctor,
             (CareCenter, 7): self.center,
+            (Appointment, 19): self.appointment,
         }
         return records.get((model, object_id))
 
@@ -117,7 +120,7 @@ def build_client(db: FakeDB) -> TestClient:
     app = FastAPI()
     app.include_router(clinical_history.router, prefix="/api/v1")
     app.dependency_overrides[clinical_history.access] = lambda: User(
-        id=1, full_name="Admin", roles=[Role(code="admin", name="Administrador")]
+        id=5, full_name="Doctor", roles=[Role(code="doctor", name="Doctor")], centers=[db.center]
     )
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app)

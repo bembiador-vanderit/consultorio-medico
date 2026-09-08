@@ -11,6 +11,7 @@ from app.schemas.insurance import (
     PatientInsuranceCreate,
     PatientInsuranceResponse,
 )
+from app.services.patient_scope import require_patient_identity_access
 
 router = APIRouter(prefix="/insurance", tags=["Seguros médicos"])
 
@@ -74,11 +75,10 @@ def create_company(
 )
 def list_patient_insurances(
     patient_id: int,
-    _: User = Depends(require_permission("patients:access")),
+    user: User = Depends(require_permission("patients:access")),
     db: Session = Depends(get_db),
 ):
-    if not db.get(Patient, patient_id):
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    require_patient_identity_access(db, user, patient_id)
 
     items = db.scalars(
         select(PatientInsurance)
@@ -96,11 +96,10 @@ def list_patient_insurances(
 def add_patient_insurance(
     patient_id: int,
     payload: PatientInsuranceCreate,
-    _: User = Depends(require_permission("patients:access")),
+    user: User = Depends(require_permission("patients:access")),
     db: Session = Depends(get_db),
 ):
-    if not db.get(Patient, patient_id):
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    require_patient_identity_access(db, user, patient_id)
 
     company = db.get(InsuranceCompany, payload.insurance_company_id)
     if not company or not company.is_active:
@@ -138,9 +137,10 @@ def add_patient_insurance(
 def deactivate_patient_insurance(
     patient_id: int,
     insurance_id: int,
-    _: User = Depends(require_permission("patients:access")),
+    user: User = Depends(require_permission("patients:access")),
     db: Session = Depends(get_db),
 ):
+    require_patient_identity_access(db, user, patient_id)
     item = db.scalar(
         select(PatientInsurance).where(
             PatientInsurance.id == insurance_id,

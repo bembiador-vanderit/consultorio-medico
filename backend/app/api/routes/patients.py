@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -6,15 +8,24 @@ from app.api.deps import require_permission
 from app.db import get_db
 from app.models.insurance import InsuranceCompany, PatientInsurance
 from app.models.patient import Patient
-from app.schemas.patient import PatientCreate, PatientResponse, PatientUpdate
+from app.schemas.patient import PatientCreate, PatientIdentityResponse, PatientResponse, PatientUpdate
+from app.services.patient_scope import (
+    identity_matches,
+    mask_email,
+    mask_phone,
+    require_patient_identity_access,
+    scope_patient_identities,
+    validate_identity_search_context,
+)
 
 router = APIRouter(prefix="/patients", tags=["Pacientes"])
 access = require_permission("patients:access")
 
 
 @router.get("/count")
-def count_patients(_=Depends(access), db: Session = Depends(get_db)):
-    return {"count": db.scalar(select(func.count()).select_from(Patient)) or 0}
+def count_patients(user=Depends(access), db: Session = Depends(get_db)):
+    query = scope_patient_identities(select(func.count()).select_from(Patient), user, db)
+    return {"count": db.scalar(query) or 0}
 
 
 @router.get("", response_model=list[PatientResponse])
@@ -22,7 +33,7 @@ def list_patients(
     query: str | None = None,
     offset: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
-    _=Depends(access),
+    user=Depends(access),
     db: Session = Depends(get_db),
 ):
     statement = select(Patient).order_by(Patient.last_name, Patient.first_name).offset(offset).limit(limit)
@@ -35,7 +46,32 @@ def list_patients(
                 Patient.phone.ilike(term),
             )
         )
+    statement = scope_patient_identities(statement, user, db)
     return db.scalars(statement).all()
+
+
+@router.get("/identity-search", response_model=list[PatientIdentityResponse])
+def search_patient_identity(
+    date_of_birth: date,
+    phone: str | None = None,
+    email: str | None = None,
+    center_id: int | None = None,
+    doctor_id: int | None = None,
+    user=Depends(access),
+    db: Session = Depends(get_db),
+):
+    validate_identity_search_context(db, user, center_id=center_id, doctor_id=doctor_id)
+    return [
+        PatientIdentityResponse(
+            id=patient.id,
+            first_name=patient.first_name,
+            last_name=patient.last_name,
+            date_of_birth=patient.date_of_birth,
+            phone_masked=mask_phone(patient.phone),
+            email_masked=mask_email(patient.email),
+        )
+        for patient in identity_matches(db, date_of_birth=date_of_birth, phone=phone, email=email)
+    ]
 
 
 def _validate_insurance(payload, db: Session) -> InsuranceCompany:
@@ -67,6 +103,14 @@ def _add_insurance(patient: Patient, payload, db: Session) -> None:
 
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
 def create_patient(payload: PatientCreate, _=Depends(access), db: Session = Depends(get_db)):
+    if payload.phone or payload.email:
+        if identity_matches(
+            db,
+            date_of_birth=payload.date_of_birth,
+            phone=payload.phone,
+            email=str(payload.email) if payload.email else None,
+        ):
+            raise HTTPException(status_code=409, detail="Ya existe un paciente con esa fecha de nacimiento e identificador")
     patient_data = payload.model_dump(exclude={"has_insurance", "insurance"})
     patient = Patient(**patient_data)
     db.add(patient)
@@ -78,18 +122,13 @@ def create_patient(payload: PatientCreate, _=Depends(access), db: Session = Depe
 
 
 @router.get("/{patient_id}", response_model=PatientResponse)
-def get_patient(patient_id: int, _=Depends(access), db: Session = Depends(get_db)):
-    patient = db.get(Patient, patient_id)
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
-    return patient
+def get_patient(patient_id: int, user=Depends(access), db: Session = Depends(get_db)):
+    return require_patient_identity_access(db, user, patient_id)
 
 
 @router.put("/{patient_id}", response_model=PatientResponse)
-def update_patient(patient_id: int, payload: PatientUpdate, _=Depends(access), db: Session = Depends(get_db)):
-    patient = db.get(Patient, patient_id)
-    if not patient:
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+def update_patient(patient_id: int, payload: PatientUpdate, user=Depends(access), db: Session = Depends(get_db)):
+    patient = require_patient_identity_access(db, user, patient_id)
 
     patient_data = payload.model_dump(exclude={"has_insurance", "insurance"})
     for field, value in patient_data.items():

@@ -36,8 +36,6 @@ def delegated_coverage_id(db: Session, user: User, history: ClinicalHistory) -> 
 
 
 def has_normal_history_access(db: Session, user: User, history: ClinicalHistory) -> bool:
-    if is_role(user, "admin"):
-        return True
     if not is_role(user, "doctor") or history.doctor_id != user.id:
         return False
 
@@ -64,14 +62,18 @@ def can_access_history(db: Session, user: User, history: ClinicalHistory) -> boo
 
 
 def scope_histories(query: Select, user: User) -> Select:
-    if is_role(user, "admin"):
-        return query
     if is_role(user, "doctor"):
         # Callers already restrict by patient. Filtering each result through
         # can_access_history is necessary because delegated access depends on a
         # concrete transferred appointment for that patient.
         return query
     return query.where(ClinicalHistory.id == -1)
+
+
+def ensure_attending_doctor(user: User, appointment: Appointment) -> None:
+    """Clinical work is limited to the doctor currently responsible for the appointment."""
+    if not user.is_active or not is_role(user, "doctor") or appointment.doctor_id != user.id:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
 
 
 def add_clinical_audit(

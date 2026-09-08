@@ -8,12 +8,10 @@ from app.api.deps import current_user
 from app.db import get_db
 from app.models import Appointment, FollowUp, Notification, User
 from app.schemas.follow_up import FollowUpCreate, FollowUpRead, NotificationRead
+from app.services.clinical_access import require_history_access
+from app.services.patient_scope import require_patient_clinical_scope
 
 router = APIRouter(prefix="/follow-ups", tags=["follow-ups"])
-
-
-def _is_admin(user: User) -> bool:
-    return any(role.code == "admin" for role in user.roles)
 
 
 def _is_doctor(user: User) -> bool:
@@ -21,8 +19,10 @@ def _is_doctor(user: User) -> bool:
 
 
 def _doctor_for_request(payload: FollowUpCreate, user: User) -> int:
+    if not _is_doctor(user):
+        raise HTTPException(status_code=403, detail="Solo un médico puede crear seguimientos clínicos")
     if payload.doctor_id is not None:
-        if user.id != payload.doctor_id and not _is_admin(user):
+        if user.id != payload.doctor_id:
             raise HTTPException(status_code=403, detail="No puede crear seguimientos para otro médico")
         return payload.doctor_id
     if _is_doctor(user):
@@ -33,14 +33,29 @@ def _doctor_for_request(payload: FollowUpCreate, user: User) -> int:
 @router.get("", response_model=list[FollowUpRead])
 def list_follow_ups(db: Session = Depends(get_db), user: User = Depends(current_user)):
     stmt = select(FollowUp).order_by(FollowUp.due_at.asc())
-    if not _is_admin(user):
-        stmt = stmt.where(FollowUp.doctor_id == user.id)
+    if not _is_doctor(user):
+        return []
+    stmt = stmt.where(FollowUp.doctor_id == user.id)
     return list(db.scalars(stmt).all())
 
 
 @router.post("", response_model=FollowUpRead, status_code=201)
 def create_follow_up(payload: FollowUpCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
     doctor_id = _doctor_for_request(payload, user)
+    require_patient_clinical_scope(db, user, payload.patient_id)
+    if payload.clinical_history_id is not None:
+        history = require_history_access(
+            db,
+            user,
+            payload.clinical_history_id,
+            action="follow_up.create",
+            resource_type="follow_up",
+            write=True,
+        )
+        if history.patient_id != payload.patient_id:
+            raise HTTPException(status_code=422, detail="La consulta no pertenece al paciente indicado")
+        if payload.center_id is not None and history.center_id != payload.center_id:
+            raise HTTPException(status_code=422, detail="El centro no coincide con la consulta indicada")
     follow_up = FollowUp(**payload.model_dump(exclude={"doctor_id"}), doctor_id=doctor_id)
     db.add(follow_up)
     db.flush()
@@ -61,7 +76,7 @@ def complete_follow_up(follow_up_id: int, db: Session = Depends(get_db), user: U
     follow_up = db.get(FollowUp, follow_up_id)
     if not follow_up:
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
-    if follow_up.doctor_id != user.id and not _is_admin(user):
+    if not _is_doctor(user) or follow_up.doctor_id != user.id:
         raise HTTPException(status_code=403, detail="No puede modificar este seguimiento")
     follow_up.status = "completed"
     follow_up.completed_at = datetime.utcnow()

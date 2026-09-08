@@ -77,7 +77,7 @@ def build_client(db: FakeDB) -> TestClient:
     app = FastAPI()
     app.include_router(prescriptions.router, prefix="/api/v1")
     app.dependency_overrides[prescriptions.access] = lambda: User(
-        id=1, full_name="Admin", roles=[Role(code="admin", name="Administrador")]
+        id=5, full_name="Doctor", roles=[Role(code="doctor", name="Doctor")], centers=[db.center]
     )
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app)

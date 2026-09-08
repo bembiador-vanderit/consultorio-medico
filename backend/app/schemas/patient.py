@@ -34,3 +34,12 @@ class PatientResponse(BaseModel):
     email: EmailStr | None
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class PatientIdentityResponse(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    date_of_birth: date
+    phone_masked: str | None = None
+    email_masked: str | None = None
