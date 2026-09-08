@@ -35,6 +35,26 @@ def delegated_coverage_id(db: Session, user: User, history: ClinicalHistory) -> 
     return db.scalar(query)
 
 
+def principal_continuity_coverage_id(db: Session, user: User, history: ClinicalHistory) -> int | None:
+    """Keep the principal's read access to episodes authored under a concrete transfer."""
+    if not is_role(user, "doctor") or history.appointment_id is None:
+        return None
+    return db.scalar(
+        select(ClinicalCoverage.id)
+        .join(AppointmentCoverageTransfer, AppointmentCoverageTransfer.coverage_id == ClinicalCoverage.id)
+        .join(Appointment, Appointment.id == AppointmentCoverageTransfer.appointment_id)
+        .where(
+            AppointmentCoverageTransfer.appointment_id == history.appointment_id,
+            AppointmentCoverageTransfer.original_doctor_id == user.id,
+            AppointmentCoverageTransfer.substitute_doctor_id == history.doctor_id,
+            ClinicalCoverage.center_id == history.center_id,
+            Appointment.patient_id == history.patient_id,
+            Appointment.center_id == history.center_id,
+        )
+        .limit(1)
+    )
+
+
 def has_normal_history_access(db: Session, user: User, history: ClinicalHistory) -> bool:
     if not is_role(user, "doctor") or history.doctor_id != user.id:
         return False
@@ -58,7 +78,11 @@ def has_normal_history_access(db: Session, user: User, history: ClinicalHistory)
 
 
 def can_access_history(db: Session, user: User, history: ClinicalHistory) -> bool:
-    return has_normal_history_access(db, user, history) or delegated_coverage_id(db, user, history) is not None
+    return (
+        has_normal_history_access(db, user, history)
+        or delegated_coverage_id(db, user, history) is not None
+        or principal_continuity_coverage_id(db, user, history) is not None
+    )
 
 
 def scope_histories(query: Select, user: User) -> Select:
@@ -139,7 +163,12 @@ def require_history_access(
     if history is None:
         raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
     normal_access = has_normal_history_access(db, user, history)
-    coverage_id = None if normal_access else delegated_coverage_id(db, user, history)
+    delegated_id = None if normal_access else delegated_coverage_id(db, user, history)
+    principal_continuity_id = (
+        None if normal_access or delegated_id is not None
+        else principal_continuity_coverage_id(db, user, history)
+    )
+    coverage_id = delegated_id or principal_continuity_id
     if not normal_access and coverage_id is None:
         _deny(
             db,
@@ -156,7 +185,7 @@ def require_history_access(
         _deny(
             db, user, action=action, history_id=history.id, resource_type=resource_type,
             resource_id=resource_id, reason="delegated_access_is_read_only", status_code=403,
-            detail="La cobertura solo permite consultar el historial previo",
+            detail="El acceso a episodios por cobertura es de solo lectura",
         )
     if write and history.status == "completed":
         _deny(
@@ -192,7 +221,11 @@ def require_history_access(
             resource_type=resource_type,
             resource_id=resource_id,
             history_id=history.id,
-            context={"coverage_id": coverage_id, "delegated": coverage_id is not None},
+            context={
+                "coverage_id": coverage_id,
+                "delegated": delegated_id is not None,
+                "principal_continuity": principal_continuity_id is not None,
+            },
         )
         db.commit()
     return history

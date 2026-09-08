@@ -24,6 +24,12 @@ La secretaria visualiza identidades asociadas a citas incluidas en su alcance co
 
 La cobertura continúa siendo una autorización explícita y concreta. Requiere principal, sustituto, centro, vigencia y una cita transferida. Solo la transferencia del paciente concreto permite consultar el historial previo autorizado; no abre los demás pacientes del médico principal. El acceso delegado previo es de solo lectura y conserva la auditoría existente.
 
+Una cobertura programada permite transferir anticipadamente una cita cuya fecha y hora estén dentro del período autorizado. La cita aparece de inmediato en la agenda del suplente, pero esa visibilidad administrativa no adelanta el acceso clínico: iniciar la consulta y consultar historia ajena siguen exigiendo que la cobertura esté vigente.
+
+Mientras la cobertura permanezca vigente, completar la cita transferida no elimina el acceso delegado al historial previo de ese paciente. Cuando expira o se revoca, el suplente pierde dicho acceso ajeno, aunque sus propios episodios permanecen registrados con su autoría real. El médico principal conserva acceso de solo lectura a los episodios realizados bajo la transferencia concreta para continuidad asistencial.
+
+Una secretaria puede ejecutar la transferencia anticipada únicamente cuando su configuración autoriza, en el mismo centro, tanto al médico principal como al suplente. Esta gestión de agenda no concede acceso a información clínica.
+
 ## Búsqueda restringida y duplicados
 
 `GET /api/v1/patients/identity-search` exige fecha de nacimiento y teléfono o correo exacto. No admite el nombre como único identificador. La respuesta contiene solamente identificador, nombre, fecha de nacimiento y contacto enmascarado; nunca incluye información clínica.

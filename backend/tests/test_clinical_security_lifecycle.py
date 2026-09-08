@@ -31,6 +31,8 @@ from app.models import (
 from app.services.clinical_coverage import coverage_status, installation_now
 from app.models.requested_tests import RequestedTests
 from app.schemas.appointment import AppointmentCreate
+from app.services import clinical_access as clinical_access_service
+from app.services import clinical_coverage as coverage_service
 from app.services.clinical_specialties import set_doctor_specialties
 
 
@@ -117,6 +119,7 @@ def clinical_app():
     app.dependency_overrides[prescriptions.access] = lambda: active_user["value"]
     app.dependency_overrides[vital_signs.access] = lambda: active_user["value"]
     app.dependency_overrides[clinical_coverages.access] = lambda: active_user["value"]
+    app.dependency_overrides[clinical_coverages.agenda_access] = lambda: active_user["value"]
     app.dependency_overrides[appointments.access] = lambda: active_user["value"]
     app.dependency_overrides[patients.access] = lambda: active_user["value"]
     app.dependency_overrides[current_user] = lambda: active_user["value"]
@@ -853,19 +856,115 @@ def test_failed_coverage_transfer_rolls_back_appointment_and_relation(clinical_a
     )) is None
 
 
-@pytest.mark.parametrize("offsets", [(-3, -2), (2, 3)])
-def test_expired_or_future_coverage_cannot_transfer_an_appointment(clinical_app, offsets):
+def test_expired_coverage_cannot_transfer_an_appointment(clinical_app):
     now = installation_now()
     response = clinical_app["client"].post("/api/v1/clinical-coverages", json={
         "substitute_doctor_id": clinical_app["doctor_b"].id,
         "center_id": clinical_app["center"].id,
-        "starts_at": (now + timedelta(hours=offsets[0])).isoformat(),
-        "ends_at": (now + timedelta(hours=offsets[1])).isoformat(),
+        "starts_at": (now - timedelta(hours=3)).isoformat(),
+        "ends_at": (now - timedelta(hours=2)).isoformat(),
     })
     assert response.status_code == 201
     appointment = clinical_app["appointment_a"]
     assert clinical_app["client"].post(
         f"/api/v1/clinical-coverages/{response.json()['id']}/appointments/{appointment.id}/transfer"
+    ).status_code == 409
+
+
+def test_future_coverage_transfers_now_but_clinical_access_waits_for_start(clinical_app, monkeypatch):
+    client = clinical_app["client"]
+    db = clinical_app["db"]
+    principal = clinical_app["doctor_a"]
+    substitute = clinical_app["doctor_b"]
+    now = installation_now()
+    starts_at = (now + timedelta(days=2)).replace(microsecond=0)
+    appointment_at = starts_at + timedelta(hours=2)
+    ends_at = starts_at + timedelta(days=5)
+    appointment = Appointment(
+        patient_id=clinical_app["patient_a"].id,
+        doctor_id=principal.id,
+        center_id=clinical_app["center"].id,
+        specialty_id=clinical_app["specialty"].id,
+        appointment_date=appointment_at.date(),
+        appointment_time=appointment_at.time(),
+        status="confirmed",
+    )
+    db.add(appointment); db.commit()
+    coverage = client.post("/api/v1/clinical-coverages", json={
+        "substitute_doctor_id": substitute.id,
+        "center_id": clinical_app["center"].id,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": ends_at.isoformat(),
+    })
+    assert coverage.status_code == 201
+    assert coverage.json()["status"] == "future"
+
+    transferred = client.post(
+        f"/api/v1/clinical-coverages/{coverage.json()['id']}/appointments/{appointment.id}/transfer"
+    )
+    assert transferred.status_code == 200
+    db.refresh(appointment)
+    assert appointment.doctor_id == substitute.id
+
+    clinical_app["active_user"]["value"] = substitute
+    assert appointment.id in {item["id"] for item in client.get("/api/v1/appointments").json()}
+    assert client.get(f"/api/v1/clinical-history/appointments/{appointment.id}/context").status_code == 409
+    assert client.get(f"/api/v1/clinical-history/{clinical_app['history_a'].id}/summary/pdf").status_code == 403
+
+    active_now = appointment_at
+    monkeypatch.setattr(coverage_service, "installation_now", lambda: active_now)
+    monkeypatch.setattr(clinical_access_service, "installation_now", lambda: active_now)
+    assert client.get(f"/api/v1/clinical-history/appointments/{appointment.id}/context").status_code == 200
+    assert client.get(f"/api/v1/clinical-history/{clinical_app['history_a'].id}/summary/pdf").status_code == 200
+    created = client.post(
+        f"/api/v1/clinical-history/patients/{clinical_app['patient_a'].id}",
+        json={"appointment_id": appointment.id, "consultation_date": appointment_at.date().isoformat()},
+    )
+    assert created.status_code == 201
+    substitute_history_id = created.json()["id"]
+    assert client.post(f"/api/v1/clinical-history/{substitute_history_id}/complete").status_code == 200
+
+    next_day = active_now + timedelta(days=1)
+    monkeypatch.setattr(coverage_service, "installation_now", lambda: next_day)
+    monkeypatch.setattr(clinical_access_service, "installation_now", lambda: next_day)
+    assert client.get(f"/api/v1/clinical-history/{clinical_app['history_a'].id}/summary/pdf").status_code == 200
+
+    after_expiry = ends_at
+    monkeypatch.setattr(coverage_service, "installation_now", lambda: after_expiry)
+    monkeypatch.setattr(clinical_access_service, "installation_now", lambda: after_expiry)
+    assert client.get(f"/api/v1/clinical-history/{clinical_app['history_a'].id}/summary/pdf").status_code == 403
+    own_episode = client.get(f"/api/v1/clinical-history/{substitute_history_id}/summary/pdf")
+    assert own_episode.status_code == 200
+
+    clinical_app["active_user"]["value"] = principal
+    assert client.get(f"/api/v1/clinical-history/{substitute_history_id}/summary/pdf").status_code == 200
+    assert db.get(ClinicalHistory, substitute_history_id).doctor_id == substitute.id
+
+
+@pytest.mark.parametrize("delta", [timedelta(hours=-1), timedelta(days=5)])
+def test_future_coverage_rejects_appointments_outside_its_period(clinical_app, delta):
+    now = installation_now()
+    starts_at = (now + timedelta(days=2)).replace(microsecond=0)
+    ends_at = starts_at + timedelta(days=5)
+    appointment_at = starts_at + delta
+    appointment = Appointment(
+        patient_id=clinical_app["patient_a"].id,
+        doctor_id=clinical_app["doctor_a"].id,
+        center_id=clinical_app["center"].id,
+        specialty_id=clinical_app["specialty"].id,
+        appointment_date=appointment_at.date(),
+        appointment_time=appointment_at.time(),
+        status="scheduled",
+    )
+    clinical_app["db"].add(appointment); clinical_app["db"].commit()
+    coverage = clinical_app["client"].post("/api/v1/clinical-coverages", json={
+        "substitute_doctor_id": clinical_app["doctor_b"].id,
+        "center_id": clinical_app["center"].id,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": ends_at.isoformat(),
+    })
+    assert clinical_app["client"].post(
+        f"/api/v1/clinical-coverages/{coverage.json()['id']}/appointments/{appointment.id}/transfer"
     ).status_code == 409
 
 
@@ -895,6 +994,107 @@ def test_secretary_cannot_create_clinical_coverage(clinical_app):
         "starts_at": now.isoformat(), "ends_at": (now + timedelta(hours=1)).isoformat(),
     })
     assert response.status_code == 403
+
+
+def test_authorized_secretary_can_transfer_future_appointment_but_outsider_cannot(clinical_app):
+    db = clinical_app["db"]
+    client = clinical_app["client"]
+    principal = clinical_app["doctor_a"]
+    substitute = clinical_app["doctor_b"]
+    center = clinical_app["center"]
+    now = installation_now()
+    starts_at = (now + timedelta(days=2)).replace(microsecond=0)
+    appointment_at = starts_at + timedelta(hours=2)
+    coverage = client.post("/api/v1/clinical-coverages", json={
+        "substitute_doctor_id": substitute.id,
+        "center_id": center.id,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": (starts_at + timedelta(days=2)).isoformat(),
+    }).json()
+    appointments_to_transfer = [
+        Appointment(
+            patient_id=clinical_app["patient_a"].id,
+            doctor_id=principal.id,
+            center_id=center.id,
+            specialty_id=clinical_app["specialty"].id,
+            appointment_date=appointment_at.date(),
+            appointment_time=(appointment_at + timedelta(hours=index)).time(),
+            status="scheduled",
+        )
+        for index in range(2)
+    ]
+    secretary_role = Role(code="secretary", name="Secretaria")
+    authorized = User(
+        email="authorized-future-coverage@example.test", full_name="Secretaria Autorizada",
+        password_hash="hash", roles=[secretary_role], centers=[center], is_active=True,
+    )
+    outsider = User(
+        email="outside-future-coverage@example.test", full_name="Secretaria Parcial",
+        password_hash="hash", roles=[secretary_role], centers=[center], is_active=True,
+    )
+    db.add_all([authorized, outsider, *appointments_to_transfer]); db.flush()
+    db.add_all([
+        SecretaryCenterScope(
+            secretary_id=authorized.id, center_id=center.id,
+            manage_all_doctors=False, doctors=[principal, substitute],
+        ),
+        SecretaryCenterScope(
+            secretary_id=outsider.id, center_id=center.id,
+            manage_all_doctors=False, doctors=[principal],
+        ),
+    ])
+    db.commit()
+
+    clinical_app["active_user"]["value"] = authorized
+    listed = client.get("/api/v1/clinical-coverages")
+    assert listed.status_code == 200
+    assert coverage["id"] in {item["id"] for item in listed.json()}
+    assert client.post(
+        f"/api/v1/clinical-coverages/{coverage['id']}/appointments/{appointments_to_transfer[0].id}/transfer"
+    ).status_code == 200
+
+    clinical_app["active_user"]["value"] = outsider
+    assert coverage["id"] not in {item["id"] for item in client.get("/api/v1/clinical-coverages").json()}
+    assert client.post(
+        f"/api/v1/clinical-coverages/{coverage['id']}/appointments/{appointments_to_transfer[1].id}/transfer"
+    ).status_code == 403
+
+
+def test_revoking_future_coverage_restores_transferred_appointment(clinical_app):
+    client = clinical_app["client"]
+    db = clinical_app["db"]
+    now = installation_now()
+    starts_at = (now + timedelta(days=2)).replace(microsecond=0)
+    appointment_at = starts_at + timedelta(hours=2)
+    appointment = Appointment(
+        patient_id=clinical_app["patient_a"].id,
+        doctor_id=clinical_app["doctor_a"].id,
+        center_id=clinical_app["center"].id,
+        specialty_id=clinical_app["specialty"].id,
+        appointment_date=appointment_at.date(),
+        appointment_time=appointment_at.time(),
+        status="confirmed",
+    )
+    db.add(appointment); db.commit()
+    coverage = client.post("/api/v1/clinical-coverages", json={
+        "substitute_doctor_id": clinical_app["doctor_b"].id,
+        "center_id": clinical_app["center"].id,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": (starts_at + timedelta(days=2)).isoformat(),
+    }).json()
+    assert client.post(
+        f"/api/v1/clinical-coverages/{coverage['id']}/appointments/{appointment.id}/transfer"
+    ).status_code == 200
+
+    clinical_app["active_user"]["value"] = clinical_app["doctor_b"]
+    assert appointment.id in {item["id"] for item in client.get("/api/v1/appointments").json()}
+    clinical_app["active_user"]["value"] = clinical_app["doctor_a"]
+    assert client.post(f"/api/v1/clinical-coverages/{coverage['id']}/revoke").status_code == 200
+    db.refresh(appointment)
+    assert appointment.doctor_id == clinical_app["doctor_a"].id
+    assert appointment.coverage_transfer is None
+    clinical_app["active_user"]["value"] = clinical_app["doctor_b"]
+    assert appointment.id not in {item["id"] for item in client.get("/api/v1/appointments").json()}
 
 
 def test_coverage_in_another_center_does_not_open_history(clinical_app):

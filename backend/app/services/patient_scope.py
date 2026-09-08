@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import Select, exists, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Appointment, ClinicalHistory, Patient, User
+from app.models import Appointment, AppointmentCoverageTransfer, ClinicalHistory, Patient, User
 from app.services.appointment_scope import apply_appointment_scope, is_role, secretary_can_manage
 
 
@@ -34,7 +34,15 @@ def scope_patient_identities(query: Select, user: User, db: Session) -> Select:
                 ClinicalHistory.doctor_id == user.id,
             )
         )
-        return query.where(or_(own_appointment, own_history))
+        transferred_as_principal = exists(
+            select(AppointmentCoverageTransfer.id)
+            .join(Appointment, Appointment.id == AppointmentCoverageTransfer.appointment_id)
+            .where(
+                Appointment.patient_id == Patient.id,
+                AppointmentCoverageTransfer.original_doctor_id == user.id,
+            )
+        )
+        return query.where(or_(own_appointment, own_history, transferred_as_principal))
     raise HTTPException(status_code=403, detail="No tiene acceso a pacientes")
 
 
@@ -55,6 +63,17 @@ def doctor_has_patient_relationship(db: Session, user: User, patient_id: int) ->
         ).limit(1)
     )
     if own_appointment is not None:
+        return True
+    transferred_as_principal = db.scalar(
+        select(AppointmentCoverageTransfer.id)
+        .join(Appointment, Appointment.id == AppointmentCoverageTransfer.appointment_id)
+        .where(
+            Appointment.patient_id == patient_id,
+            AppointmentCoverageTransfer.original_doctor_id == user.id,
+        )
+        .limit(1)
+    )
+    if transferred_as_principal is not None:
         return True
     return db.scalar(
         select(ClinicalHistory.id).where(

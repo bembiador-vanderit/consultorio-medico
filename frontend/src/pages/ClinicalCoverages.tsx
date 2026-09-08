@@ -12,6 +12,7 @@ const statusLabels = { active: "Vigente", future: "Programada", expired: "Expira
 const localDateTimeKey = (date: string, time = "") => `${date.slice(0, 10)}T${time.slice(0, 8) || date.slice(11, 19)}`;
 
 export default function ClinicalCoverages({ user, onBack }: Props) {
+  const canCreateCoverage = user.roles.includes("doctor");
   const [coverages, setCoverages] = useState<Coverage[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [substitutes, setSubstitutes] = useState<Substitute[]>([]);
@@ -42,14 +43,15 @@ export default function ClinicalCoverages({ user, onBack }: Props) {
 
   const outgoing = coverages.filter((item) => item.principal_doctor_id === user.id);
   const incoming = coverages.filter((item) => item.substitute_doctor_id === user.id);
+  const manageable = user.roles.includes("secretary") ? coverages : outgoing;
   const transferableByCoverage = useMemo(() => new Map(
-    outgoing.filter((item) => item.status === "active").map((coverage) => [coverage.id, appointments.filter((appointment) => {
+    manageable.filter((item) => item.status === "active" || item.status === "future").map((coverage) => [coverage.id, appointments.filter((appointment) => {
       const appointmentAt = localDateTimeKey(appointment.appointment_date, appointment.appointment_time);
-      return appointment.doctor_id === user.id && appointment.center_id === coverage.center_id
+      return appointment.doctor_id === coverage.principal_doctor_id && appointment.center_id === coverage.center_id
         && (appointment.status === "scheduled" || appointment.status === "confirmed") && !appointment.coverage_id
         && appointmentAt >= localDateTimeKey(coverage.starts_at) && appointmentAt < localDateTimeKey(coverage.ends_at);
     })]),
-  ), [outgoing, appointments, user.id]);
+  ), [manageable, appointments]);
 
   async function create() {
     if (!centerId || !substituteId || !startsAt || !endsAt) return;
@@ -81,14 +83,16 @@ export default function ClinicalCoverages({ user, onBack }: Props) {
     <button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button>
     <h2 className="mt-2 text-2xl font-bold">Cobertura clínica</h2><p className="mt-1 text-sm text-slate-500">Autoriza temporalmente a otro médico y transfiere citas de forma explícita y auditable.</p>
     {error && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-    <div className="mt-6 rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Nueva cobertura</h3><p className="mt-1 text-xs text-slate-500">Para cambiar una cobertura, revoca la existente y crea otra. Así se conserva su trazabilidad.</p>
+    {canCreateCoverage && <div className="mt-6 rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Nueva cobertura</h3><p className="mt-1 text-xs text-slate-500">Para cambiar una cobertura, revoca la existente y crea otra. Así se conserva su trazabilidad.</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         <label className="text-sm">Centro<select value={centerId} onChange={(e) => { setCenterId(Number(e.target.value)); setSubstituteId(0); }} className="mt-1 w-full rounded-lg border p-2.5"><option value={0}>Seleccione...</option>{centers.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.city}</option>)}</select></label>
         <label className="text-sm">Médico suplente<select value={substituteId} onChange={(e) => setSubstituteId(Number(e.target.value))} className="mt-1 w-full rounded-lg border p-2.5" disabled={!centerId}><option value={0}>Seleccione...</option>{substitutes.map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}</select></label>
         <label className="text-sm">Desde<input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5" /></label><label className="text-sm">Hasta<input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5" /></label>
       </div><button onClick={() => void create()} disabled={saving || !centerId || !substituteId || !startsAt || !endsAt || endsAt <= startsAt} className="mt-4 rounded-lg bg-teal-700 px-4 py-2 font-medium text-white disabled:opacity-40">{saving ? "Guardando..." : "Crear cobertura"}</button>
-    </div>
-    <div className="mt-6 grid gap-6 lg:grid-cols-2"><CoverageList title="Coberturas que concedí" items={outgoing} transferableByCoverage={transferableByCoverage} onRevoke={revoke} onTransfer={transfer} /><CoverageList title="Coberturas recibidas" items={incoming} /></div>
+    </div>}
+    {user.roles.includes("secretary")
+      ? <div className="mt-6"><CoverageList title="Coberturas disponibles para agenda" items={manageable} transferableByCoverage={transferableByCoverage} onTransfer={transfer} /></div>
+      : <div className="mt-6 grid gap-6 lg:grid-cols-2"><CoverageList title="Coberturas que concedí" items={outgoing} transferableByCoverage={transferableByCoverage} onRevoke={revoke} onTransfer={transfer} /><CoverageList title="Coberturas recibidas" items={incoming} /></div>}
   </section>;
 }
 
