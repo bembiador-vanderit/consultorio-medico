@@ -39,3 +39,15 @@ class DoctorProfileResponse(BaseModel):
     specialty: SpecialtyResponse
     specialties: list[SpecialtyResponse]
     model_config = {"from_attributes": True}
+
+
+class SpecialtyCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+
+class SpecialtyUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+
+
+class SpecialtyStatusUpdate(BaseModel):
+    is_active: bool

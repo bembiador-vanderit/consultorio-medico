@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { api } from "../services/api";
 import type { User } from "../types/user";
+import Specialties from "./Specialties";
 
 type Props = {
   currentUser: User;
@@ -54,6 +55,7 @@ export default function Users({ currentUser, onBack, onCurrentUserChanged }: Pro
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [showSpecialties, setShowSpecialties] = useState(false);
   const [createForm, setCreateForm] = useState({ full_name: "", email: "", password: "", role: "doctor" as RoleCode, primary_specialty_id: null as number | null, specialty_ids: [] as number[] });
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
@@ -283,10 +285,13 @@ export default function Users({ currentUser, onBack, onCurrentUserChanged }: Pro
     });
   }
 
+  if (showSpecialties) return <Specialties onBack={() => { setShowSpecialties(false); void loadData(); }} />;
+
   return <section>
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button><h2 className="mt-2 text-2xl font-bold">Usuarios y roles</h2><p className="mt-1 text-sm text-slate-500">Administre las cuentas, roles, centros y estado del personal.</p></div></div>
     {error && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
     {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{message}</div>}
+    <button type="button" onClick={() => setShowSpecialties(true)} className="mt-4 rounded-lg border border-teal-700 px-4 py-2 text-sm font-medium text-teal-700">Administrar / Nueva especialidad</button>
 
     <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
       <form onSubmit={createUser} className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Crear usuario</h3><label className="mt-4 block text-sm font-medium">Nombre completo<input required minLength={2} value={createForm.full_name} onChange={(event) => setCreateForm({ ...createForm, full_name: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /></label><label className="mt-3 block text-sm font-medium">Correo electrónico<input required type="email" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /></label><label className="mt-3 block text-sm font-medium">Contraseña inicial<input required minLength={12} type="password" value={createForm.password} onChange={(event) => setCreateForm({ ...createForm, password: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /><span className="mt-1 block text-xs text-slate-500">Mínimo 12 caracteres, una letra y un número.</span></label><label className="mt-3 block text-sm font-medium">Rol<select value={createForm.role} onChange={(event) => setCreateForm({ ...createForm, role: event.target.value as RoleCode, primary_specialty_id: null, specialty_ids: [] })} className="mt-1 w-full rounded-lg border p-2.5">{roles.map((role) => <option key={role.code} value={role.code}>{role.label}</option>)}</select></label>{createForm.role === "doctor" && <div className="mt-3 rounded-lg border p-3"><p className="text-sm font-medium">Especialidades</p><div className="mt-2 space-y-2">{specialties.map((specialty) => <label key={specialty.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={createForm.specialty_ids.includes(specialty.id)} onChange={() => { const assigned = createForm.specialty_ids.includes(specialty.id); const ids = assigned ? createForm.specialty_ids.filter((id) => id !== specialty.id) : [...createForm.specialty_ids, specialty.id]; setCreateForm({ ...createForm, specialty_ids: ids, primary_specialty_id: assigned && createForm.primary_specialty_id === specialty.id ? (ids[0] ?? null) : (createForm.primary_specialty_id ?? specialty.id) }); }} /><span>{specialty.name}</span></label>)}</div><label className="mt-3 block text-sm font-medium">Especialidad principal<select required value={createForm.primary_specialty_id ?? ""} onChange={(event) => setCreateForm({ ...createForm, primary_specialty_id: Number(event.target.value) || null })} className="mt-1 w-full rounded-lg border p-2"><option value="">Seleccione...</option>{specialties.filter((item) => createForm.specialty_ids.includes(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>}<button disabled={saving === "create" || (createForm.role === "doctor" && !createForm.primary_specialty_id)} className="mt-5 w-full rounded-lg bg-teal-700 px-4 py-2.5 font-medium text-white disabled:opacity-50">{saving === "create" ? "Creando..." : "Crear usuario"}</button></form>
@@ -315,5 +320,6 @@ export default function Users({ currentUser, onBack, onCurrentUserChanged }: Pro
 
       <div className="mt-4 rounded-xl border p-4"><h4 className="font-semibold">Cambiar contraseña</h4><p className="mt-1 text-xs text-slate-500">No es necesario conocer la contraseña anterior.</p><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm font-medium">Nueva contraseña<input type="password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="mt-1 w-full rounded-lg border p-2.5" /></label><label className="text-sm font-medium">Confirmar contraseña<input type="password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-1 w-full rounded-lg border p-2.5" /></label></div><p className="mt-2 text-xs text-slate-500">Mínimo 12 caracteres, una letra y un número.</p><button disabled={Boolean(saving) || !newPassword || !confirmPassword} onClick={() => void changePassword()} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{saving === "password" ? "Cambiando..." : "Cambiar contraseña"}</button></div>
     </div></div>}
+    {editing && editForm?.roles.includes("doctor") && <button type="button" onClick={() => setShowSpecialties(true)} className="fixed bottom-6 right-6 z-[60] rounded-full bg-teal-700 px-5 py-3 text-sm font-semibold text-white shadow-lg">+ Nueva especialidad</button>}
   </section>;
 }
