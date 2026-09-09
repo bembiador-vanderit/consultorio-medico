@@ -1,8 +1,8 @@
-from datetime import date, time
+from datetime import date, datetime, time
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -17,13 +17,14 @@ from app.api.routes.clinical_catalog import (
 from app.api.routes.clinical_history import complete_clinical_history, create_clinical_history, get_clinical_history
 from app.api.routes.users import create_user, update_user_specialties
 from app.db import Base
-from app.models import CareCenter, Patient, Permission, Role, SecretaryCenterScope, Specialty, User
+from app.models import CareCenter, Notification, Patient, Permission, Role, SecretaryCenterScope, Specialty, User
 from app.schemas.appointment import AppointmentCreate
 from app.schemas.auth import UserCreate
 from app.schemas.clinical_catalog import DoctorProfileCreate, SpecialtyCreate, SpecialtyStatusUpdate, SpecialtyUpdate
 from app.schemas.clinical_history import ClinicalHistoryCreate, ClinicalHistoryUpdate
 from app.schemas.user import UserSpecialtiesUpdate
 from app.services.clinical_specialties import resolve_appointment_specialty, set_doctor_specialties
+from app.services import reminders
 
 
 @pytest.fixture()
@@ -106,6 +107,108 @@ def test_doctor_cannot_forge_other_doctor_or_specialty(specialty_context):
     assert specialty_error.value.status_code == 422
 
 
+def test_doctor_can_correct_own_active_assigned_specialty_before_consultation(specialty_context):
+    db, patient, center, cardiology, pediatrics, _, _, doctor, _, admin = specialty_context
+    appointment = create_appointment(
+        appointment_payload(patient.id, doctor.id, center.id, pediatrics.id), admin, db
+    )
+
+    changed = appointment_payload(patient.id, doctor.id, center.id, cardiology.id)
+    result = update_appointment(appointment.id, changed, doctor, db)
+
+    assert result.specialty_id == cardiology.id
+    assert result.specialty_name == "Cardiología"
+    assert result.doctor_id == doctor.id
+
+
+def test_doctor_cannot_correct_to_unassigned_or_inactive_specialty(specialty_context):
+    db, patient, center, cardiology, pediatrics, internal, _, doctor, _, admin = specialty_context
+    appointment = create_appointment(
+        appointment_payload(patient.id, doctor.id, center.id, pediatrics.id), admin, db
+    )
+
+    with pytest.raises(HTTPException) as unassigned_error:
+        update_appointment(
+            appointment.id,
+            appointment_payload(patient.id, doctor.id, center.id, internal.id),
+            doctor,
+            db,
+        )
+    assert unassigned_error.value.status_code == 422
+
+    cardiology.is_active = False
+    db.commit()
+    with pytest.raises(HTTPException) as inactive_error:
+        update_appointment(
+            appointment.id,
+            appointment_payload(patient.id, doctor.id, center.id, cardiology.id),
+            doctor,
+            db,
+        )
+    assert inactive_error.value.status_code == 422
+
+
+def test_scoped_secretary_can_correct_specialty_before_consultation(specialty_context):
+    db, patient, center, cardiology, pediatrics, _, _, doctor, secretary, admin = specialty_context
+    appointment = create_appointment(
+        appointment_payload(patient.id, doctor.id, center.id, pediatrics.id), admin, db
+    )
+
+    result = update_appointment(
+        appointment.id,
+        appointment_payload(patient.id, doctor.id, center.id, cardiology.id),
+        secretary,
+        db,
+    )
+    assert result.specialty_id == cardiology.id
+
+
+def test_create_due_appointment_immediately_notifies_doctor_and_scoped_secretary(
+    specialty_context, monkeypatch
+):
+    db, patient, center, cardiology, _, _, doctor, _, secretary, _ = specialty_context
+    monkeypatch.setattr(reminders, "installation_now", lambda: datetime(2026, 9, 15, 8))
+
+    appointment = create_appointment(
+        appointment_payload(patient.id, doctor.id, center.id, cardiology.id),
+        secretary,
+        db,
+    )
+
+    recipients = set(db.scalars(select(Notification.user_id).where(
+        Notification.appointment_id == appointment.id,
+        Notification.notification_type == "appointment_due",
+    )).all())
+    assert recipients == {doctor.id, secretary.id}
+
+
+def test_reprogram_into_24_hour_window_immediately_creates_reminders(
+    specialty_context, monkeypatch
+):
+    db, patient, center, cardiology, _, _, doctor, _, secretary, admin = specialty_context
+    monkeypatch.setattr(reminders, "installation_now", lambda: datetime(2026, 9, 13, 8))
+    appointment = create_appointment(
+        appointment_payload(patient.id, doctor.id, center.id, cardiology.id),
+        admin,
+        db,
+    )
+    assert db.scalar(select(Notification.id).where(
+        Notification.appointment_id == appointment.id,
+        Notification.notification_type == "appointment_due",
+    )) is None
+
+    monkeypatch.setattr(reminders, "installation_now", lambda: datetime(2026, 9, 15, 8))
+    changed = appointment_payload(patient.id, doctor.id, center.id, cardiology.id)
+    changed.appointment_time = time(10)
+    update_appointment(appointment.id, changed, secretary, db)
+
+    recipients = set(db.scalars(select(Notification.user_id).where(
+        Notification.appointment_id == appointment.id,
+        Notification.notification_type == "appointment_due",
+    )).all())
+    assert recipients == {doctor.id, secretary.id}
+
+
 def test_consultation_inherits_specialty_and_context_is_immutable(specialty_context):
     db, patient, center, cardiology, _, _, doctor, _, _, _ = specialty_context
     appointment = create_appointment(appointment_payload(patient.id, doctor.id, center.id), doctor, db)
@@ -136,7 +239,7 @@ def test_history_exposes_specialty_doctor_and_center(specialty_context):
         doctor,
         db,
     )
-    histories = get_clinical_history(patient.id, admin, db)
+    histories = get_clinical_history(patient.id, doctor, db)
     assert histories[0].specialty_name == "Pediatría"
     assert histories[0].doctor_name == doctor.full_name
     assert histories[0].center_name == center.name

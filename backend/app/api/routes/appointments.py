@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +16,8 @@ from app.services.appointment_scope import (
     secretary_doctor_ids_by_center,
 )
 from app.services.clinical_specialties import active_doctor_specialties, resolve_appointment_specialty
+from app.services.clinical_coverage import coverage_allows_appointment_transfer
+from app.services.reminders import sync_in_app_appointment_reminder
 
 router = APIRouter(prefix="/appointments", tags=["Citas"])
 access = require_permission("patients:access")
@@ -35,6 +37,7 @@ def response(a: Appointment) -> AppointmentResponse:
         coverage_id=a.coverage_transfer.coverage_id if a.coverage_transfer else None,
         original_doctor_id=a.coverage_transfer.original_doctor_id if a.coverage_transfer else None,
         original_doctor_name=(a.coverage_transfer.coverage.principal.full_name if a.coverage_transfer else None),
+        has_clinical_history=a.clinical_history is not None,
         created_at=a.created_at, updated_at=a.updated_at,
     )
 
@@ -69,6 +72,7 @@ def validate_appointment_assignment(
     center_id: int | None,
     appointment_date: date,
     specialty_id: int | None = None,
+    secretary_scope_doctor_id: int | None = None,
 ) -> tuple[User, CareCenter, Specialty]:
     if center_id is None:
         raise HTTPException(status_code=422, detail="Debe indicar el centro de atención")
@@ -88,7 +92,7 @@ def validate_appointment_assignment(
     if center not in doctor.centers:
         raise HTTPException(status_code=422, detail="El médico no está asignado a este centro")
     if is_role(user, "secretary") and not is_role(user, "admin") and not secretary_can_manage(
-        user, center.id, doctor.id, db
+        user, center.id, secretary_scope_doctor_id or doctor.id, db
     ):
         raise HTTPException(status_code=403, detail="No tiene autorización para gestionar citas de este médico")
     if not doctor_is_available(db, doctor.id, center.id, appointment_date):
@@ -214,7 +218,9 @@ def create_appointment(payload: AppointmentCreate, user: User = Depends(access),
     data["center_id"] = center.id
     data["specialty_id"] = specialty.id
     appointment = Appointment(**data)
-    db.add(appointment); db.commit(); db.refresh(appointment)
+    db.add(appointment); db.flush()
+    sync_in_app_appointment_reminder(db, appointment)
+    db.commit(); db.refresh(appointment)
     return response(appointment)
 
 
@@ -225,12 +231,13 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
     ensure_appointment_access(user, appointment, db)
     if not db.get(Patient, payload.patient_id): raise HTTPException(status_code=404, detail="Paciente no encontrado")
     requested_specialty_id = payload.specialty_id if payload.specialty_id is not None else appointment.specialty_id
-    context_changed = (
+    identity_context_changed = (
         payload.patient_id != appointment.patient_id
         or payload.doctor_id != appointment.doctor_id
         or payload.center_id != appointment.center_id
-        or requested_specialty_id != appointment.specialty_id
     )
+    specialty_changed = requested_specialty_id != appointment.specialty_id
+    context_changed = identity_context_changed or specialty_changed
     schedule_changed = (
         payload.appointment_date != appointment.appointment_date
         or payload.appointment_time != appointment.appointment_time
@@ -239,9 +246,16 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
         raise HTTPException(status_code=409, detail="El contexto de una cita finalizada es inmutable")
     if appointment.status == "completed" and payload.status != "completed":
         raise HTTPException(status_code=409, detail="Una cita finalizada no puede reabrirse desde la edición")
-    if appointment.coverage_transfer is not None and (context_changed or schedule_changed):
-        raise HTTPException(status_code=409, detail="Una cita transferida conserva su contexto y horario autorizados")
-    if is_role(user, "doctor") and not is_role(user, "admin") and not is_role(user, "secretary") and context_changed:
+    transfer = appointment.coverage_transfer
+    if transfer is not None and context_changed:
+        raise HTTPException(status_code=409, detail="Una cita transferida conserva su contexto clínico autorizado")
+    if transfer is not None and schedule_changed:
+        if not is_role(user, "secretary") or is_role(user, "admin"):
+            raise HTTPException(status_code=409, detail="Solo la secretaria autorizada puede reprogramar esta cita transferida")
+        appointment_at = datetime.combine(payload.appointment_date, payload.appointment_time)
+        if not coverage_allows_appointment_transfer(transfer.coverage, appointment_at):
+            raise HTTPException(status_code=409, detail="El nuevo horario está fuera del período de cobertura")
+    if is_role(user, "doctor") and not is_role(user, "admin") and not is_role(user, "secretary") and identity_context_changed:
         raise HTTPException(status_code=403, detail="El médico no puede reasignar una cita desde la edición ordinaria")
     if payload.status == "completed" and appointment.status != "completed":
         raise HTTPException(
@@ -252,6 +266,8 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
         select(ClinicalHistory).where(ClinicalHistory.appointment_id == appointment.id)
     )
     if clinical_history is not None:
+        if schedule_changed:
+            raise HTTPException(status_code=409, detail="Una cita con consulta clínica no puede reprogramarse")
         if context_changed:
             raise HTTPException(
                 status_code=409,
@@ -264,7 +280,17 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
             )
 
     doctor, center, specialty = validate_appointment_assignment(
-        db, user, payload.doctor_id, payload.center_id, payload.appointment_date, requested_specialty_id
+        db,
+        user,
+        payload.doctor_id,
+        payload.center_id,
+        payload.appointment_date,
+        requested_specialty_id,
+        secretary_scope_doctor_id=(
+            transfer.original_doctor_id
+            if transfer is not None and is_role(user, "secretary") and not is_role(user, "admin")
+            else None
+        ),
     )
 
     data = payload.model_dump()
@@ -272,6 +298,8 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
     data["center_id"] = center.id
     data["specialty_id"] = specialty.id
     for field, value in data.items(): setattr(appointment, field, value)
+    db.flush()
+    sync_in_app_appointment_reminder(db, appointment, refresh_existing=schedule_changed)
     db.commit(); db.refresh(appointment)
     return response(appointment)
 

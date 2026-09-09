@@ -12,7 +12,7 @@ from app.models.identity import Role, User
 
 class FakeDB:
     def __init__(self, *, with_history: bool = True):
-        self.history = ClinicalHistory(id=17, patient_id=3, consultation_date=date(2026, 9, 2))
+        self.history = ClinicalHistory(id=17, patient_id=3, doctor_id=5, consultation_date=date(2026, 9, 2))
         self.with_history = with_history
         self.record = None
         self.added = 0
@@ -50,7 +50,7 @@ def build_client(db: FakeDB) -> TestClient:
     app = FastAPI()
     app.include_router(vital_signs.router, prefix="/api/v1")
     app.dependency_overrides[vital_signs.access] = lambda: User(
-        id=1, full_name="Admin", roles=[Role(code="admin", name="Administrador")]
+        id=5, full_name="Doctor", roles=[Role(code="doctor", name="Doctor")]
     )
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app)

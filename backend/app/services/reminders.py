@@ -5,6 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Appointment, CommunicationLog, Notification, User
+from app.services.appointment_scope import secretary_can_manage
+from app.services.clinical_coverage import installation_now
 from app.services.communication import send_email, send_whatsapp
 
 
@@ -37,6 +39,74 @@ def _already_sent(db: Session, appointment_id: int, notification_type: str, *, u
     if user_id is not None:
         query = query.where(Notification.user_id == user_id)
     return db.scalar(query.limit(1)) is not None
+
+
+def _in_app_recipient_ids(db: Session, appointment: Appointment) -> set[int]:
+    recipients = {appointment.doctor_id}
+    if appointment.center_id is None:
+        return recipients
+    for user in db.scalars(
+        select(User).where(User.is_active.is_(True)).join(User.centers).where(
+            User.centers.any(id=appointment.center_id)
+        )
+    ).all():
+        if not any(role.code == "secretary" for role in user.roles):
+            continue
+        transfer = appointment.coverage_transfer
+        if secretary_can_manage(user, appointment.center_id, appointment.doctor_id, db) or (
+            transfer is not None
+            and secretary_can_manage(user, appointment.center_id, transfer.original_doctor_id, db)
+        ):
+            recipients.add(user.id)
+    return recipients
+
+
+def sync_in_app_appointment_reminder(
+    db: Session,
+    appointment: Appointment,
+    *,
+    now: datetime | None = None,
+    horizon_hours: int = 24,
+    refresh_existing: bool = False,
+) -> int:
+    """Upsert the in-app reminder for one future appointment without committing."""
+    now = now or installation_now()
+    appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
+    if (
+        appointment.status not in {"scheduled", "confirmed"}
+        or appointment_at < now
+        or appointment_at > now + timedelta(hours=horizon_hours)
+    ):
+        return 0
+
+    message = (
+        f"{appointment.patient.first_name} {appointment.patient.last_name}"
+        f" — {appointment_at:%d/%m/%Y %H:%M}"
+    )
+    changed = 0
+    for user_id in _in_app_recipient_ids(db, appointment):
+        existing = db.scalar(select(Notification).where(
+            Notification.user_id == user_id,
+            Notification.appointment_id == appointment.id,
+            Notification.notification_type == REMINDER_TYPE,
+        ))
+        if existing is None:
+            db.add(Notification(
+                user_id=user_id,
+                appointment_id=appointment.id,
+                title="Cita próxima",
+                message=message,
+                notification_type=REMINDER_TYPE,
+            ))
+            changed += 1
+        elif refresh_existing:
+            existing.title = "Cita próxima"
+            existing.message = message
+            existing.is_read = False
+            existing.read_at = None
+            existing.created_at = datetime.utcnow()
+            changed += 1
+    return changed
 
 
 def _log_delivery(
@@ -74,7 +144,7 @@ def _mark_channel_sent(db: Session, appointment: Appointment, notification_type:
 
 def sync_appointment_reminders(db: Session, *, now: datetime | None = None, horizon_hours: int = 24) -> int:
     """Create in-app reminders and attempt configured patient email/WhatsApp delivery."""
-    now = now or datetime.utcnow()
+    now = now or installation_now()
     horizon = now + timedelta(hours=horizon_hours)
     appointments = db.scalars(
         select(Appointment).where(
@@ -89,27 +159,8 @@ def sync_appointment_reminders(db: Session, *, now: datetime | None = None, hori
         if appointment_at < now or appointment_at > horizon:
             continue
 
-        recipients = {appointment.doctor_id}
-        if appointment.center_id is not None:
-            for user in db.scalars(
-                select(User).where(User.is_active.is_(True)).join(User.centers).where(
-                    User.centers.any(id=appointment.center_id)
-                )
-            ).all():
-                if any(role.code == "secretary" for role in user.roles):
-                    recipients.add(user.id)
-
         message = _appointment_message(appointment)
-        for user_id in recipients:
-            if not _already_sent(db, appointment.id, REMINDER_TYPE, user_id=user_id):
-                db.add(Notification(
-                    user_id=user_id,
-                    appointment_id=appointment.id,
-                    title="Cita próxima",
-                    message=f"{appointment.patient.first_name} {appointment.patient.last_name} — {appointment_at:%d/%m/%Y %H:%M}",
-                    notification_type=REMINDER_TYPE,
-                ))
-                created += 1
+        created += sync_in_app_appointment_reminder(db, appointment, now=now, horizon_hours=horizon_hours)
 
         if appointment.patient.email and not _already_sent(db, appointment.id, EMAIL_REMINDER_TYPE):
             try:

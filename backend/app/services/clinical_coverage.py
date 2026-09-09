@@ -23,3 +23,15 @@ def coverage_status(coverage: ClinicalCoverage, now: datetime | None = None) -> 
 
 def appointment_is_within_coverage(coverage: ClinicalCoverage, appointment_at: datetime) -> bool:
     return coverage.starts_at <= appointment_at < coverage.ends_at
+
+
+def coverage_allows_appointment_transfer(
+    coverage: ClinicalCoverage,
+    appointment_at: datetime,
+    now: datetime | None = None,
+) -> bool:
+    """Allow advance planning while rejecting revoked or already expired grants."""
+    return (
+        coverage_status(coverage, now) in {"future", "active"}
+        and appointment_is_within_coverage(coverage, appointment_at)
+    )

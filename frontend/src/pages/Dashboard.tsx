@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../services/api";
+import { announceNotificationsChanged, notificationsChangedEvent } from "../services/notificationEvents";
 import type { User } from "../types/user";
 
 type Notification = {
@@ -35,7 +36,7 @@ export default function Dashboard({ user, patientsVersion }: { user: User; patie
   async function loadNotifications() {
     try {
       await api.post("/follow-ups/notifications/sync");
-      const { data } = await api.get<Notification[]>("/follow-ups/notifications");
+      const { data } = await api.get<Notification[]>("/follow-ups/notifications", { params: { unread_only: true } });
       setNotifications(data);
     } catch (error) {
       console.error("Error cargando notificaciones:", error);
@@ -44,15 +45,19 @@ export default function Dashboard({ user, patientsVersion }: { user: User; patie
 
   async function markRead(id: number) {
     await api.post(`/follow-ups/notifications/${id}/read`);
-    setNotifications((items) => items.map((item) => item.id === id ? { ...item, is_read: true } : item));
+    setNotifications((items) => items.filter((item) => item.id !== id));
+    announceNotificationsChanged();
   }
 
   useEffect(() => {
     loadPatientCount();
     loadNotifications();
+    const refreshNotifications = () => void loadNotifications();
+    window.addEventListener(notificationsChangedEvent, refreshNotifications);
+    return () => window.removeEventListener(notificationsChangedEvent, refreshNotifications);
   }, [patientsVersion]);
 
-  const unreadCount = notifications.filter((item) => !item.is_read).length;
+  const unreadCount = notifications.length;
 
   return (
     <section>
@@ -64,16 +69,16 @@ export default function Dashboard({ user, patientsVersion }: { user: User; patie
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard title="Pacientes" value={loadingPatients ? "..." : patientCount ?? "—"} />
         <StatCard title="Citas de hoy" value="0" />
-        <StatCard title="Notificaciones" value={unreadCount} />
+        <StatCard title="Notificaciones pendientes" value={unreadCount} />
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <h3 className="font-bold">Notificaciones</h3>
-          <p className="mt-1 text-sm text-slate-500">Seguimientos y avisos dirigidos a tu usuario.</p>
+          <h3 className="font-bold">Notificaciones pendientes</h3>
+          <p className="mt-1 text-sm text-slate-500">Eventos y recordatorios vigentes dirigidos a tu usuario.</p>
           <div className="mt-4 space-y-3">
-            {notifications.length === 0 && <p className="text-sm text-slate-500">No hay notificaciones.</p>}
-            {notifications.slice(0, 8).map((notification) => (
+            {notifications.length === 0 && <p className="text-sm text-slate-500">No hay notificaciones pendientes.</p>}
+            {notifications.map((notification) => (
               <div key={notification.id} className={`rounded-lg border p-3 ${notification.is_read ? "bg-white" : "bg-teal-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>

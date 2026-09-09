@@ -6,6 +6,7 @@ export type Appointment = {
   patient_name: string; patient_date_of_birth: string; doctor_name: string; center_name: string | null; center_city: string | null;
   specialty_name: string;
   coverage_id: number | null; original_doctor_id: number | null; original_doctor_name: string | null;
+  has_clinical_history: boolean;
   created_at: string; updated_at: string;
 };
 export type AppointmentInput = {

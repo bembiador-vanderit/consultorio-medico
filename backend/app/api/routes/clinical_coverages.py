@@ -9,12 +9,14 @@ from app.api.deps import require_permission
 from app.db import get_db
 from app.models import Appointment, AppointmentCoverageTransfer, CareCenter, ClinicalCoverage, ClinicalHistory, User
 from app.schemas.clinical_coverage import ClinicalCoverageCreate, ClinicalCoverageResponse, EligibleSubstituteResponse
-from app.services.appointment_scope import is_role
+from app.services.appointment_scope import is_role, secretary_can_manage
 from app.services.clinical_access import add_clinical_audit
-from app.services.clinical_coverage import appointment_is_within_coverage, coverage_status, installation_now
+from app.services.clinical_coverage import coverage_allows_appointment_transfer, coverage_status, installation_now
+from app.services.coverage_notifications import add_coverage_appointment_notifications
 
 router = APIRouter(prefix="/clinical-coverages", tags=["Cobertura clínica"])
 access = require_permission("clinical:access")
+agenda_access = require_permission("patients:access")
 
 
 def serialize(coverage: ClinicalCoverage) -> ClinicalCoverageResponse:
@@ -40,12 +42,20 @@ def require_principal(user: User) -> None:
 
 
 @router.get("", response_model=list[ClinicalCoverageResponse])
-def list_coverages(user: User = Depends(access), db: Session = Depends(get_db)):
-    require_principal(user)
-    query = select(ClinicalCoverage).where(
-        (ClinicalCoverage.principal_doctor_id == user.id) | (ClinicalCoverage.substitute_doctor_id == user.id)
-    ).order_by(ClinicalCoverage.created_at.desc())
-    return [serialize(item) for item in db.scalars(query)]
+def list_coverages(user: User = Depends(agenda_access), db: Session = Depends(get_db)):
+    query = select(ClinicalCoverage).order_by(ClinicalCoverage.created_at.desc())
+    if is_role(user, "doctor"):
+        query = query.where(
+            (ClinicalCoverage.principal_doctor_id == user.id) | (ClinicalCoverage.substitute_doctor_id == user.id)
+        )
+        return [serialize(item) for item in db.scalars(query)]
+    if is_role(user, "secretary"):
+        return [
+            serialize(item)
+            for item in db.scalars(query)
+            if secretary_can_manage(user, item.center_id, item.principal_doctor_id, db)
+        ]
+    raise HTTPException(status_code=403, detail="No tiene acceso a coberturas clínicas")
 
 
 @router.get("/eligible-substitutes", response_model=list[EligibleSubstituteResponse])
@@ -115,6 +125,7 @@ def revoke_coverage(coverage_id: int, user: User = Depends(access), db: Session 
             ) is not None
             if appointment.status in {"scheduled", "confirmed"} and not has_history:
                 appointment.doctor_id = transfer.original_doctor_id
+                add_coverage_appointment_notifications(db, appointment, coverage, restored=True)
                 add_clinical_audit(
                     db,
                     user,
@@ -144,8 +155,7 @@ def revoke_coverage(coverage_id: int, user: User = Depends(access), db: Session 
 
 
 @router.post("/{coverage_id}/appointments/{appointment_id}/transfer")
-def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Depends(access), db: Session = Depends(get_db)):
-    require_principal(user)
+def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Depends(agenda_access), db: Session = Depends(get_db)):
     coverage = db.scalar(
         select(ClinicalCoverage)
         .where(ClinicalCoverage.id == coverage_id)
@@ -158,10 +168,13 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
     )
     if coverage is None or appointment is None:
         raise HTTPException(status_code=404, detail="Cobertura o cita no encontrada")
-    if coverage.principal_doctor_id != user.id:
-        raise HTTPException(status_code=403, detail="El suplente no puede autoasignarse una cobertura")
-    if coverage_status(coverage) != "active":
-        raise HTTPException(status_code=409, detail="La cobertura no está activa")
+    principal_authorized = is_role(user, "doctor") and coverage.principal_doctor_id == user.id
+    secretary_authorized = (
+        is_role(user, "secretary")
+        and secretary_can_manage(user, coverage.center_id, coverage.principal_doctor_id, db)
+    )
+    if not principal_authorized and not secretary_authorized:
+        raise HTTPException(status_code=403, detail="No puede transferir citas con esta cobertura")
     if appointment.status not in {"scheduled", "confirmed"}:
         raise HTTPException(status_code=409, detail="El estado de la cita no permite transferencia")
     if appointment.doctor_id != coverage.principal_doctor_id or appointment.center_id != coverage.center_id:
@@ -169,7 +182,7 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
     if db.scalar(select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)) is not None:
         raise HTTPException(status_code=409, detail="Una cita con consulta iniciada no puede transferirse")
     appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
-    if not appointment_is_within_coverage(coverage, appointment_at):
+    if not coverage_allows_appointment_transfer(coverage, appointment_at):
         raise HTTPException(status_code=409, detail="La cita está fuera del período de cobertura")
     transfer = AppointmentCoverageTransfer(
         appointment_id=appointment.id, coverage_id=coverage.id,
@@ -184,6 +197,7 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
             db, user, action="coverage.appointment.transfer", resource_type="appointment", resource_id=appointment.id,
             context={"coverage_id": coverage.id, "principal_doctor_id": coverage.principal_doctor_id, "substitute_doctor_id": coverage.substitute_doctor_id, "center_id": coverage.center_id, "patient_id": appointment.patient_id},
         )
+        add_coverage_appointment_notifications(db, appointment, coverage)
         db.commit()
     except SQLAlchemyError:
         db.rollback()
