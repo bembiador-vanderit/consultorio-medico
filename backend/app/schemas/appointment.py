@@ -30,6 +30,9 @@ class AppointmentResponse(AppointmentBase):
     original_doctor_id: int | None = None
     original_doctor_name: str | None = None
     has_clinical_history: bool = False
+    clinical_history_id: int | None = None
+    clinical_history_status: str | None = None
+    clinical_history_doctor_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
