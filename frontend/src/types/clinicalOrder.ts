@@ -24,6 +24,7 @@ export type LaboratoryOrder = {
   center_name: string | null;
   specialty_name: string;
   status: "ordered";
+  is_additional: boolean;
   notes: string | null;
   created_at: string;
   items: LaboratoryOrderItem[];
@@ -56,6 +57,7 @@ export type StudyOrder = {
   center_name: string | null;
   specialty_name: string;
   status: "ordered";
+  is_additional: boolean;
   notes: string | null;
   created_at: string;
   items: StudyOrderItem[];

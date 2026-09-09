@@ -1674,6 +1674,10 @@ def test_clinical_order_catalog_and_payload_reject_inactive_or_invalid_items(cli
     catalog = client.get("/api/v1/laboratory-tests")
     assert catalog.status_code == 200
     assert [item["name"] for item in catalog.json()] == ["Hemograma completo"]
+    searched = client.get("/api/v1/laboratory-tests", params={"q": "HEMo"})
+    assert searched.status_code == 200
+    assert [item["name"] for item in searched.json()] == ["Hemograma completo"]
+    assert client.get("/api/v1/laboratory-tests", params={"q": "creat"}).json() == []
 
     inactive = client.post(f"/api/v1/clinical-history/{history.id}/laboratory-orders", json={
         "items": [{"laboratory_test_id": clinical_app["inactive_laboratory_test"].id}],
@@ -1786,3 +1790,122 @@ def test_clinical_orders_enforce_history_scope_and_completed_immutability(clinic
     assert len(listed.json()) == 1
     active_user["value"] = clinical_app["doctor_b"]
     assert client.get(f"/api/v1/laboratory-orders/{created.json()['id']}/pdf").status_code == 403
+
+
+def test_completed_history_accepts_only_append_only_orders_from_responsible_doctor(clinical_app):
+    client = clinical_app["client"]
+    db = clinical_app["db"]
+    active_user = clinical_app["active_user"]
+    history = clinical_app["history_a"]
+    laboratory_payload = {
+        "items": [{"laboratory_test_id": clinical_app["laboratory_test"].id}],
+        "notes": "Orden emitida durante la consulta",
+    }
+    study_payload = {
+        "items": [{
+            "medical_study_id": clinical_app["medical_study"].id,
+            "region_description": "Abdomen",
+            "contrast": "no",
+        }],
+    }
+
+    original = client.post(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders", json=laboratory_payload
+    )
+    assert original.status_code == 201, original.text
+    original_snapshot = original.json()
+    original_study = client.post(
+        f"/api/v1/clinical-history/{history.id}/study-orders", json=study_payload
+    )
+    assert original_study.status_code == 201, original_study.text
+
+    history.status = "completed"
+    history.completed_at = datetime.utcnow()
+    clinical_app["appointment_a"].status = "completed"
+    db.commit()
+
+    # The normal lifecycle remains immutable after close.
+    assert client.post(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders", json=laboratory_payload
+    ).status_code == 409
+    assert client.put(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders/{original_snapshot['id']}",
+        json={**laboratory_payload, "notes": "Intento de sobrescritura"},
+    ).status_code == 409
+
+    additional = client.post(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders/additional",
+        json={**laboratory_payload, "notes": "Nueva necesidad posterior"},
+    )
+    assert additional.status_code == 201, additional.text
+    assert additional.json()["is_additional"] is True
+    assert additional.json()["doctor_id"] == clinical_app["doctor_a"].id
+    assert additional.json()["patient_id"] == clinical_app["patient_a"].id
+    assert additional.json()["appointment_id"] == clinical_app["appointment_a"].id
+    assert additional.json()["created_at"] >= original_snapshot["created_at"]
+
+    additional_study = client.post(
+        f"/api/v1/clinical-history/{history.id}/study-orders/additional", json=study_payload
+    )
+    assert additional_study.status_code == 201, additional_study.text
+    assert additional_study.json()["is_additional"] is True
+    assert client.get(f"/api/v1/laboratory-orders/{additional.json()['id']}/pdf").content.startswith(b"%PDF")
+    assert client.get(f"/api/v1/study-orders/{additional_study.json()['id']}/pdf").content.startswith(b"%PDF")
+
+    listed = client.get(f"/api/v1/clinical-history/{history.id}/laboratory-orders").json()
+    assert [order["id"] for order in listed] == [original_snapshot["id"], additional.json()["id"]]
+    assert [order["is_additional"] for order in listed] == [False, True]
+    assert listed[0]["notes"] == original_snapshot["notes"]
+    assert history.status == "completed"
+
+    forged = client.post(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders/additional",
+        json={**laboratory_payload, "doctor_id": clinical_app["doctor_b"].id, "patient_id": 999999},
+    )
+    assert forged.status_code == 422
+
+    active_user["value"] = clinical_app["doctor_b"]
+    assert client.post(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders/additional", json=laboratory_payload
+    ).status_code == 403
+
+    now = installation_now()
+    coverage = ClinicalCoverage(
+        principal_doctor_id=clinical_app["doctor_a"].id,
+        substitute_doctor_id=clinical_app["doctor_b"].id,
+        center_id=clinical_app["center"].id,
+        starts_at=now - timedelta(hours=1), ends_at=now + timedelta(hours=1),
+        created_by_id=clinical_app["doctor_a"].id,
+    )
+    db.add(coverage)
+    db.flush()
+    db.add(AppointmentCoverageTransfer(
+        appointment_id=clinical_app["appointment_a"].id,
+        coverage_id=coverage.id,
+        original_doctor_id=clinical_app["doctor_a"].id,
+        substitute_doctor_id=clinical_app["doctor_b"].id,
+        executed_by_id=clinical_app["doctor_a"].id,
+    ))
+    db.commit()
+    assert client.get(f"/api/v1/clinical-history/{history.id}/laboratory-orders").status_code == 200
+    delegated_write = client.post(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders/additional", json=laboratory_payload
+    )
+    assert delegated_write.status_code == 403
+    assert "responsable" in delegated_write.json()["detail"]
+
+    secretary = User(
+        email="secretary-additional@example.test", full_name="Secretaria Adicional", password_hash="hash",
+        roles=[Role(code="secretary", name="Secretaria adicional")],
+        centers=[clinical_app["center"]], is_active=True,
+    )
+    db.add(secretary)
+    db.commit()
+    active_user["value"] = secretary
+    assert client.post(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders/additional", json=laboratory_payload
+    ).status_code == 403
+    active_user["value"] = clinical_app["admin"]
+    assert client.post(
+        f"/api/v1/clinical-history/{history.id}/laboratory-orders/additional", json=laboratory_payload
+    ).status_code == 403

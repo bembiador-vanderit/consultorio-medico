@@ -45,12 +45,14 @@ export default function ClinicalOrdersHistory({ laboratoryOrders, studyOrders, c
     {!compact && <div><h4 className="font-semibold text-cyan-950">Órdenes clínicas estructuradas</h4><p className="text-xs text-cyan-700">Laboratorios, estudios y procedimientos conservados con su contexto original.</p></div>}
     <div className={`${compact ? "" : "mt-3"} space-y-2`}>
       {laboratoryOrders.map((order) => <article key={`lab-${order.id}`} className="rounded-lg border bg-white p-3 text-sm">
-        <div className="flex items-start justify-between gap-2"><p className="font-semibold">Laboratorio #{order.id}</p><button type="button" onClick={() => void download("laboratory", order.id)} disabled={Boolean(busy)} className="text-xs font-semibold text-cyan-700 disabled:opacity-40">{busy === `laboratory:${order.id}` ? "Generando..." : "PDF"}</button></div>
+        <div className="flex items-start justify-between gap-2"><p className="font-semibold">Laboratorio #{order.id}{order.is_additional && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] text-violet-800">Orden adicional</span>}</p><button type="button" onClick={() => void download("laboratory", order.id)} disabled={Boolean(busy)} className="text-xs font-semibold text-cyan-700 disabled:opacity-40">{busy === `laboratory:${order.id}` ? "Generando..." : "Descargar PDF"}</button></div>
+        <p className="mt-1 text-xs text-slate-500">{new Date(order.created_at).toLocaleString("es-DO")} · {order.doctor_name}</p>
         <ul className="mt-1 list-disc pl-4">{order.items.map((item) => <li key={item.id}>{item.test_name}</li>)}</ul>
         {order.notes && <p className="mt-1 text-xs text-slate-600">Observaciones: {order.notes}</p>}
       </article>)}
       {studyOrders.map((order) => <article key={`study-${order.id}`} className="rounded-lg border bg-white p-3 text-sm">
-        <div className="flex items-start justify-between gap-2"><p className="font-semibold">Estudios/procedimientos #{order.id}</p><button type="button" onClick={() => void download("study", order.id)} disabled={Boolean(busy)} className="text-xs font-semibold text-indigo-700 disabled:opacity-40">{busy === `study:${order.id}` ? "Generando..." : "PDF"}</button></div>
+        <div className="flex items-start justify-between gap-2"><p className="font-semibold">Estudios/procedimientos #{order.id}{order.is_additional && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] text-violet-800">Orden adicional</span>}</p><button type="button" onClick={() => void download("study", order.id)} disabled={Boolean(busy)} className="text-xs font-semibold text-indigo-700 disabled:opacity-40">{busy === `study:${order.id}` ? "Generando..." : "Descargar PDF"}</button></div>
+        <p className="mt-1 text-xs text-slate-500">{new Date(order.created_at).toLocaleString("es-DO")} · {order.doctor_name}</p>
         <ul className="mt-1 list-disc pl-4">{order.items.map((item) => <li key={item.id}>{item.study_name}{item.region_description ? ` · ${item.region_description}` : ""}</li>)}</ul>
         {order.notes && <p className="mt-1 text-xs text-slate-600">Observaciones: {order.notes}</p>}
       </article>)}

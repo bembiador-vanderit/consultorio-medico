@@ -2,7 +2,7 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
@@ -26,7 +26,7 @@ from app.schemas.clinical_order import (
     StudyOrderInput,
     StudyOrderResponse,
 )
-from app.services.clinical_access import add_clinical_audit, require_history_access
+from app.services.clinical_access import add_clinical_audit, has_normal_history_access, require_history_access
 from app.services.clinical_documents import build_laboratory_order_pdf, build_study_order_pdf
 
 
@@ -35,12 +35,18 @@ access = require_permission("clinical:access")
 
 
 @router.get("/laboratory-tests", response_model=list[LaboratoryTestResponse])
-def list_laboratory_tests(_: User = Depends(access), db: Session = Depends(get_db)):
-    return list(db.scalars(
-        select(LaboratoryTest)
-        .where(LaboratoryTest.is_active)
-        .order_by(LaboratoryTest.category, LaboratoryTest.sort_order, LaboratoryTest.name)
-    ))
+def list_laboratory_tests(q: str | None = None, _: User = Depends(access), db: Session = Depends(get_db)):
+    query = select(LaboratoryTest).where(LaboratoryTest.is_active)
+    normalized = " ".join((q or "").split()).lower()
+    if normalized:
+        query = query.where(or_(
+            func.lower(LaboratoryTest.name).contains(normalized),
+            func.lower(LaboratoryTest.category).contains(normalized),
+            func.lower(func.coalesce(LaboratoryTest.code, "")).contains(normalized),
+        ))
+    return list(db.scalars(query.order_by(
+        LaboratoryTest.category, LaboratoryTest.sort_order, LaboratoryTest.name
+    )))
 
 
 def _context(db: Session, history) -> dict:
@@ -63,6 +69,33 @@ def _context(db: Session, history) -> dict:
         "specialty_name": specialty.name if specialty else "No especificada (registro histórico)",
         "status": "ordered",
     }
+
+
+def _require_additional_order_authority(db: Session, user: User, history_id: int, *, action: str):
+    history = require_history_access(db, user, history_id, action=action, resource_id=history_id)
+    if not user.is_active or not has_normal_history_access(db, user, history):
+        add_clinical_audit(
+            db, user, action=action, resource_type="clinical_history",
+            resource_id=history.id, history_id=history.id, outcome="denied",
+            context={"reason": "additional_order_authority_required"},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo el médico responsable puede emitir una orden adicional",
+        )
+    if history.status != "completed":
+        add_clinical_audit(
+            db, user, action=action, resource_type="clinical_history",
+            resource_id=history.id, history_id=history.id, outcome="denied",
+            context={"reason": "consultation_not_completed"},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Las órdenes adicionales solo pueden emitirse después de finalizar la consulta",
+        )
+    return history
 
 
 def _laboratory_items(db: Session, payload: LaboratoryOrderInput) -> list[LaboratoryOrderItem]:
@@ -134,6 +167,33 @@ def create_laboratory_order(history_id: int, payload: LaboratoryOrderInput, user
     return order
 
 
+@router.post(
+    "/clinical-history/{history_id}/laboratory-orders/additional",
+    response_model=LaboratoryOrderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_additional_laboratory_order(
+    history_id: int, payload: LaboratoryOrderInput,
+    user: User = Depends(access), db: Session = Depends(get_db),
+):
+    history = _require_additional_order_authority(
+        db, user, history_id, action="laboratory_order.additional.create"
+    )
+    order = LaboratoryOrder(
+        **_context(db, history), notes=payload.notes, is_additional=True,
+        items=_laboratory_items(db, payload),
+    )
+    db.add(order)
+    db.flush()
+    add_clinical_audit(
+        db, user, action="laboratory_order.additional.create",
+        resource_type="laboratory_order", resource_id=order.id, history_id=history.id,
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 @router.put("/clinical-history/{history_id}/laboratory-orders/{order_id}", response_model=LaboratoryOrderResponse)
 def update_laboratory_order(history_id: int, order_id: int, payload: LaboratoryOrderInput, user: User = Depends(access), db: Session = Depends(get_db)):
     history = require_history_access(db, user, history_id, action="laboratory_order.update", write=True)
@@ -165,6 +225,33 @@ def create_study_order(history_id: int, payload: StudyOrderInput, user: User = D
     db.add(order)
     db.flush()
     add_clinical_audit(db, user, action="study_order.create", resource_type="study_order", resource_id=order.id, history_id=history.id)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.post(
+    "/clinical-history/{history_id}/study-orders/additional",
+    response_model=StudyOrderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_additional_study_order(
+    history_id: int, payload: StudyOrderInput,
+    user: User = Depends(access), db: Session = Depends(get_db),
+):
+    history = _require_additional_order_authority(
+        db, user, history_id, action="study_order.additional.create"
+    )
+    order = StudyOrder(
+        **_context(db, history), notes=payload.notes, is_additional=True,
+        items=_study_items(db, history, payload),
+    )
+    db.add(order)
+    db.flush()
+    add_clinical_audit(
+        db, user, action="study_order.additional.create",
+        resource_type="study_order", resource_id=order.id, history_id=history.id,
+    )
     db.commit()
     db.refresh(order)
     return order

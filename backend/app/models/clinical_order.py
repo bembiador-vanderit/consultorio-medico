@@ -15,6 +15,7 @@ class LaboratoryTest(Base):
     category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    seed_key: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -35,6 +36,7 @@ class LaboratoryOrder(Base):
     center_name: Mapped[str | None] = mapped_column(String(250), nullable=True)
     specialty_name: Mapped[str] = mapped_column(String(180), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="ordered", nullable=False)
+    is_additional: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -76,6 +78,7 @@ class StudyOrder(Base):
     center_name: Mapped[str | None] = mapped_column(String(250), nullable=True)
     specialty_name: Mapped[str] = mapped_column(String(180), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="ordered", nullable=False)
+    is_additional: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

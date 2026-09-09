@@ -58,6 +58,7 @@ class LaboratoryOrderResponse(BaseModel):
     center_name: str | None
     specialty_name: str
     status: Literal["ordered"]
+    is_additional: bool
     notes: str | None
     created_at: datetime
     updated_at: datetime
@@ -112,6 +113,7 @@ class StudyOrderResponse(BaseModel):
     center_name: str | None
     specialty_name: str
     status: Literal["ordered"]
+    is_additional: bool
     notes: str | None
     created_at: datetime
     updated_at: datetime
