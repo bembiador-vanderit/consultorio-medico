@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../services/api";
+import ClinicalOrdersHistory from "../clinical/ClinicalOrdersHistory";
+import type { LaboratoryOrder, StudyOrder } from "../../types/clinicalOrder";
 import type { ClinicalAddendum, ClinicalHistory, ClinicalHistoryInput, RequestedTest } from "../../types/clinicalHistory";
 import type { User } from "../../types/user";
 
@@ -26,7 +28,7 @@ type VitalSigns = {
   weight_kg: number | null;
   height_cm: number | null;
 };
-type ClinicalDetails = { diagnoses: Diagnosis[]; prescriptions: Prescription[]; tests: string[]; vitalSigns: VitalSigns | null; addenda: ClinicalAddendum[] };
+type ClinicalDetails = { diagnoses: Diagnosis[]; prescriptions: Prescription[]; tests: string[]; vitalSigns: VitalSigns | null; addenda: ClinicalAddendum[]; laboratoryOrders: LaboratoryOrder[]; studyOrders: StudyOrder[] };
 
 type FollowUpForm = {
   due_at: string;
@@ -164,14 +166,16 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
   async function loadClinicalDetails(historyId: number) {
     setLoadingDetailsId(historyId);
     try {
-      const [{ data: diagnoses }, { data: prescriptions }, tests, { data: vitalSigns }, { data: addenda }] = await Promise.all([
+      const [{ data: diagnoses }, { data: prescriptions }, tests, { data: vitalSigns }, { data: addenda }, { data: laboratoryOrders }, { data: studyOrders }] = await Promise.all([
         api.get<Diagnosis[]>(`/clinical-history/${historyId}/diagnoses`),
         api.get<Prescription[]>(`/clinical-history/${historyId}/prescriptions`),
         loadTests(historyId),
         api.get<VitalSigns | null>(`/clinical-history/${historyId}/vital-signs`),
         api.get<ClinicalAddendum[]>(`/clinical-history/${historyId}/addenda`),
+        api.get<LaboratoryOrder[]>(`/clinical-history/${historyId}/laboratory-orders`),
+        api.get<StudyOrder[]>(`/clinical-history/${historyId}/study-orders`),
       ]);
-      const details = { diagnoses, prescriptions, tests, vitalSigns, addenda };
+      const details = { diagnoses, prescriptions, tests, vitalSigns, addenda, laboratoryOrders, studyOrders };
       setDetailsByHistory((currentDetails) => ({ ...currentDetails, [historyId]: details }));
       setPreviousTests((currentTests) => ({ ...currentTests, [historyId]: tests }));
       return details;
@@ -267,6 +271,8 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
         tests,
         vitalSigns: currentDetails[historyId]?.vitalSigns || null,
         addenda: currentDetails[historyId]?.addenda || [],
+        laboratoryOrders: currentDetails[historyId]?.laboratoryOrders || [],
+        studyOrders: currentDetails[historyId]?.studyOrders || [],
       },
     }));
     return savedTests;
@@ -356,7 +362,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
       setDetailsByHistory((details) => ({
         ...details,
         [addendumHistory.id]: {
-          ...(details[addendumHistory.id] || { diagnoses: [], prescriptions: [], tests: [], vitalSigns: null, addenda: [] }),
+          ...(details[addendumHistory.id] || { diagnoses: [], prescriptions: [], tests: [], vitalSigns: null, addenda: [], laboratoryOrders: [], studyOrders: [] }),
           addenda: [...(details[addendumHistory.id]?.addenda || []), data],
         },
       }));
@@ -437,6 +443,8 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
                 {loadingDetailsId === current.id ? <p className="mt-4 text-sm text-slate-500">Cargando contenido clínico...</p> : <><div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Signos vitales</p>{currentVitalSigns.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{currentVitalSigns.map(([label, value]) => <div key={label} className="rounded-lg border border-cyan-100 bg-white p-3 text-sm"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-semibold text-cyan-900">{value}</p></div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin signos vitales registrados.</p>}</div><div className="mt-4 grid gap-4 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Diagnósticos</p>{currentDetails?.diagnoses.length ? <div className="mt-2 space-y-2">{currentDetails.diagnoses.map((item) => <div key={item.id} className="rounded-lg border bg-white p-3 text-sm"><p className="font-medium">{item.description}{item.is_primary && <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-800">Principal</span>}</p>{item.icd10_code && <p className="mt-1 text-xs text-slate-500">CIE-10: {item.icd10_code}</p>}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin diagnósticos registrados.</p>}</div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Medicamentos recetados</p>{currentDetails?.prescriptions.length ? <div className="mt-2 space-y-2">{currentDetails.prescriptions.map((item) => <div key={item.id} className="rounded-lg border bg-white p-3 text-sm"><p className="font-medium">{item.medication}{item.presentation ? ` · ${item.presentation}` : ""}</p><p className="mt-1 text-xs text-slate-600">{[item.dose, item.route, item.frequency, item.duration].filter(Boolean).join(" · ") || "Pauta no especificada"}</p>{item.quantity && <p className="mt-1 text-xs text-slate-500">Cantidad: {item.quantity}</p>}{item.instructions && <p className="mt-1 text-xs text-slate-500">{item.instructions}</p>}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin medicamentos recetados.</p>}</div></div></>}
               </div>}
 
+              {!isNew && currentDetails && <ClinicalOrdersHistory laboratoryOrders={currentDetails.laboratoryOrders} studyOrders={currentDetails.studyOrders} />}
+
               {!isNew && current?.status === "completed" && currentDetails && <AddendaTimeline items={currentDetails.addenda} />}
 
               {!isNew && <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
@@ -460,13 +468,14 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
                   const isLoading = loadingDetailsId === record.id;
                   return <article key={record.id} className="rounded-lg border bg-white p-3 shadow-sm">
                     <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{formatDate(record.consultation_date)}</p><p className="mt-1 text-xs font-medium text-slate-600">{record.specialty_name} · {record.doctor_name ?? "Médico no disponible"} · {record.center_name ?? "Centro no disponible"}</p><p className="mt-1 font-medium text-slate-900">{historySummary(record)}</p>{record.appointment_id && <p className="mt-1 text-xs text-slate-400">Cita #{record.appointment_id}</p>}</div><button type="button" onClick={() => void openPreviousRecord(record.id)} disabled={isLoading} className="shrink-0 text-xs font-semibold text-indigo-700 hover:underline disabled:opacity-40">{isLoading ? "Cargando..." : isExpanded ? "Ocultar" : "Ver completa"}</button></div>
-                    <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-600">{record.chronic_conditions && <span className="rounded-full bg-slate-100 px-2 py-1">Condición crónica</span>}{record.allergies && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-800">Alergias</span>}{vitalItems.length > 0 && <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">Signos vitales</span>}{details?.diagnoses.length ? <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-800">{details.diagnoses.length} diagnóstico{details.diagnoses.length === 1 ? "" : "s"}</span> : null}{details?.prescriptions.length ? <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-800">{details.prescriptions.length} medicamento{details.prescriptions.length === 1 ? "" : "s"}</span> : null}{tests.length > 0 && <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-800">{tests.length} estudio{tests.length === 1 ? "" : "s"}</span>}</div>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-600">{record.chronic_conditions && <span className="rounded-full bg-slate-100 px-2 py-1">Condición crónica</span>}{record.allergies && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-800">Alergias</span>}{vitalItems.length > 0 && <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">Signos vitales</span>}{details?.diagnoses.length ? <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-800">{details.diagnoses.length} diagnóstico{details.diagnoses.length === 1 ? "" : "s"}</span> : null}{details?.prescriptions.length ? <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-800">{details.prescriptions.length} medicamento{details.prescriptions.length === 1 ? "" : "s"}</span> : null}{tests.length > 0 && <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-800">{tests.length} estudio{tests.length === 1 ? "" : "s"}</span>}{details?.laboratoryOrders.length ? <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">{details.laboratoryOrders.length} orden lab.</span> : null}{details?.studyOrders.length ? <span className="rounded-full bg-violet-50 px-2 py-1 text-violet-800">{details.studyOrders.length} orden est.</span> : null}</div>
                     {isExpanded && details && <div className="mt-3 space-y-3 border-t pt-3 text-xs text-slate-700">
                       {record.reason_for_visit && <p><strong>Motivo original:</strong> {record.reason_for_visit}</p>}{record.current_illness && <p><strong>Enfermedad actual:</strong> {record.current_illness}</p>}{record.personal_history && <p><strong>Antecedentes personales:</strong> {record.personal_history}</p>}{record.family_history && <p><strong>Antecedentes familiares:</strong> {record.family_history}</p>}{record.previous_surgeries && <p><strong>Cirugías:</strong> {record.previous_surgeries}</p>}{record.habits && <p><strong>Hábitos:</strong> {record.habits}</p>}{record.clinical_notes && <p><strong>Notas clínicas originales:</strong> {record.clinical_notes}</p>}
                       <div><p className="font-semibold">Signos vitales:</p>{vitalItems.length ? <ul className="mt-1 list-disc pl-4">{vitalItems.map(([label, value]) => <li key={label}>{label}: {value}</li>)}</ul> : <p className="mt-1 text-slate-500">Sin mediciones.</p>}</div>
                       <div><p className="font-semibold">Diagnósticos:</p>{details.diagnoses.length ? <ul className="mt-1 list-disc pl-4">{details.diagnoses.map((item) => <li key={item.id}>{item.description}{item.icd10_code ? ` · CIE-10 ${item.icd10_code}` : ""}{item.is_primary ? " · Principal" : ""}</li>)}</ul> : <p className="mt-1 text-slate-500">Sin diagnósticos.</p>}</div>
                       <div><p className="font-semibold">Receta:</p>{details.prescriptions.length ? <ul className="mt-1 list-disc pl-4">{details.prescriptions.map((item) => <li key={item.id}>{item.medication}{item.presentation ? ` · ${item.presentation}` : ""}{item.dose ? ` · ${item.dose}` : ""}</li>)}</ul> : <p className="mt-1 text-slate-500">Sin medicamentos.</p>}</div>
                       {tests.length > 0 && <div><p className="font-semibold">Estudios/análisis:</p><ul className="mt-1 list-disc pl-4">{tests.map((test) => <li key={test}>{test}</li>)}</ul></div>}
+                      <ClinicalOrdersHistory laboratoryOrders={details.laboratoryOrders} studyOrders={details.studyOrders} compact />
                       {record.status === "completed" && <AddendaTimeline items={details.addenda} />}
                       {canAddAddendum(record) && <button type="button" onClick={() => openAddendum(record)} className="rounded-md bg-violet-700 px-2.5 py-1.5 font-medium text-white">Agregar nota adicional</button>}
                       <div className="flex flex-wrap gap-2 pt-1"><button type="button" onClick={() => void downloadPdf(record.id, "summary")} disabled={Boolean(downloadingDocument)} className="rounded-md bg-teal-700 px-2.5 py-1.5 font-medium text-white disabled:opacity-40">{downloadingDocument === `${record.id}:summary` ? "Generando..." : "Resumen PDF"}</button><button type="button" onClick={() => void downloadPdf(record.id, "prescription")} disabled={!details.prescriptions.length || Boolean(downloadingDocument)} className="rounded-md border border-blue-200 px-2.5 py-1.5 font-medium text-blue-700 disabled:opacity-40">Receta PDF</button><button type="button" onClick={() => void downloadPdf(record.id, "tests")} disabled={!tests.length || Boolean(downloadingDocument)} className="rounded-md border border-indigo-200 px-2.5 py-1.5 font-medium text-indigo-700 disabled:opacity-40">Orden PDF</button></div>
