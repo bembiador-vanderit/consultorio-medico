@@ -16,6 +16,11 @@ from app.models import Appointment, CareCenter, Patient, Role, SecretaryCenterSc
 from app.schemas.appointment import AppointmentCreate
 
 
+@pytest.fixture(autouse=True)
+def disable_immediate_reminders_for_scope_unit_tests(monkeypatch):
+    monkeypatch.setattr(appointment_routes, "sync_in_app_appointment_reminder", lambda *args, **kwargs: 0)
+
+
 def _user(user_id: int, role_code: str, *, active: bool = True, centers=None) -> User:
     user = User(
         id=user_id,
@@ -80,6 +85,10 @@ class AppointmentDB:
 
     def add(self, appointment):
         self.added = appointment
+
+    def flush(self):
+        if self.added is not None and self.added.id is None:
+            self.refresh(self.added)
 
     def commit(self):
         pass

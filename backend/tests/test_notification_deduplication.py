@@ -12,7 +12,7 @@ from app.api.deps import current_user
 from app.api.routes import follow_ups
 from app.db import Base, get_db
 from app.models import Appointment, CareCenter, Notification, Patient, Role, SecretaryCenterScope, User
-from app.services.reminders import sync_appointment_reminders
+from app.services.reminders import sync_appointment_reminders, sync_in_app_appointment_reminder
 
 
 def test_same_logical_appointment_notification_is_created_once():
@@ -97,6 +97,68 @@ def test_appointment_reminder_only_notifies_secretaries_in_doctor_scope():
     )).all())
     assert recipients == {doctor.id, authorized.id}
     assert outsider.id not in recipients
+    db.close(); engine.dispose()
+
+
+def test_same_day_future_is_due_but_past_and_beyond_24_hours_are_not():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+    center = CareCenter(name="Centro", city="Santo Domingo", is_active=True)
+    doctor = User(
+        email="same-day-doctor@example.test", full_name="Doctora Mismo Día",
+        password_hash="hash", is_active=True,
+        roles=[Role(code="doctor", name="Doctor")], centers=[center],
+    )
+    patient = Patient(first_name="Ana", last_name="Paciente", date_of_birth=date(1990, 1, 1))
+    now = datetime(2026, 9, 8, 11)
+    appointments = [
+        Appointment(patient=patient, doctor=doctor, center=center, appointment_date=now.date(), appointment_time=time(13), status="scheduled"),
+        Appointment(patient=patient, doctor=doctor, center=center, appointment_date=now.date(), appointment_time=time(10), status="scheduled"),
+        Appointment(patient=patient, doctor=doctor, center=center, appointment_date=date(2026, 9, 9), appointment_time=time(11, 1), status="scheduled"),
+    ]
+    db.add_all(appointments); db.commit()
+
+    assert sync_in_app_appointment_reminder(db, appointments[0], now=now) == 1
+    assert sync_in_app_appointment_reminder(db, appointments[1], now=now) == 0
+    assert sync_in_app_appointment_reminder(db, appointments[2], now=now) == 0
+    db.commit()
+    notified_ids = set(db.scalars(select(Notification.appointment_id)).all())
+    assert notified_ids == {appointments[0].id}
+    db.close(); engine.dispose()
+
+
+def test_reprogrammed_due_appointment_refreshes_existing_reminder():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+    center = CareCenter(name="Centro", city="Santo Domingo", is_active=True)
+    doctor = User(
+        email="refresh-doctor@example.test", full_name="Doctora Reprogramada",
+        password_hash="hash", is_active=True,
+        roles=[Role(code="doctor", name="Doctor")], centers=[center],
+    )
+    patient = Patient(first_name="Ana", last_name="Paciente", date_of_birth=date(1990, 1, 1))
+    appointment = Appointment(
+        patient=patient, doctor=doctor, center=center,
+        appointment_date=date(2026, 9, 8), appointment_time=time(13), status="scheduled",
+    )
+    db.add(appointment); db.flush()
+    reminder = Notification(
+        user_id=doctor.id, appointment_id=appointment.id, title="Cita próxima",
+        message="Horario anterior", notification_type="appointment_due", is_read=True,
+        read_at=datetime(2026, 9, 8, 9),
+    )
+    db.add(reminder); db.commit()
+
+    appointment.appointment_time = time(14)
+    assert sync_in_app_appointment_reminder(
+        db, appointment, now=datetime(2026, 9, 8, 11), refresh_existing=True
+    ) == 1
+    db.commit(); db.refresh(reminder)
+    assert reminder.is_read is False
+    assert reminder.read_at is None
+    assert "08/09/2026 14:00" in reminder.message
     db.close(); engine.dispose()
 
 

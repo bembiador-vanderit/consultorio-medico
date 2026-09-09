@@ -23,4 +23,5 @@ class Appointment(Base):
     doctor = relationship("User")
     center = relationship("CareCenter")
     specialty = relationship("Specialty")
+    clinical_history = relationship("ClinicalHistory", uselist=False, foreign_keys="ClinicalHistory.appointment_id")
     coverage_transfer = relationship("AppointmentCoverageTransfer", back_populates="appointment", uselist=False)
