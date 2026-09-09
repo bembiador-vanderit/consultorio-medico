@@ -5,7 +5,7 @@ import type { LaboratoryOrder, LaboratoryTest, MedicalStudy, StudyOrder } from "
 
 type Props = {
   historyId: number;
-  specialtyId: number;
+  specialtyId: number | null;
   completed: boolean;
   allowAdditional?: boolean;
   onOrdersChanged?: () => void | Promise<void>;
@@ -51,7 +51,7 @@ export default function ClinicalOrdersSection({ historyId, specialtyId, complete
     try {
       const [testResponse, studyResponse, laboratoryResponse, ordersResponse] = await Promise.all([
         api.get<LaboratoryTest[]>("/laboratory-tests"),
-        api.get<MedicalStudy[]>("/clinical-catalog/studies", { params: { specialty_id: specialtyId } }),
+        api.get<MedicalStudy[]>("/clinical-catalog/studies", { params: { include_all: true, ...(specialtyId ? { specialty_id: specialtyId } : {}) } }),
         api.get<LaboratoryOrder[]>(`/clinical-history/${historyId}/laboratory-orders`),
         api.get<StudyOrder[]>(`/clinical-history/${historyId}/study-orders`),
       ]);
@@ -176,10 +176,10 @@ export default function ClinicalOrdersSection({ historyId, specialtyId, complete
     </section>
 
     <section className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-5">
-      <div><h3 className="text-lg font-semibold text-indigo-950">Estudios y procedimientos</h3><p className="text-sm text-indigo-800">Indique modalidad, región, contraste y observaciones clínicas.</p></div>
+      <div><h3 className="text-lg font-semibold text-indigo-950">Estudios y procedimientos</h3><p className="text-sm text-indigo-800">Catálogo maestro activo; las opciones de la especialidad se muestran primero como recomendadas.</p></div>
       {showStudyForm && <div className="mt-4 space-y-4">
         <input value={studyQuery} onChange={(event) => setStudyQuery(event.target.value)} placeholder="Buscar estudio o modalidad..." className="w-full rounded-lg border bg-white px-3 py-2" />
-        <div className="grid gap-2 rounded-lg border bg-white p-4 sm:grid-cols-2">{filteredStudies.map((item) => <label key={item.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selectedStudies.includes(item.id)} onChange={() => toggleStudy(item.id)} />{item.name}</label>)}</div>
+        <div className="grid max-h-72 gap-2 overflow-y-auto rounded-lg border bg-white p-4 sm:grid-cols-2">{filteredStudies.map((item) => <label key={item.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selectedStudies.includes(item.id)} onChange={() => toggleStudy(item.id)} /><span>{item.name}{specialtyId && item.specialty_id === specialtyId ? <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">Recomendado</span> : null}</span></label>)}</div>
         {selectedStudies.map((id) => { const study = studies.find((item) => item.id === id); const detail = studyDetails[id] || { region_description: "", contrast: "not_applicable", clinical_notes: "" }; return <div key={id} className="rounded-lg border bg-white p-3"><p className="font-medium">{study?.name}</p><div className="mt-2 grid gap-2 sm:grid-cols-2"><input value={detail.region_description} onChange={(event) => setStudyDetails((current) => ({ ...current, [id]: { ...detail, region_description: event.target.value } }))} placeholder="Región o descripción" className="rounded-lg border px-3 py-2" /><select value={detail.contrast} onChange={(event) => setStudyDetails((current) => ({ ...current, [id]: { ...detail, contrast: event.target.value as StudyDetails["contrast"] } }))} className="rounded-lg border px-3 py-2"><option value="not_applicable">Contraste: no aplica</option><option value="no">Sin contraste</option><option value="yes">Con contraste</option></select></div><textarea value={detail.clinical_notes} onChange={(event) => setStudyDetails((current) => ({ ...current, [id]: { ...detail, clinical_notes: event.target.value } }))} rows={2} placeholder="Observaciones clínicas (opcional)" className="mt-2 w-full rounded-lg border px-3 py-2" /></div>; })}
         <textarea value={studyNotes} onChange={(event) => setStudyNotes(event.target.value)} rows={2} placeholder="Observaciones generales de la orden (opcional)" className="w-full rounded-lg border bg-white px-3 py-2" />
         <div className="flex justify-end gap-2">{editingStudyId && <button type="button" onClick={() => { setEditingStudyId(null); setSelectedStudies([]); setStudyDetails({}); setStudyNotes(""); }} className="rounded-lg border px-4 py-2">Cancelar edición</button>}<button type="button" onClick={() => void saveStudyOrder()} disabled={busy === "study-save" || !selectedStudies.length} className="rounded-lg bg-indigo-700 px-4 py-2 font-medium text-white disabled:opacity-40">{busy === "study-save" ? "Guardando..." : editingStudyId ? "Actualizar orden" : "Guardar orden"}</button></div>

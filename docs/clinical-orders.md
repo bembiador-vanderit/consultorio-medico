@@ -19,6 +19,8 @@ Atlas conserva las solicitudes libres existentes en `requested_tests` como forma
 - El médico responsable puede emitir una orden nueva mediante **Nueva orden adicional**. Es append-only, tiene autor y fecha propios, no reabre la consulta y aparece cronológicamente junto a las anteriores.
 - Secretaria, administrador puramente administrativo, médico ajeno y acceso delegado de solo lectura no pueden crear órdenes adicionales.
 - Catálogos inactivos no se ofrecen para órdenes nuevas, pero sus snapshots siguen visibles históricamente.
+- Estudios y procedimientos se seleccionan desde un catálogo maestro activo. La especialidad de la consulta prioriza recomendaciones, pero no limita el catálogo ni reemplaza el contexto histórico.
+- Una historia legacy con especialidad reservada, inactiva, sin estudios asociados o `NULL` conserva esa especialidad y puede recibir nuevas órdenes adicionales append-only.
 - Los PDFs se descargan y pueden regenerarse desde datos persistidos mientras el usuario mantenga acceso de lectura.
 
 ### API

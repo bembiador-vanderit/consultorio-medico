@@ -411,7 +411,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
   const historySpecialties = Array.from(new Map(records.map((record) => [record.specialty_id, record.specialty_name])).entries());
   const previousRecords = records
     .filter((record) => record.id !== current?.id)
-    .filter((record) => !specialtyFilter || record.specialty_id === Number(specialtyFilter))
+    .filter((record) => !specialtyFilter || (specialtyFilter === "legacy" ? record.specialty_id === null : record.specialty_id === Number(specialtyFilter)))
     .slice(0, 6);
 
   return (
@@ -461,7 +461,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
 
             <aside className="lg:sticky lg:top-20 lg:self-start">
               <div className="rounded-xl border bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold">Consultas anteriores</h4><p className="text-xs text-slate-500">Historial clínico reciente del paciente</p></div><span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{previousRecords.length}</span></div>{historySpecialties.length > 1 && <label className="mt-3 block text-xs font-medium text-slate-600">Filtrar por especialidad<select value={specialtyFilter} onChange={(event) => setSpecialtyFilter(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 text-sm"><option value="">Todas</option>{historySpecialties.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>}
+                <div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold">Consultas anteriores</h4><p className="text-xs text-slate-500">Historial clínico reciente del paciente</p></div><span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{previousRecords.length}</span></div>{historySpecialties.length > 1 && <label className="mt-3 block text-xs font-medium text-slate-600">Filtrar por especialidad<select value={specialtyFilter} onChange={(event) => setSpecialtyFilter(event.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2 text-sm"><option value="">Todas</option>{historySpecialties.map(([id, name]) => <option key={id ?? "legacy"} value={id ?? "legacy"}>{name}</option>)}</select></label>}
                 {previousRecords.length === 0 ? <p className="mt-4 rounded-lg border border-dashed bg-white p-4 text-sm text-slate-500">No hay consultas anteriores para mostrar.</p> : <div className="mt-4 space-y-3">{previousRecords.map((record) => {
                   const details = detailsByHistory[record.id];
                   const tests = details?.tests || previousTests[record.id] || [];

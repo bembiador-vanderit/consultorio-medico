@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import current_user, require_permission
@@ -114,11 +114,22 @@ def list_regions(specialty_id: int, _: User = Depends(current_user), db: Session
 
 
 @router.get("/studies", response_model=list[MedicalStudyResponse])
-def list_studies(specialty_id: int, region_id: int | None = None, _: User = Depends(current_user), db: Session = Depends(get_db)):
-    query = select(MedicalStudy).where(MedicalStudy.specialty_id == specialty_id, MedicalStudy.is_active)
+def list_studies(
+    specialty_id: int | None = None,
+    region_id: int | None = None,
+    include_all: bool = False,
+    _: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    query = select(MedicalStudy).where(MedicalStudy.is_active)
+    if specialty_id is not None and not include_all:
+        query = query.where(MedicalStudy.specialty_id == specialty_id)
     if region_id is not None:
         query = query.where(MedicalStudy.anatomical_region_id == region_id)
-    return list(db.scalars(query.order_by(MedicalStudy.name)))
+    ordering = []
+    if specialty_id is not None and include_all:
+        ordering.append(case((MedicalStudy.specialty_id == specialty_id, 0), else_=1))
+    return list(db.scalars(query.order_by(*ordering, MedicalStudy.category, MedicalStudy.name)))
 
 
 @router.get("/doctor-profile/me", response_model=DoctorProfileResponse)

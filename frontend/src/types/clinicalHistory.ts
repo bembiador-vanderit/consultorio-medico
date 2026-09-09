@@ -20,7 +20,7 @@ export type ClinicalHistory = {
   appointment_id: number | null;
   doctor_id: number | null;
   center_id: number | null;
-  specialty_id: number;
+  specialty_id: number | null;
   specialty_name: string;
   doctor_name: string | null;
   center_name: string | null;

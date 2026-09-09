@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.api.deps import current_user
-from app.api.routes import appointments, clinical_addenda, clinical_coverages, clinical_history, clinical_orders, diagnoses, follow_ups, patients, prescriptions, vital_signs
+from app.api.routes import appointments, clinical_addenda, clinical_catalog, clinical_coverages, clinical_history, clinical_orders, diagnoses, follow_ups, patients, prescriptions, vital_signs
 from app.db import Base, get_db
 from app.models import (
     Appointment,
@@ -117,6 +117,7 @@ def clinical_app():
         appointments.router,
         clinical_history.router,
         clinical_addenda.router,
+        clinical_catalog.router,
         clinical_orders.router,
         diagnoses.router,
         prescriptions.router,
@@ -1738,11 +1739,12 @@ def test_structured_study_order_preserves_fields_and_updates_explicitly(clinical
     other_study = MedicalStudy(specialty_id=other_specialty.id, name="Electroencefalograma", category="functional", is_active=True)
     clinical_app["db"].add(other_study)
     clinical_app["db"].commit()
-    wrong_specialty = client.post(f"/api/v1/clinical-history/{history.id}/study-orders", json={
+    master_catalog_study = client.post(f"/api/v1/clinical-history/{history.id}/study-orders", json={
         "items": [{"medical_study_id": other_study.id}],
     })
-    assert wrong_specialty.status_code == 422
-    assert "especialidad" in wrong_specialty.json()["detail"]
+    assert master_catalog_study.status_code == 201, master_catalog_study.text
+    assert master_catalog_study.json()["specialty_id"] == history.specialty_id
+    assert master_catalog_study.json()["items"][0]["study_name"] == "Electroencefalograma"
     document = client.get(f"/api/v1/study-orders/{first_id}/pdf")
     assert document.status_code == 200
     assert document.content.startswith(b"%PDF")
@@ -1908,4 +1910,85 @@ def test_completed_history_accepts_only_append_only_orders_from_responsible_doct
     active_user["value"] = clinical_app["admin"]
     assert client.post(
         f"/api/v1/clinical-history/{history.id}/laboratory-orders/additional", json=laboratory_payload
+    ).status_code == 403
+
+
+def test_master_study_catalog_supports_completed_legacy_histories_without_rewriting_specialty(clinical_app):
+    client = clinical_app["client"]
+    db = clinical_app["db"]
+    doctor = clinical_app["doctor_a"]
+    patient = clinical_app["patient_a"]
+    center = clinical_app["center"]
+
+    other_specialty = Specialty(name="Especialidad con otras recomendaciones", is_active=True)
+    reserved_specialty = Specialty(name="No especificada (registro histórico)", is_active=False)
+    inactive_specialty = Specialty(name="Especialidad histórica inactiva", is_active=False)
+    db.add_all([other_specialty, reserved_specialty, inactive_specialty])
+    db.flush()
+    other_study = MedicalStudy(
+        specialty_id=other_specialty.id,
+        name="Procedimiento de catálogo maestro",
+        category="procedure",
+        is_active=True,
+    )
+    db.add(other_study)
+    db.flush()
+
+    histories = [
+        ClinicalHistory(
+            patient_id=patient.id, doctor_id=doctor.id, center_id=center.id,
+            specialty_id=reserved_specialty.id, consultation_date=date(2024, 1, 10),
+            status="completed", completed_at=datetime(2024, 1, 10, 12), completed_by_id=doctor.id,
+        ),
+        ClinicalHistory(
+            patient_id=patient.id, doctor_id=doctor.id, center_id=center.id,
+            specialty_id=inactive_specialty.id, consultation_date=date(2024, 2, 10),
+            status="completed", completed_at=datetime(2024, 2, 10, 12), completed_by_id=doctor.id,
+        ),
+        ClinicalHistory(
+            patient_id=patient.id, doctor_id=doctor.id, center_id=center.id,
+            specialty_id=None, consultation_date=date(2023, 12, 10),
+            status="completed", completed_at=datetime(2023, 12, 10, 12), completed_by_id=doctor.id,
+        ),
+    ]
+    db.add_all(histories)
+    db.commit()
+
+    active_catalog = client.get("/api/v1/clinical-catalog/studies", params={
+        "specialty_id": clinical_app["specialty"].id,
+        "include_all": True,
+    })
+    assert active_catalog.status_code == 200
+    assert active_catalog.json()[0]["id"] == clinical_app["medical_study"].id
+    assert {item["id"] for item in active_catalog.json()} == {
+        clinical_app["medical_study"].id, other_study.id,
+    }
+
+    for legacy_history in histories:
+        catalog_params = {"include_all": True}
+        if legacy_history.specialty_id is not None:
+            catalog_params["specialty_id"] = legacy_history.specialty_id
+        catalog = client.get("/api/v1/clinical-catalog/studies", params=catalog_params)
+        assert catalog.status_code == 200
+        assert {item["id"] for item in catalog.json()} == {
+            clinical_app["medical_study"].id, other_study.id,
+        }
+        created = client.post(
+            f"/api/v1/clinical-history/{legacy_history.id}/study-orders/additional",
+            json={"items": [{"medical_study_id": other_study.id}]},
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["is_additional"] is True
+        assert created.json()["specialty_id"] == legacy_history.specialty_id
+        assert created.json()["specialty_name"] == (
+            legacy_history.specialty.name
+            if legacy_history.specialty_id is not None
+            else "No especificada (registro histórico)"
+        )
+        assert legacy_history.status == "completed"
+
+    clinical_app["active_user"]["value"] = clinical_app["doctor_b"]
+    assert client.post(
+        f"/api/v1/clinical-history/{histories[0].id}/study-orders/additional",
+        json={"items": [{"medical_study_id": other_study.id}]},
     ).status_code == 403
