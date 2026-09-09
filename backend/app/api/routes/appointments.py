@@ -38,6 +38,9 @@ def response(a: Appointment) -> AppointmentResponse:
         original_doctor_id=a.coverage_transfer.original_doctor_id if a.coverage_transfer else None,
         original_doctor_name=(a.coverage_transfer.coverage.principal.full_name if a.coverage_transfer else None),
         has_clinical_history=a.clinical_history is not None,
+        clinical_history_id=a.clinical_history.id if a.clinical_history else None,
+        clinical_history_status=a.clinical_history.status if a.clinical_history else None,
+        clinical_history_doctor_id=a.clinical_history.doctor_id if a.clinical_history else None,
         created_at=a.created_at, updated_at=a.updated_at,
     )
 

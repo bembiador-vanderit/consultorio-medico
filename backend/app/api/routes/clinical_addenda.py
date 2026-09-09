@@ -71,7 +71,9 @@ def create_addendum(
         clinical_history_id=history.id,
         author_user_id=user.id,
         reason=payload.reason,
-        note=payload.note,
+        # The existing column remains non-null. An empty string represents a
+        # reason-only addendum and avoids a schema migration for this UI fix.
+        note=payload.note or "",
     )
     db.add(addendum)
     db.flush()

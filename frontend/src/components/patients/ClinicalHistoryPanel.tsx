@@ -3,7 +3,7 @@ import { api } from "../../services/api";
 import type { ClinicalAddendum, ClinicalHistory, ClinicalHistoryInput, RequestedTest } from "../../types/clinicalHistory";
 import type { User } from "../../types/user";
 
-type Props = { patientId: number; patientName: string; user: User; onClose: () => void };
+type Props = { patientId: number; patientName: string; user: User; onClose: () => void; initialAddendumHistoryId?: number | null };
 type Diagnosis = { id: number; description: string; icd10_code: string | null; is_primary: boolean };
 type Prescription = {
   id: number;
@@ -96,7 +96,7 @@ function AddendaTimeline({ items }: { items: ClinicalAddendum[] }) {
     {items.length ? <div className="mt-3 space-y-3">{items.map((item) => <article key={item.id} className="rounded-lg border border-violet-100 bg-white p-3 text-sm">
       <p className="text-xs font-medium text-violet-800">{new Date(item.created_at).toLocaleString("es-DO")} · {item.author_name}</p>
       {item.reason && <p className="mt-2"><strong>Motivo adicional:</strong> {item.reason}</p>}
-      <p className="mt-1 whitespace-pre-wrap"><strong>Nota:</strong> {item.note}</p>
+      {item.note && <p className="mt-1 whitespace-pre-wrap"><strong>Nota adicional:</strong> {item.note}</p>}
     </article>)}</div> : <p className="mt-3 text-sm text-slate-500">Sin notas adicionales.</p>}
   </div>;
 }
@@ -121,7 +121,7 @@ function vitalSignItems(vitalSigns: VitalSigns | null | undefined) {
   return items;
 }
 
-export default function ClinicalHistoryPanel({ patientId, patientName, user, onClose }: Props) {
+export default function ClinicalHistoryPanel({ patientId, patientName, user, onClose, initialAddendumHistoryId }: Props) {
   const [records, setRecords] = useState<ClinicalHistory[]>([]);
   const [index, setIndex] = useState(0);
   const [form, setForm] = useState<ClinicalHistoryInput>(emptyHistory);
@@ -185,16 +185,22 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
       const { data } = await api.get<ClinicalHistory[]>(`/clinical-history/patients/${patientId}`);
       setRecords(data);
       if (data.length) {
-        const initialTests = data[0].requested_tests.map((item) => item.test_name);
-        setIndex(0);
-        setForm({ ...data[0], requested_tests: initialTests.join("\n") });
+        const requestedIndex = initialAddendumHistoryId
+          ? data.findIndex((record) => record.id === initialAddendumHistoryId)
+          : 0;
+        const selectedIndex = requestedIndex >= 0 ? requestedIndex : 0;
+        const selectedRecord = data[selectedIndex];
+        const initialTests = selectedRecord.requested_tests.map((item) => item.test_name);
+        setIndex(selectedIndex);
+        setForm({ ...selectedRecord, requested_tests: initialTests.join("\n") });
         setIsNew(false);
         setHasUnsavedChanges(false);
         setShowTests(Boolean(initialTests.length));
-        setPreviousTests({ [data[0].id]: initialTests });
+        setPreviousTests({ [selectedRecord.id]: initialTests });
         try {
-          const { tests } = await loadClinicalDetails(data[0].id);
-          setForm({ ...data[0], requested_tests: tests.join("\n") });
+          const { tests } = await loadClinicalDetails(selectedRecord.id);
+          setForm({ ...selectedRecord, requested_tests: tests.join("\n") });
+          if (initialAddendumHistoryId && canAddAddendum(selectedRecord)) openAddendum(selectedRecord);
         } catch (err: any) {
           setError(err?.response?.data?.detail || "La historia se cargó, pero no fue posible obtener diagnósticos y recetas.");
         }
@@ -209,7 +215,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
     }
   }
 
-  useEffect(() => { void load(); }, [patientId]);
+  useEffect(() => { void load(); }, [patientId, initialAddendumHistoryId]);
 
   async function showRecord(nextIndex: number) {
     const record = records[nextIndex];
@@ -336,8 +342,8 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
   }
 
   async function createAddendum() {
-    if (!addendumHistory || !addendumNote.trim()) {
-      setAddendumError("La nota adicional es obligatoria.");
+    if (!addendumHistory || (!addendumReason.trim() && !addendumNote.trim())) {
+      setAddendumError("Indique un motivo adicional o una nota adicional.");
       return;
     }
     setSavingAddendum(true);
@@ -345,7 +351,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
     try {
       const { data } = await api.post<ClinicalAddendum>(`/clinical-history/${addendumHistory.id}/addenda`, {
         reason: addendumReason.trim() || null,
-        note: addendumNote.trim(),
+        note: addendumNote.trim() || null,
       });
       setDetailsByHistory((details) => ({
         ...details,
@@ -473,7 +479,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
         )}
 
         {showFollowUp && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><h3 className="text-lg font-bold">Programar seguimiento</h3><p className="text-sm text-slate-500">{patientName} · consulta del {current ? formatDate(current.consultation_date) : ""}</p></div><button type="button" onClick={() => setShowFollowUp(false)} className="text-2xl text-slate-400">×</button></div><div className="mt-5 space-y-4"><label className="block"><span className="mb-1 block text-sm font-medium">Fecha y hora</span><input type="datetime-local" value={followUp.due_at} onChange={(event) => setFollowUp({ ...followUp, due_at: event.target.value })} className="w-full rounded-lg border px-3 py-2" /></label><label className="block"><span className="mb-1 block text-sm font-medium">Motivo</span><input value={followUp.reason} onChange={(event) => setFollowUp({ ...followUp, reason: event.target.value })} placeholder="Revisar resultados de laboratorio" className="w-full rounded-lg border px-3 py-2" /></label><label className="block"><span className="mb-1 block text-sm font-medium">Prioridad</span><select value={followUp.priority} onChange={(event) => setFollowUp({ ...followUp, priority: event.target.value as FollowUpForm["priority"] })} className="w-full rounded-lg border px-3 py-2"><option value="low">Baja</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label><label className="block"><span className="mb-1 block text-sm font-medium">Notas</span><textarea value={followUp.notes} onChange={(event) => setFollowUp({ ...followUp, notes: event.target.value })} rows={3} placeholder="Indicaciones para el seguimiento" className="w-full rounded-lg border px-3 py-2" /></label>{followUpError && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{followUpError}</div>}<div className="flex justify-end gap-3 border-t pt-4"><button type="button" onClick={() => setShowFollowUp(false)} className="rounded-lg border px-4 py-2">Cancelar</button><button type="button" onClick={() => void createFollowUp()} disabled={savingFollowUp} className="rounded-lg bg-amber-600 px-5 py-2 font-medium text-white disabled:opacity-50">{savingFollowUp ? "Programando..." : "Programar seguimiento"}</button></div></div></div></div>}
-        {addendumHistory && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4" role="dialog" aria-modal="true" aria-label="Agregar nota clínica adicional"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><h3 className="text-lg font-bold">Agregar nota adicional</h3><p className="text-sm text-slate-500">Consulta finalizada del {formatDate(addendumHistory.consultation_date)}</p></div><button type="button" onClick={() => setAddendumHistory(null)} className="text-2xl text-slate-400">×</button></div><div className="mt-5 space-y-4"><div className="rounded-lg bg-violet-50 p-3 text-sm text-violet-800">Esta entrada quedará vinculada a la consulta original y no podrá editarse ni eliminarse.</div><label className="block"><span className="mb-1 block text-sm font-medium">Motivo adicional (opcional)</span><input value={addendumReason} onChange={(event) => setAddendumReason(event.target.value)} maxLength={5000} className="w-full rounded-lg border px-3 py-2" /></label><label className="block"><span className="mb-1 block text-sm font-medium">Nota *</span><textarea value={addendumNote} onChange={(event) => setAddendumNote(event.target.value)} maxLength={10000} rows={5} className="w-full rounded-lg border px-3 py-2" /></label>{addendumError && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{addendumError}</div>}<div className="flex justify-end gap-3 border-t pt-4"><button type="button" onClick={() => setAddendumHistory(null)} disabled={savingAddendum} className="rounded-lg border px-4 py-2">Cancelar</button><button type="button" onClick={() => void createAddendum()} disabled={savingAddendum || !addendumNote.trim()} className="rounded-lg bg-violet-700 px-5 py-2 font-medium text-white disabled:opacity-50">{savingAddendum ? "Guardando..." : "Guardar nota adicional"}</button></div></div></div></div>}
+        {addendumHistory && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4" role="dialog" aria-modal="true" aria-label="Agregar nota clínica adicional"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><h3 className="text-lg font-bold">Agregar nota adicional</h3><p className="text-sm text-slate-500">Consulta finalizada del {formatDate(addendumHistory.consultation_date)}</p></div><button type="button" onClick={() => setAddendumHistory(null)} className="text-2xl text-slate-400">×</button></div><div className="mt-5 space-y-4"><div className="rounded-lg bg-violet-50 p-3 text-sm text-violet-800">Esta entrada quedará vinculada a la consulta original y no podrá editarse ni eliminarse.</div><label className="block"><span className="mb-1 block text-sm font-medium">Motivo adicional (opcional)</span><input value={addendumReason} onChange={(event) => setAddendumReason(event.target.value)} maxLength={5000} className="w-full rounded-lg border px-3 py-2" /></label><label className="block"><span className="mb-1 block text-sm font-medium">Nota adicional (opcional)</span><textarea value={addendumNote} onChange={(event) => setAddendumNote(event.target.value)} maxLength={10000} rows={5} className="w-full rounded-lg border px-3 py-2" /></label><p className="text-xs text-slate-500">Debe completar al menos uno de los dos campos.</p>{addendumError && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{addendumError}</div>}<div className="flex justify-end gap-3 border-t pt-4"><button type="button" onClick={() => setAddendumHistory(null)} disabled={savingAddendum} className="rounded-lg border px-4 py-2">Cancelar</button><button type="button" onClick={() => void createAddendum()} disabled={savingAddendum || (!addendumReason.trim() && !addendumNote.trim())} className="rounded-lg bg-violet-700 px-5 py-2 font-medium text-white disabled:opacity-50">{savingAddendum ? "Guardando..." : "Guardar nota adicional"}</button></div></div></div></div>}
       </div>
     </div>
   );

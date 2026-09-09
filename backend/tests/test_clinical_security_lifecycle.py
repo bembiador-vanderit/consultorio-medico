@@ -565,10 +565,17 @@ def test_completed_history_accepts_immutable_addenda_and_preserves_original_cont
         json={"note": "Se informó al paciente."},
     )
     assert second.status_code == 201
+    reason_only = client.post(
+        f"/api/v1/clinical-history/{history.id}/addenda",
+        json={"reason": "Aclaración diagnóstica"},
+    )
+    assert reason_only.status_code == 201
+    assert reason_only.json()["reason"] == "Aclaración diagnóstica"
+    assert reason_only.json()["note"] == ""
     listed = client.get(f"/api/v1/clinical-history/{history.id}/addenda")
     assert listed.status_code == 200
     assert [item["note"] for item in listed.json()] == [
-        "Se recibió el resultado confirmado.", "Se informó al paciente.",
+        "Se recibió el resultado confirmado.", "Se informó al paciente.", "",
     ]
     clinical_app["db"].refresh(history)
     assert history.reason_for_visit == original_reason
@@ -593,6 +600,9 @@ def test_addendum_requires_completed_history_and_valid_note(clinical_app):
     assert client.post(f"/api/v1/clinical-history/{history.id}/complete").status_code == 200
     assert client.post(
         f"/api/v1/clinical-history/{history.id}/addenda", json={"note": "   "}
+    ).status_code == 422
+    assert client.post(
+        f"/api/v1/clinical-history/{history.id}/addenda", json={"reason": "  ", "note": "  "}
     ).status_code == 422
 
 
@@ -671,7 +681,15 @@ def test_completed_appointment_reason_and_notes_are_read_only(clinical_app):
     appointment.reason = "Motivo original"
     appointment.notes = "Nota original"
     appointment.status = "completed"
+    clinical_app["history_a"].status = "completed"
     clinical_app["db"].commit()
+
+    listed = client.get("/api/v1/appointments")
+    assert listed.status_code == 200
+    item = next(item for item in listed.json() if item["id"] == appointment.id)
+    assert item["clinical_history_id"] == clinical_app["history_a"].id
+    assert item["clinical_history_status"] == "completed"
+    assert item["clinical_history_doctor_id"] == clinical_app["doctor_a"].id
 
     response = client.put(f"/api/v1/appointments/{appointment.id}", json={
         "patient_id": appointment.patient_id,

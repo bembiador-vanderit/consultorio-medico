@@ -1,11 +1,11 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ClinicalAddendumCreate(BaseModel):
     reason: str | None = Field(default=None, max_length=5000)
-    note: str = Field(min_length=1, max_length=10000)
+    note: str | None = Field(default=None, max_length=10000)
 
     model_config = {"extra": "forbid"}
 
@@ -19,11 +19,17 @@ class ClinicalAddendumCreate(BaseModel):
 
     @field_validator("note")
     @classmethod
-    def normalize_note(cls, value: str) -> str:
+    def normalize_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
-        if not value:
-            raise ValueError("La nota adicional es obligatoria")
-        return value
+        return value or None
+
+    @model_validator(mode="after")
+    def require_content(self):
+        if self.reason is None and self.note is None:
+            raise ValueError("Indique un motivo adicional o una nota adicional")
+        return self
 
 
 class ClinicalAddendumResponse(BaseModel):

@@ -5,11 +5,13 @@ import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
 import { sortAppointments, type AppointmentSortKey, type SortDirection } from "../utils/appointmentSort";
 import { announceNotificationsChanged } from "../services/notificationEvents";
+import ClinicalHistoryPanel from "../components/patients/ClinicalHistoryPanel";
 
 type Center = { id: number; name: string; city: string; center_type: string; is_active: boolean };
 type Specialty = { id: number; name: string };
 type Doctor = { id: number; full_name: string; specialties: Specialty[] };
 type PatientIdentity = { id: number; first_name: string; last_name: string; date_of_birth: string; phone_masked: string | null; email_masked: string | null };
+type AddendumTarget = { patientId: number; patientName: string; historyId: number };
 type Props = { user: User; onBack: () => void; initialPatient?: Patient | null; canAccessClinical: boolean; onAttendAppointment: (appointment: Appointment) => void };
 
 const empty: AppointmentInput = { patient_id: 0, doctor_id: null, center_id: null, specialty_id: null, appointment_date: new Date().toISOString().slice(0, 10), appointment_time: "08:00", reason: "", status: "scheduled", notes: "" };
@@ -39,15 +41,27 @@ export default function Appointments({ user, onBack, initialPatient, canAccessCl
   const [formError, setFormError] = useState("");
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [savingAppointment, setSavingAppointment] = useState(false);
+  const [addendumTarget, setAddendumTarget] = useState<AddendumTarget | null>(null);
   const [sort, setSort] = useState<{ key: AppointmentSortKey; direction: SortDirection }>({ key: "dateTime", direction: "asc" });
   const doctorRequest = useRef(0);
   const initialPatientHandled = useRef(false);
-  const contextLocked = Boolean(editing && (editing.status === "completed" || editing.coverage_id || (user.roles.includes("doctor") && !user.roles.includes("admin"))));
-  const specialtyLocked = Boolean(editing && (editing.status === "completed" || editing.coverage_id || editing.has_clinical_history));
+  const completedContextLocked = Boolean(editing && (
+    editing.status === "completed" || editing.clinical_history_status === "completed"
+  ));
+  const contextLocked = Boolean(editing && (completedContextLocked || editing.coverage_id || (user.roles.includes("doctor") && !user.roles.includes("admin"))));
+  const specialtyLocked = Boolean(editing && (completedContextLocked || editing.coverage_id || editing.has_clinical_history));
   const scheduleLocked = Boolean(editing && (
-    editing.status === "completed"
+    completedContextLocked
     || (editing.coverage_id && (!user.roles.includes("secretary") || user.roles.includes("admin")))
   ));
+  const canAddAddendum = Boolean(
+    editing
+    && completedContextLocked
+    && editing.clinical_history_id
+    && editing.clinical_history_doctor_id === user.id
+    && user.is_active
+    && user.roles.includes("doctor"),
+  );
 
   async function load() { setLoading(true); try { const [a, c] = await Promise.all([api.get<Appointment[]>("/appointments"), api.get<Center[]>("/centers/mine")]); setItems(a.data.map((item) => item.coverage_id && item.original_doctor_name ? { ...item, doctor_name: `${item.doctor_name} · cobertura de ${item.original_doctor_name}` } : item)); setCenters(c.data); } catch (e: any) { setError(e?.response?.data?.detail || "No fue posible cargar la agenda."); } finally { setLoading(false); } }
   useEffect(() => { void load(); }, []);
@@ -99,6 +113,15 @@ export default function Appointments({ user, onBack, initialPatient, canAccessCl
   function clearPatient() { if (contextLocked) return; setSelectedPatient(null); setPatientQuery(""); setPatientBirthDate(""); setPatientResults([]); setForm((f) => ({ ...f, patient_id: 0 })); }
   async function save() { if (savingAppointment) return; setFormError(""); setSavingAppointment(true); try { if (!form.patient_id) throw new Error("Seleccione un paciente."); if (!form.center_id) throw new Error("Seleccione el centro donde se realizará la cita."); if (!form.doctor_id) throw new Error("Seleccione el médico que atenderá la cita."); if (!form.specialty_id) throw new Error("Seleccione la especialidad de la cita."); if (editing) await api.put(`/appointments/${editing.id}`, form); else await api.post("/appointments", form); announceNotificationsChanged(); setShowForm(false); setSelectedPatient(null); await load(); } catch (e: any) { setFormError(errorMessage(e, "No fue posible guardar la cita.")); } finally { setSavingAppointment(false); } }
   async function remove(id: number) { if (!confirm("¿Eliminar esta cita?")) return; try { await api.delete(`/appointments/${id}`); await load(); } catch (e: any) { setError(e?.response?.data?.detail || "No fue posible eliminar la cita."); } }
+  function openAddendumFromAppointment() {
+    if (!editing?.clinical_history_id || !canAddAddendum) return;
+    setAddendumTarget({
+      patientId: editing.patient_id,
+      patientName: editing.patient_name,
+      historyId: editing.clinical_history_id,
+    });
+    setShowForm(false);
+  }
 
   const sortedItems = useMemo(
     () => sortAppointments(items, sort.key, sort.direction, labels),
@@ -126,6 +149,7 @@ export default function Appointments({ user, onBack, initialPatient, canAccessCl
       <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm font-medium">Fecha<input type="date" value={form.appointment_date} disabled={scheduleLocked} onChange={(e) => { const date = e.target.value; setFormError(""); setForm((current) => ({ ...current, appointment_date: date })); if (!editing?.coverage_id) void loadDoctors(form.center_id, date, form.doctor_id); }} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required /></label><label className="text-sm font-medium">Hora<input type="time" value={form.appointment_time} disabled={scheduleLocked} onChange={(e) => setForm({ ...form, appointment_time: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required /></label></div>
       <label className="mt-4 block text-sm font-medium">Médico responsable{contextLocked ? <div className="mt-1 rounded-lg border bg-slate-100 p-2.5">{editing?.doctor_name || "Médico asignado"}</div> : <select value={form.doctor_id || ""} onChange={(e) => { const doctorId = Number(e.target.value) || null; const selected = doctors.find((doctor) => doctor.id === doctorId); setForm({ ...form, doctor_id: doctorId, specialty_id: selected?.specialties.length === 1 ? selected.specialties[0].id : null }); }} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required disabled={!form.center_id || loadingDoctors}><option value="">{loadingDoctors ? "Consultando disponibilidad..." : "Seleccione..."}</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.full_name}</option>)}</select>}{contextLocked && <span className="mt-1 block text-xs text-slate-500">La reasignación solo se realiza mediante una cobertura clínica explícita.</span>}</label>
       <label className="mt-4 block text-sm font-medium">Especialidad{specialtyLocked ? <div className="mt-1 rounded-lg border bg-slate-100 p-2.5">{editing?.specialty_name || "Especialidad registrada"}</div> : <select value={form.specialty_id || ""} onChange={(e) => setForm({ ...form, specialty_id: Number(e.target.value) || null })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required disabled={!form.doctor_id || loadingDoctors}><option value="">Seleccione...</option>{(doctors.find((doctor) => doctor.id === form.doctor_id)?.specialties ?? []).map((specialty) => <option key={specialty.id} value={specialty.id}>{specialty.name}</option>)}</select>}</label>
-      <label className="mt-4 block text-sm font-medium">Estado<select value={form.status} disabled={editing?.status === "completed"} onChange={(e) => setForm({ ...form, status: e.target.value as AppointmentInput["status"] })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100">{Object.entries(labels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label><label className="mt-4 block text-sm font-medium">Motivo<input value={form.reason || ""} disabled={editing?.status === "completed"} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" /></label><label className="mt-4 block text-sm font-medium">Notas<textarea value={form.notes || ""} disabled={editing?.status === "completed"} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" /></label>{editing?.status === "completed" && <p className="mt-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-800">El motivo y las notas originales son de solo lectura. Para información posterior, use “Agregar nota adicional” desde la Historia clínica del paciente.</p>}{formError && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>}<div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowForm(false)} disabled={savingAppointment} className="rounded-lg border px-5 py-2 disabled:opacity-60">Cancelar</button><button onClick={() => void save()} disabled={savingAppointment || editing?.status === "completed"} className="rounded-lg bg-teal-700 px-5 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">{savingAppointment ? "Guardando..." : "Guardar"}</button></div></div></div>}
+      <label className="mt-4 block text-sm font-medium">Estado<select value={form.status} disabled={completedContextLocked} onChange={(e) => setForm({ ...form, status: e.target.value as AppointmentInput["status"] })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100">{Object.entries(labels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label><label className="mt-4 block text-sm font-medium">Motivo<input value={form.reason || ""} disabled={completedContextLocked} readOnly={completedContextLocked} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" /></label><label className="mt-4 block text-sm font-medium">Notas<textarea value={form.notes || ""} disabled={completedContextLocked} readOnly={completedContextLocked} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" /></label>{completedContextLocked && <div className="mt-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-800"><p>Esta cita está finalizada. El motivo y las notas originales son de solo lectura.</p>{canAddAddendum && <button type="button" onClick={openAddendumFromAppointment} className="mt-3 rounded-lg bg-violet-700 px-4 py-2 font-medium text-white">Agregar nota adicional</button>}</div>}{formError && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>}<div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowForm(false)} disabled={savingAppointment} className="rounded-lg border px-5 py-2 disabled:opacity-60">Cancelar</button><button onClick={() => void save()} disabled={savingAppointment || completedContextLocked} className="rounded-lg bg-teal-700 px-5 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">{savingAppointment ? "Guardando..." : "Guardar"}</button></div></div></div>}
+    {addendumTarget && <ClinicalHistoryPanel patientId={addendumTarget.patientId} patientName={addendumTarget.patientName} user={user} initialAddendumHistoryId={addendumTarget.historyId} onClose={() => setAddendumTarget(null)} />}
   </section>;
 }

@@ -7,6 +7,9 @@ export type Appointment = {
   specialty_name: string;
   coverage_id: number | null; original_doctor_id: number | null; original_doctor_name: string | null;
   has_clinical_history: boolean;
+  clinical_history_id: number | null;
+  clinical_history_status: "in_progress" | "completed" | null;
+  clinical_history_doctor_id: number | null;
   created_at: string; updated_at: string;
 };
 export type AppointmentInput = {
