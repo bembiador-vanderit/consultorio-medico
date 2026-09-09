@@ -4,6 +4,16 @@ export type RequestedTest = {
   test_name: string;
 };
 
+export type ClinicalAddendum = {
+  id: number;
+  clinical_history_id: number;
+  author_user_id: number | null;
+  author_name: string;
+  reason: string | null;
+  note: string;
+  created_at: string;
+};
+
 export type ClinicalHistory = {
   id: number;
   patient_id: number;

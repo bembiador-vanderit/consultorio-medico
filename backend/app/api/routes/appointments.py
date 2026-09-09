@@ -246,6 +246,13 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
         raise HTTPException(status_code=409, detail="El contexto de una cita finalizada es inmutable")
     if appointment.status == "completed" and payload.status != "completed":
         raise HTTPException(status_code=409, detail="Una cita finalizada no puede reabrirse desde la edición")
+    if appointment.status == "completed" and (
+        payload.reason != appointment.reason or payload.notes != appointment.notes
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="El motivo y las notas de una cita finalizada son de solo lectura; use una nota clínica adicional",
+        )
     transfer = appointment.coverage_transfer
     if transfer is not None and context_changed:
         raise HTTPException(status_code=409, detail="Una cita transferida conserva su contexto clínico autorizado")

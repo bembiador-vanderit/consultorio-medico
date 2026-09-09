@@ -9,13 +9,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.api.deps import current_user
-from app.api.routes import appointments, clinical_coverages, clinical_history, diagnoses, follow_ups, patients, prescriptions, vital_signs
+from app.api.routes import appointments, clinical_addenda, clinical_coverages, clinical_history, diagnoses, follow_ups, patients, prescriptions, vital_signs
 from app.db import Base, get_db
 from app.models import (
     Appointment,
     AppointmentCoverageTransfer,
     CareCenter,
     ClinicalAuditLog,
+    ClinicalAddendum,
     ClinicalCoverage,
     ClinicalHistory,
     Diagnosis,
@@ -105,6 +106,7 @@ def clinical_app():
     for router in (
         appointments.router,
         clinical_history.router,
+        clinical_addenda.router,
         diagnoses.router,
         prescriptions.router,
         vital_signs.router,
@@ -116,6 +118,7 @@ def clinical_app():
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[clinical_history.access] = lambda: active_user["value"]
     app.dependency_overrides[clinical_history.audit_access] = lambda: active_user["value"]
+    app.dependency_overrides[clinical_addenda.access] = lambda: active_user["value"]
     app.dependency_overrides[diagnoses.access] = lambda: active_user["value"]
     app.dependency_overrides[prescriptions.access] = lambda: active_user["value"]
     app.dependency_overrides[vital_signs.access] = lambda: active_user["value"]
@@ -540,6 +543,151 @@ def test_completion_updates_consultation_and_appointment_atomically_and_locks_wr
     ).status_code == 409
     assert client.get(f"/api/v1/clinical-history/{history.id}/summary/pdf").status_code == 200
     assert client.get(f"/api/v1/clinical-history/{history.id}/prescriptions/pdf").status_code == 200
+
+
+def test_completed_history_accepts_immutable_addenda_and_preserves_original_content(clinical_app):
+    client = clinical_app["client"]
+    history = clinical_app["history_a"]
+    original_reason = history.reason_for_visit
+    assert client.post(f"/api/v1/clinical-history/{history.id}/complete").status_code == 200
+
+    created = client.post(
+        f"/api/v1/clinical-history/{history.id}/addenda",
+        json={"reason": "Resultado posterior", "note": "Se recibió el resultado confirmado."},
+    )
+    assert created.status_code == 201
+    assert created.json()["clinical_history_id"] == history.id
+    assert created.json()["author_user_id"] == clinical_app["doctor_a"].id
+    assert created.json()["author_name"] == "Doctor A"
+
+    second = client.post(
+        f"/api/v1/clinical-history/{history.id}/addenda",
+        json={"note": "Se informó al paciente."},
+    )
+    assert second.status_code == 201
+    listed = client.get(f"/api/v1/clinical-history/{history.id}/addenda")
+    assert listed.status_code == 200
+    assert [item["note"] for item in listed.json()] == [
+        "Se recibió el resultado confirmado.", "Se informó al paciente.",
+    ]
+    clinical_app["db"].refresh(history)
+    assert history.reason_for_visit == original_reason
+
+    addendum_id = created.json()["id"]
+    assert client.put(
+        f"/api/v1/clinical-history/{history.id}/addenda/{addendum_id}",
+        json={"note": "Alterada"},
+    ).status_code in {404, 405}
+    assert client.delete(
+        f"/api/v1/clinical-history/{history.id}/addenda/{addendum_id}"
+    ).status_code in {404, 405}
+    assert clinical_app["db"].get(ClinicalAddendum, addendum_id).note == "Se recibió el resultado confirmado."
+
+
+def test_addendum_requires_completed_history_and_valid_note(clinical_app):
+    client = clinical_app["client"]
+    history = clinical_app["history_a"]
+    assert client.post(
+        f"/api/v1/clinical-history/{history.id}/addenda", json={"note": "Todavía abierta"}
+    ).status_code == 409
+    assert client.post(f"/api/v1/clinical-history/{history.id}/complete").status_code == 200
+    assert client.post(
+        f"/api/v1/clinical-history/{history.id}/addenda", json={"note": "   "}
+    ).status_code == 422
+
+
+def test_addendum_rejects_admin_secretary_and_id_manipulation(clinical_app):
+    client = clinical_app["client"]
+    db = clinical_app["db"]
+    history = clinical_app["history_a"]
+    history.status = "completed"
+    clinical_app["appointment_a"].status = "completed"
+    secretary_role = Role(code="secretary", name="Secretaria")
+    secretary = User(
+        email="secretary-addendum@example.test", full_name="Secretaria",
+        password_hash="hash", roles=[secretary_role], centers=[clinical_app["center"]], is_active=True,
+    )
+    db.add(secretary)
+    db.commit()
+
+    for user in (clinical_app["admin"], secretary, clinical_app["doctor_b"]):
+        clinical_app["active_user"]["value"] = user
+        response = client.post(
+            f"/api/v1/clinical-history/{history.id}/addenda", json={"note": "Acceso indebido"}
+        )
+        assert response.status_code in {403, 404}
+    assert db.scalar(select(func.count()).select_from(ClinicalAddendum)) == 0
+
+
+def test_active_coverage_keeps_addenda_read_only_and_revocation_removes_read_access(clinical_app):
+    client = clinical_app["client"]
+    db = clinical_app["db"]
+    history = clinical_app["history_a"]
+    appointment = clinical_app["appointment_a"]
+    history.status = "completed"
+    appointment.status = "completed"
+    db.add(ClinicalAddendum(
+        clinical_history_id=history.id,
+        author_user_id=clinical_app["doctor_a"].id,
+        note="Nota del médico principal",
+    ))
+    now = installation_now()
+    coverage = ClinicalCoverage(
+        principal_doctor_id=clinical_app["doctor_a"].id,
+        substitute_doctor_id=clinical_app["doctor_b"].id,
+        center_id=clinical_app["center"].id,
+        starts_at=now - timedelta(hours=1),
+        ends_at=now + timedelta(hours=1),
+        created_by_id=clinical_app["doctor_a"].id,
+    )
+    db.add(coverage)
+    db.flush()
+    transfer = AppointmentCoverageTransfer(
+        appointment_id=appointment.id,
+        coverage_id=coverage.id,
+        original_doctor_id=clinical_app["doctor_a"].id,
+        substitute_doctor_id=clinical_app["doctor_b"].id,
+        executed_by_id=clinical_app["doctor_a"].id,
+    )
+    appointment.doctor_id = clinical_app["doctor_b"].id
+    db.add(transfer)
+    db.commit()
+
+    clinical_app["active_user"]["value"] = clinical_app["doctor_b"]
+    assert client.get(f"/api/v1/clinical-history/{history.id}/addenda").status_code == 200
+    denied = client.post(
+        f"/api/v1/clinical-history/{history.id}/addenda", json={"note": "No autorizada"}
+    )
+    assert denied.status_code == 403
+
+    coverage.revoked_at = now
+    db.commit()
+    assert client.get(f"/api/v1/clinical-history/{history.id}/addenda").status_code == 403
+
+
+def test_completed_appointment_reason_and_notes_are_read_only(clinical_app):
+    client = clinical_app["client"]
+    appointment = clinical_app["appointment_a"]
+    appointment.reason = "Motivo original"
+    appointment.notes = "Nota original"
+    appointment.status = "completed"
+    clinical_app["db"].commit()
+
+    response = client.put(f"/api/v1/appointments/{appointment.id}", json={
+        "patient_id": appointment.patient_id,
+        "doctor_id": appointment.doctor_id,
+        "center_id": appointment.center_id,
+        "specialty_id": appointment.specialty_id,
+        "appointment_date": appointment.appointment_date.isoformat(),
+        "appointment_time": appointment.appointment_time.isoformat(),
+        "status": "completed",
+        "reason": "Motivo alterado",
+        "notes": "Nota alterada",
+    })
+    assert response.status_code == 409
+    clinical_app["db"].refresh(appointment)
+    assert appointment.reason == "Motivo original"
+    assert appointment.notes == "Nota original"
 
 
 def test_completion_rolls_back_both_records_when_commit_fails(clinical_app):
