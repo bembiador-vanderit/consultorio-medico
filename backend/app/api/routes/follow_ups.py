@@ -8,7 +8,9 @@ from app.api.deps import current_user
 from app.db import get_db
 from app.models import Appointment, FollowUp, Notification, User
 from app.schemas.follow_up import FollowUpCreate, FollowUpRead, NotificationRead
+from app.services.appointment_scope import apply_appointment_scope
 from app.services.clinical_access import require_history_access
+from app.services.clinical_coverage import installation_now
 from app.services.patient_scope import require_patient_clinical_scope
 
 router = APIRouter(prefix="/follow-ups", tags=["follow-ups"])
@@ -96,7 +98,7 @@ def sync_notifications(db: Session = Depends(get_db), user: User = Depends(curre
     if not _is_doctor(user):
         return {"created": 0}
 
-    now = datetime.utcnow()
+    now = installation_now()
     horizon = now + timedelta(hours=24)
     created = 0
 
@@ -158,9 +160,51 @@ def sync_notifications(db: Session = Depends(get_db), user: User = Depends(curre
 
 
 @router.get("/notifications", response_model=list[NotificationRead])
-def list_notifications(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    stmt = select(Notification).where(Notification.user_id == user.id).order_by(Notification.created_at.desc())
-    return list(db.scalars(stmt).all())
+def list_notifications(
+    unread_only: bool = False,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    stmt = select(Notification).where(Notification.user_id == user.id)
+    if unread_only:
+        stmt = stmt.where(Notification.is_read.is_(False))
+    notifications = list(db.scalars(stmt.order_by(Notification.created_at.desc())).all())
+
+    appointment_due_ids = {
+        item.appointment_id
+        for item in notifications
+        if item.notification_type == "appointment_due" and item.appointment_id is not None
+    }
+    if not appointment_due_ids:
+        return notifications
+
+    visible_appointments = {
+        appointment.id: appointment
+        for appointment in db.scalars(
+            apply_appointment_scope(
+                select(Appointment).where(
+                    Appointment.id.in_(appointment_due_ids),
+                    Appointment.status.in_({"scheduled", "confirmed"}),
+                ),
+                user,
+                db,
+            )
+        ).all()
+    }
+    now = installation_now()
+    horizon = now + timedelta(hours=24)
+    return [
+        item
+        for item in notifications
+        if item.notification_type != "appointment_due"
+        or (
+            item.appointment_id in visible_appointments
+            and now <= datetime.combine(
+                visible_appointments[item.appointment_id].appointment_date,
+                visible_appointments[item.appointment_id].appointment_time,
+            ) <= horizon
+        )
+    ]
 
 
 @router.post("/notifications/{notification_id}/read", response_model=NotificationRead)

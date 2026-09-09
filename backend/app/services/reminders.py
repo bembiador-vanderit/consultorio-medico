@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Appointment, CommunicationLog, Notification, User
 from app.services.appointment_scope import secretary_can_manage
+from app.services.clinical_coverage import installation_now
 from app.services.communication import send_email, send_whatsapp
 
 
@@ -75,7 +76,7 @@ def _mark_channel_sent(db: Session, appointment: Appointment, notification_type:
 
 def sync_appointment_reminders(db: Session, *, now: datetime | None = None, horizon_hours: int = 24) -> int:
     """Create in-app reminders and attempt configured patient email/WhatsApp delivery."""
-    now = now or datetime.utcnow()
+    now = now or installation_now()
     horizon = now + timedelta(hours=horizon_hours)
     appointments = db.scalars(
         select(Appointment).where(

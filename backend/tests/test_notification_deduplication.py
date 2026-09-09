@@ -1,12 +1,16 @@
 from datetime import date, datetime, time
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.db import Base
+from app.api.deps import current_user
+from app.api.routes import follow_ups
+from app.db import Base, get_db
 from app.models import Appointment, CareCenter, Notification, Patient, Role, SecretaryCenterScope, User
 from app.services.reminders import sync_appointment_reminders
 
@@ -93,4 +97,90 @@ def test_appointment_reminder_only_notifies_secretaries_in_doctor_scope():
     )).all())
     assert recipients == {doctor.id, authorized.id}
     assert outsider.id not in recipients
+    db.close(); engine.dispose()
+
+
+def test_pending_notification_list_matches_count_policy_and_revalidates_secretary_scope(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    db = Session(engine)
+    now = datetime(2026, 9, 9, 9)
+    monkeypatch.setattr(follow_ups, "installation_now", lambda: now)
+
+    center = CareCenter(name="Centro", city="Santo Domingo", is_active=True)
+    doctor_role = Role(code="doctor", name="Doctor")
+    doctor = User(
+        email="notification-scope-doctor@example.test", full_name="Doctora Visible",
+        password_hash="hash", is_active=True, roles=[doctor_role], centers=[center],
+    )
+    other_doctor = User(
+        email="notification-scope-other@example.test", full_name="Doctor Fuera",
+        password_hash="hash", is_active=True, roles=[doctor_role], centers=[center],
+    )
+    secretary = User(
+        email="notification-scope-secretary@example.test", full_name="Secretaria",
+        password_hash="hash", is_active=True,
+        roles=[Role(code="secretary", name="Secretaria")], centers=[center],
+    )
+    patients = [
+        Patient(first_name=f"Paciente{index}", last_name="Prueba", date_of_birth=date(1990, 1, index + 1))
+        for index in range(4)
+    ]
+    appointments = [
+        Appointment(
+            patient=patients[0], doctor=doctor, center=center,
+            appointment_date=now.date(), appointment_time=time(10), status="scheduled",
+        ),
+        Appointment(
+            patient=patients[1], doctor=doctor, center=center,
+            appointment_date=now.date(), appointment_time=time(11), status="confirmed",
+        ),
+        Appointment(
+            patient=patients[2], doctor=other_doctor, center=center,
+            appointment_date=now.date(), appointment_time=time(12), status="scheduled",
+        ),
+        Appointment(
+            patient=patients[3], doctor=doctor, center=center,
+            appointment_date=now.date() - date.resolution, appointment_time=time(8), status="scheduled",
+        ),
+    ]
+    db.add_all([*appointments, secretary]); db.flush()
+    scope = SecretaryCenterScope(
+        secretary_id=secretary.id, center_id=center.id,
+        manage_all_doctors=False, doctors=[doctor],
+    )
+    notifications = [
+        Notification(
+            user_id=secretary.id, appointment_id=appointment.id,
+            title="Cita próxima", message=f"{appointment.patient.first_name} — aviso",
+            notification_type="appointment_due", is_read=index == 1,
+        )
+        for index, appointment in enumerate(appointments)
+    ]
+    db.add_all([scope, *notifications]); db.commit()
+
+    app = FastAPI()
+    app.include_router(follow_ups.router, prefix="/api/v1")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[current_user] = lambda: secretary
+    client = TestClient(app)
+
+    pending = client.get("/api/v1/follow-ups/notifications", params={"unread_only": True})
+    assert pending.status_code == 200
+    assert [item["id"] for item in pending.json()] == [notifications[0].id]
+    visible_history = client.get("/api/v1/follow-ups/notifications")
+    assert {item["id"] for item in visible_history.json()} == {notifications[0].id, notifications[1].id}
+    assert client.post(f"/api/v1/follow-ups/notifications/{notifications[0].id}/read").status_code == 200
+    assert client.get(
+        "/api/v1/follow-ups/notifications", params={"unread_only": True}
+    ).json() == []
+
+    scope.doctors = [other_doctor]
+    db.commit()
+    after_scope_change = client.get(
+        "/api/v1/follow-ups/notifications", params={"unread_only": True}
+    )
+    assert [item["id"] for item in after_scope_change.json()] == [notifications[2].id]
+    assert client.post("/api/v1/follow-ups/notifications/sync").json() == {"created": 0}
+
     db.close(); engine.dispose()

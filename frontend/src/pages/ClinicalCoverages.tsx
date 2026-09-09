@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
+import { announceNotificationsChanged } from "../services/notificationEvents";
 import type { Appointment } from "../types/appointment";
 import type { User } from "../types/user";
 
@@ -68,14 +69,14 @@ export default function ClinicalCoverages({ user, onBack }: Props) {
     const question = expired ? "¿Cerrar esta cobertura expirada y restaurar sus citas pendientes al médico principal?" : "¿Revocar esta cobertura clínica? Las citas pendientes volverán al médico principal.";
     if (!confirm(question)) return;
     setError("");
-    try { await api.post(`/clinical-coverages/${id}/revoke`); await load(); }
+    try { await api.post(`/clinical-coverages/${id}/revoke`); announceNotificationsChanged(); await load(); }
     catch (reason: any) { setError(reason?.response?.data?.detail || "No fue posible revocar la cobertura."); }
   }
 
   async function transfer(coverageId: number, appointmentId: number) {
     if (!confirm("¿Transferir esta cita al médico suplente bajo la cobertura seleccionada?")) return;
     setError("");
-    try { await api.post(`/clinical-coverages/${coverageId}/appointments/${appointmentId}/transfer`); await load(); }
+    try { await api.post(`/clinical-coverages/${coverageId}/appointments/${appointmentId}/transfer`); announceNotificationsChanged(); await load(); }
     catch (reason: any) { setError(reason?.response?.data?.detail || "No fue posible transferir la cita."); }
   }
 
