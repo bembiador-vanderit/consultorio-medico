@@ -20,6 +20,7 @@ from app.models import (
     ClinicalHistory,
     Diagnosis,
     FollowUp,
+    Notification,
     Patient,
     Prescription,
     Role,
@@ -1149,7 +1150,7 @@ def test_authorized_secretary_can_reprogram_transferred_appointment_within_cover
 @pytest.mark.parametrize(
     ("coverage_state", "expected_detail"),
     [
-        ("expired", "ya no está vigente"),
+        ("expired", "ha expirado"),
         ("revoked", "fue revocada"),
     ],
 )
@@ -1229,6 +1230,163 @@ def test_revoking_future_coverage_restores_transferred_appointment(clinical_app)
     assert appointment.coverage_transfer is None
     clinical_app["active_user"]["value"] = clinical_app["doctor_b"]
     assert appointment.id not in {item["id"] for item in client.get("/api/v1/appointments").json()}
+
+
+def test_revoking_coverage_restores_all_pending_transfers_regardless_of_executor(clinical_app):
+    client = clinical_app["client"]
+    db = clinical_app["db"]
+    principal = clinical_app["doctor_a"]
+    substitute = clinical_app["doctor_b"]
+    center = clinical_app["center"]
+    now = installation_now()
+    starts_at = (now + timedelta(days=1)).replace(microsecond=0)
+    appointments = [
+        Appointment(
+            patient_id=clinical_app["patient_a"].id,
+            doctor_id=principal.id,
+            center_id=center.id,
+            specialty_id=clinical_app["specialty"].id,
+            appointment_date=(starts_at + timedelta(hours=index + 1)).date(),
+            appointment_time=(starts_at + timedelta(hours=index + 1)).time(),
+            status="scheduled" if index == 0 else "confirmed",
+        )
+        for index in range(2)
+    ]
+    secretary = User(
+        email="secretary-multi-restore@example.test", full_name="Secretaria Restauración",
+        password_hash="hash", roles=[Role(code="secretary", name="Secretaria")],
+        centers=[center], is_active=True,
+    )
+    db.add_all([*appointments, secretary]); db.flush()
+    db.add(SecretaryCenterScope(
+        secretary_id=secretary.id, center_id=center.id,
+        manage_all_doctors=False, doctors=[principal],
+    ))
+    db.commit()
+    coverage = client.post("/api/v1/clinical-coverages", json={
+        "substitute_doctor_id": substitute.id,
+        "center_id": center.id,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": (starts_at + timedelta(days=1)).isoformat(),
+    }).json()
+
+    assert client.post(
+        f"/api/v1/clinical-coverages/{coverage['id']}/appointments/{appointments[0].id}/transfer"
+    ).status_code == 200
+    clinical_app["active_user"]["value"] = secretary
+    assert client.post(
+        f"/api/v1/clinical-coverages/{coverage['id']}/appointments/{appointments[1].id}/transfer"
+    ).status_code == 200
+
+    clinical_app["active_user"]["value"] = principal
+    assert client.post(f"/api/v1/clinical-coverages/{coverage['id']}/revoke").status_code == 200
+    db.expire_all()
+    for appointment in appointments:
+        restored = db.get(Appointment, appointment.id)
+        assert restored.doctor_id == principal.id
+        assert restored.coverage_transfer is None
+    assert db.scalar(select(AppointmentCoverageTransfer.id).where(
+        AppointmentCoverageTransfer.coverage_id == coverage["id"]
+    )) is None
+
+
+def test_coverage_transfer_and_restoration_notifications_follow_scope_without_duplicates(clinical_app):
+    client = clinical_app["client"]
+    db = clinical_app["db"]
+    principal = clinical_app["doctor_a"]
+    substitute = clinical_app["doctor_b"]
+    center = clinical_app["center"]
+    now = installation_now()
+    starts_at = (now + timedelta(days=1)).replace(microsecond=0)
+    appointment_at = starts_at + timedelta(hours=2)
+    appointment = Appointment(
+        patient_id=clinical_app["patient_a"].id,
+        doctor_id=principal.id,
+        center_id=center.id,
+        specialty_id=clinical_app["specialty"].id,
+        appointment_date=appointment_at.date(),
+        appointment_time=appointment_at.time(),
+        status="scheduled",
+    )
+    secretary_role = Role(code="secretary", name="Secretaria")
+    substitute_secretary = User(
+        email="substitute-secretary-notify@example.test", full_name="Secretaria Suplente",
+        password_hash="hash", roles=[secretary_role], centers=[center], is_active=True,
+    )
+    outside_secretary = User(
+        email="outside-secretary-notify@example.test", full_name="Secretaria Sin Alcance",
+        password_hash="hash", roles=[secretary_role], centers=[center], is_active=True,
+    )
+    db.add_all([appointment, substitute_secretary, outside_secretary]); db.flush()
+    db.add_all([
+        SecretaryCenterScope(
+            secretary_id=substitute_secretary.id, center_id=center.id,
+            manage_all_doctors=False, doctors=[substitute],
+        ),
+        SecretaryCenterScope(
+            secretary_id=outside_secretary.id, center_id=center.id,
+            manage_all_doctors=False, doctors=[],
+        ),
+    ])
+    db.commit()
+    coverage = client.post("/api/v1/clinical-coverages", json={
+        "substitute_doctor_id": substitute.id,
+        "center_id": center.id,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": (starts_at + timedelta(days=1)).isoformat(),
+    }).json()
+    transfer_url = f"/api/v1/clinical-coverages/{coverage['id']}/appointments/{appointment.id}/transfer"
+    assert client.post(transfer_url).status_code == 200
+    assert client.post(transfer_url).status_code == 409
+
+    transfer_notifications = list(db.scalars(select(Notification).where(
+        Notification.appointment_id == appointment.id,
+        Notification.notification_type == "coverage_transfer",
+    )).all())
+    assert {item.user_id for item in transfer_notifications} == {substitute.id, substitute_secretary.id}
+    patient_name = f"{clinical_app['patient_a'].first_name} {clinical_app['patient_a'].last_name}"
+    assert all(patient_name not in item.message for item in transfer_notifications)
+
+    clinical_app["active_user"]["value"] = substitute_secretary
+    listed = client.get("/api/v1/follow-ups/notifications")
+    assert listed.status_code == 200
+    assert any(item["notification_type"] == "coverage_transfer" for item in listed.json())
+    clinical_app["active_user"]["value"] = outside_secretary
+    assert not any(
+        item["notification_type"] == "coverage_transfer"
+        for item in client.get("/api/v1/follow-ups/notifications").json()
+    )
+
+    clinical_app["active_user"]["value"] = principal
+    assert client.post(f"/api/v1/clinical-coverages/{coverage['id']}/revoke").status_code == 200
+    restored_notifications = list(db.scalars(select(Notification).where(
+        Notification.appointment_id == appointment.id,
+        Notification.notification_type == "coverage_restored",
+    )).all())
+    assert {item.user_id for item in restored_notifications} == {substitute.id, substitute_secretary.id}
+
+    substitute_transfer_notification = next(
+        item for item in transfer_notifications if item.user_id == substitute.id
+    )
+    substitute_transfer_notification.is_read = True
+    db.commit()
+    second_coverage = client.post("/api/v1/clinical-coverages", json={
+        "substitute_doctor_id": substitute.id,
+        "center_id": center.id,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": (starts_at + timedelta(days=1)).isoformat(),
+    }).json()
+    assert client.post(
+        f"/api/v1/clinical-coverages/{second_coverage['id']}/appointments/{appointment.id}/transfer"
+    ).status_code == 200
+    refreshed_transfer_notifications = list(db.scalars(select(Notification).where(
+        Notification.appointment_id == appointment.id,
+        Notification.notification_type == "coverage_transfer",
+    )).all())
+    assert len(refreshed_transfer_notifications) == 2
+    assert next(
+        item for item in refreshed_transfer_notifications if item.user_id == substitute.id
+    ).is_read is False
 
 
 def test_coverage_in_another_center_does_not_open_history(clinical_app):

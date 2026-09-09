@@ -98,7 +98,7 @@ def _ensure_appointment_attendable(appointment: Appointment, db: Session) -> Non
                 elif current_status == "revoked":
                     detail = "La cobertura clínica de esta cita fue revocada"
                 else:
-                    detail = "La cobertura clínica de esta cita ya no está vigente"
+                    detail = "La cobertura clínica de esta cita ha expirado"
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=detail,

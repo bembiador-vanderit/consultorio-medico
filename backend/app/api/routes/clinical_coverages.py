@@ -12,6 +12,7 @@ from app.schemas.clinical_coverage import ClinicalCoverageCreate, ClinicalCovera
 from app.services.appointment_scope import is_role, secretary_can_manage
 from app.services.clinical_access import add_clinical_audit
 from app.services.clinical_coverage import coverage_allows_appointment_transfer, coverage_status, installation_now
+from app.services.coverage_notifications import add_coverage_appointment_notifications
 
 router = APIRouter(prefix="/clinical-coverages", tags=["Cobertura clínica"])
 access = require_permission("clinical:access")
@@ -124,6 +125,7 @@ def revoke_coverage(coverage_id: int, user: User = Depends(access), db: Session 
             ) is not None
             if appointment.status in {"scheduled", "confirmed"} and not has_history:
                 appointment.doctor_id = transfer.original_doctor_id
+                add_coverage_appointment_notifications(db, appointment, coverage, restored=True)
                 add_clinical_audit(
                     db,
                     user,
@@ -195,6 +197,7 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
             db, user, action="coverage.appointment.transfer", resource_type="appointment", resource_id=appointment.id,
             context={"coverage_id": coverage.id, "principal_doctor_id": coverage.principal_doctor_id, "substitute_doctor_id": coverage.substitute_doctor_id, "center_id": coverage.center_id, "patient_id": appointment.patient_id},
         )
+        add_coverage_appointment_notifications(db, appointment, coverage)
         db.commit()
     except SQLAlchemyError:
         db.rollback()

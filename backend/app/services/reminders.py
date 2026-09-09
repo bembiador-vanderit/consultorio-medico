@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Appointment, CommunicationLog, Notification, User
+from app.services.appointment_scope import secretary_can_manage
 from app.services.communication import send_email, send_whatsapp
 
 
@@ -97,7 +98,12 @@ def sync_appointment_reminders(db: Session, *, now: datetime | None = None, hori
                 )
             ).all():
                 if any(role.code == "secretary" for role in user.roles):
-                    recipients.add(user.id)
+                    transfer = appointment.coverage_transfer
+                    if secretary_can_manage(user, appointment.center_id, appointment.doctor_id, db) or (
+                        transfer is not None
+                        and secretary_can_manage(user, appointment.center_id, transfer.original_doctor_id, db)
+                    ):
+                        recipients.add(user.id)
 
         message = _appointment_message(appointment)
         for user_id in recipients:
