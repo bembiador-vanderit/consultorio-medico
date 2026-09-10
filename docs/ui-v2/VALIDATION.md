@@ -1,4 +1,44 @@
-# Entrega y validación — UI V2 fase 0
+# Entrega y validación — UI V2
+
+## Fase 1 — Login real
+
+Rama `frontend/ui-v2-login`; base exacta
+`30f5efe429ed630da8a8806c5b67ce10ba00b48e` de `feat/complete-care-context`.
+Diseño, contrato preservado, alcance y acceso local en [LOGIN.md](LOGIN.md).
+
+| Validación | Resultado |
+| --- | --- |
+| Frontend Node/Vite/jsdom | 21 aprobadas, 0 fallidas: 12 nuevas de login y 9 de fundación |
+| TypeScript `tsc -b` | Correcto |
+| Vite producción | Correcto; 112 módulos, JS 385.49 kB (106.32 kB gzip) |
+| Backend/auth | 19 aprobadas: security, user_management y clinical_permissions |
+| Navegador | Ruta real `/`, contraseña, Enter y alerta de conexión revisados |
+| Responsive | 320, 375, 768, 1024 y 1440px sin overflow horizontal; controles 44/48px |
+| Catálogo | `/__dev/ui-v2` sigue accesible en desarrollo |
+| Bundle de producción | Sin `FoundationPreview`, texto de catálogo ni `/__dev/ui-v2` en JS inspeccionado |
+| Docker Compose build frontend | Correcto, imagen `atlas-ui-v2-login-validation-frontend` |
+| Tests en Docker Node 22/Linux | 21 aprobadas, 0 fallidas |
+| TypeScript y Vite en Docker | Correctos; mismos assets y tamaños que en Windows |
+
+Backend ejecutado en la imagen de validación de la base aprobada (backend sin
+cambios), con SQLite y SECRET_KEY efímera, mediante `docker run --rm`. Se observaron
+85 warnings de deprecación existentes (Starlette y datetime.utcnow); ningún fallo.
+No se tocaron bases clínicas ni volúmenes persistentes.
+
+Compose construyó únicamente frontend en un proyecto de validación separado, con
+variables efímeras para resolver la configuración. No se levantó el stack ni se
+ejecutó `docker compose down -v`. La instalación npm en la imagen informó cero
+vulnerabilidades y una deprecación transitiva de `whatwg-encoding` de jsdom.
+El workflow existente `Compose validation` solo se dispara automáticamente para
+push/PR hacia `main`; esta PR apunta a `feat/complete-care-context`, por lo que no
+se cambia su destino ni el workflow para activar CI.
+
+La integración frontend usa un adaptador Axios de prueba; se comprueban JSON,
+secuencia login/me, bearer, limpieza ante fallo, restauración y logout. La revisión
+visual usa la entrada operativa, sin backend autenticado en ese puerto. No representa
+una prueba E2E de cookies ni una auditoría de lector de pantalla/multinavegador.
+
+## Registro histórico — fase 0
 
 Fecha: 10 de septiembre de 2026. Rama: `frontend/ui-v2-foundation`.
 Base confirmada por fetch y consulta remota:
