@@ -35,7 +35,8 @@ conservan su implementación. No hay migraciones ni persistencia de layouts.
 ## Principios visuales
 
 Interfaz clínica, profesional y tranquila, con información legible y espacio eficiente.
-Sin gradientes decorativos, fuentes externas, animación innecesaria ni modo oscuro.
+Sidebar Navy por defecto y área de trabajo clara. Sin gradientes decorativos,
+fuentes externas, animación innecesaria ni modo oscuro global.
 Se conserva la pila `Inter, ui-sans-serif, system-ui, sans-serif`; Inter no se descarga.
 Si no está instalada, se usa la fuente del sistema.
 
@@ -146,6 +147,39 @@ datos por sí misma. Se debe proporcionar al menos una columna e IDs/claves esta
 Los estados muestran texto, no solamente color; el código de negocio elige el tono.
 
 ## Shell y navegación
+
+### Apariencia oficial: Navy
+
+Navy es la apariencia predeterminada de la navegación Atlas UI V2, tanto en Sidebar
+de escritorio como en el panel de navegación responsive. Topbar, área de trabajo,
+formularios y paneles operativos conservan las superficies claras aprobadas.
+
+La familia de tokens `--atlas-navigation-*` de `tokens.css` controla exclusivamente
+la apariencia: `bg`, `surface`, `text`, `text-muted`, `active`, `active-text`,
+`active-indicator`, `hover`, `border` y `focus`. No hay colores Navy en JSX.
+El elemento seleccionado usa Primary Atlas, texto oscuro contrastado, peso reforzado
+y una marca lateral; además mantiene `aria-current`. Hover y foco por teclado tienen
+tratamientos propios. El token de foco se aplica solo dentro de la navegación.
+
+La Sidebar Light original sigue aprobada como variante futura. Una preferencia
+podrá ofrecer **Navy / Light** cambiando esta familia de tokens, sin reescribir
+Sidebar. No hay selector, persistencia ni tema global en este PR. Como referencia
+para Light: bg→surface-secondary, surface→surface, text→text-primary,
+text-muted→text-muted, active→mint, active-text/active-indicator/focus→action,
+hover→mint y border→border. La futura variante deberá validar sus propios contrastes.
+
+La apariencia nunca cambia permisos, roles, elementos disponibles, acceso clínico,
+acceso administrativo ni lógica de negocio. El resolver de navegación no recibe
+una preferencia visual y su comportamiento permanece idéntico para todos los roles.
+
+La marca **A** continúa siendo un placeholder temporal. El símbolo corazón/pulso de
+mockups no es un logo de producción aprobado. El contenedor `atlas-brand-mark`,
+separado del nombre Atlas/Consultorio dentro del área flex `atlas-brand`, puede alojar
+un SVG o imagen final conservando la estructura y el nombre accesible existente.
+El logo y branding definitivo siguen pendientes; esta corrección no los crea.
+
+Topbar conserva su API y funciones actuales. Búsqueda global, perfil y otras
+capacidades se incorporarán solamente cuando exista funcionalidad real que las respalde.
 
 `AtlasAppShell` compone `Sidebar`, `Topbar`, contenido `main` y Drawer de navegación.
 Recibe usuario, vista activa, onNavigate, onSignOut, título y slots opcionales de

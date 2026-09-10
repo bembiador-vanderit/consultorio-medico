@@ -98,12 +98,25 @@ test("tabs link selected tab and panel without exposing hidden content", () => {
 test("semantic text and focus/control combinations meet contrast thresholds", async () => {
   const css = await readFile(new URL("../src/ui/tokens.css", import.meta.url), "utf8");
   const colors = Object.fromEntries([...css.matchAll(/--atlas-([\w-]+):\s*(#[\da-f]{6});/gi)].map((match) => [match[1], match[2]]));
+  const aliases = Object.fromEntries([...css.matchAll(/--atlas-([\w-]+):\s*var\(--atlas-([\w-]+)\);/g)].map((match) => [match[1], match[2]]));
+  const color = (name) => colors[name] ?? color(aliases[name]);
   function luminance(hex) {
     return hex.slice(1).match(/../g).map((part) => parseInt(part, 16) / 255).map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
   }
   const pairs = [["text-primary", "surface", 4.5], ["text-muted", "surface-secondary", 4.5], ["on-action", "action", 4.5], ["on-action", "danger", 4.5], ["success", "mint", 4.5], ["warning", "amber", 4.5], ["danger", "danger-surface", 4.5], ["info", "sky", 4.5], ["control-border", "surface", 3], ["focus", "surface-secondary", 3]];
+  pairs.push(
+    ["navigation-text", "navigation-bg", 4.5],
+    ["navigation-text-muted", "navigation-bg", 4.5],
+    ["navigation-text", "navigation-surface", 4.5],
+    ["navigation-text", "navigation-hover", 4.5],
+    ["navigation-active-text", "navigation-active", 4.5],
+    ["navigation-active-indicator", "navigation-active", 3],
+    ["navigation-focus", "navigation-bg", 3],
+    ["navigation-focus", "navigation-surface", 3],
+    ["navigation-focus", "navigation-hover", 3],
+  );
   for (const [fg, bg, min] of pairs) {
-    const values = [luminance(colors[fg]), luminance(colors[bg])].sort((a, b) => b - a);
+    const values = [luminance(color(fg)), luminance(color(bg))].sort((a, b) => b - a);
     const ratio = (values[0] + .05) / (values[1] + .05);
     assert.ok(ratio >= min, `${fg}/${bg}: ${ratio.toFixed(2)} < ${min}`);
   }

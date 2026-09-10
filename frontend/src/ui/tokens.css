@@ -23,6 +23,18 @@
   --atlas-border: #CEDADC;
   --atlas-control-border: #75868D;
   --atlas-focus: #315F6D;
+  /* Navigation appearance: Navy is the Atlas default. Override this family
+     together for a future Light variant; never couple appearance to access. */
+  --atlas-navigation-bg: #142D40;
+  --atlas-navigation-surface: #1D394D;
+  --atlas-navigation-text: #EAF2F5;
+  --atlas-navigation-text-muted: #AEC3CE;
+  --atlas-navigation-active: var(--atlas-primary);
+  --atlas-navigation-active-text: var(--atlas-navigation-bg);
+  --atlas-navigation-active-indicator: var(--atlas-navigation-bg);
+  --atlas-navigation-hover: #284C64;
+  --atlas-navigation-border: #34536A;
+  --atlas-navigation-focus: var(--atlas-sky);
   --atlas-overlay: rgb(20 39 47 / 45%);
   --atlas-font: Inter, ui-sans-serif, system-ui, sans-serif;
   --atlas-type-display: 1.75rem;

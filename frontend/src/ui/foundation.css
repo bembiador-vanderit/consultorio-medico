@@ -90,17 +90,24 @@ textarea.atlas-input { resize: vertical; }
 .atlas-table th { background: var(--atlas-surface-secondary); white-space: nowrap; }
 .atlas-table-action { width: 1%; white-space: nowrap; }
 .atlas-shell { display: flex; min-height: 100dvh; }
-.atlas-sidebar { width: 16rem; flex-shrink: 0; padding: var(--atlas-space-5) var(--atlas-space-3); border-right: 1px solid var(--atlas-border); background: var(--atlas-surface-secondary); }
+.atlas-sidebar { width: 16rem; flex-shrink: 0; padding: var(--atlas-space-5) var(--atlas-space-3); border-right: 1px solid var(--atlas-navigation-border); }
+.atlas-sidebar, .atlas-dialog--drawer:has(.atlas-navigation) { --atlas-focus: var(--atlas-navigation-focus); background: var(--atlas-navigation-bg); color: var(--atlas-navigation-text); }
 .atlas-brand { display: flex; align-items: center; gap: var(--atlas-space-3); padding: var(--atlas-space-2) var(--atlas-space-3) var(--atlas-space-6); }
 .atlas-brand strong { font-size: var(--atlas-type-section); }
-.atlas-brand-mark { display: grid; place-items: center; width: 40px; height: 40px; background: var(--atlas-primary); color: var(--atlas-text-primary); font-weight: 700; border-radius: var(--atlas-radius); }
+.atlas-brand .atlas-help { color: var(--atlas-navigation-text-muted); }
+.atlas-brand-mark { display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0; background: var(--atlas-navigation-active); color: var(--atlas-navigation-active-text); font-weight: 700; border-radius: var(--atlas-radius); }
+.atlas-navigation { --atlas-focus: var(--atlas-navigation-focus); background: var(--atlas-navigation-bg); color: var(--atlas-navigation-text); }
 .atlas-navigation-group + .atlas-navigation-group { margin-top: var(--atlas-space-5); }
-.atlas-navigation-group > p { padding: var(--atlas-space-2) var(--atlas-space-3); }
+.atlas-navigation-group > p { padding: var(--atlas-space-2) var(--atlas-space-3); color: var(--atlas-navigation-text-muted); }
 .atlas-navigation ul { list-style: none; padding: 0; margin: 0; }
 .atlas-navigation button { width: 100%; min-height: 44px; display: flex; align-items: center; gap: var(--atlas-space-3); text-align: left; padding: var(--atlas-space-3); border-radius: var(--atlas-radius-sm); font-size: var(--atlas-type-secondary); cursor: pointer; }
 .atlas-navigation svg { flex-shrink: 0; }
-.atlas-navigation button:hover { background: var(--atlas-mint); }
-.atlas-navigation button[aria-current="page"] { background: var(--atlas-mint); color: var(--atlas-action); font-weight: 700; box-shadow: inset 3px 0 var(--atlas-action); }
+.atlas-navigation button:hover { background: var(--atlas-navigation-hover); }
+.atlas-navigation button[aria-current="page"] { background: var(--atlas-navigation-active); color: var(--atlas-navigation-active-text); font-weight: 700; box-shadow: inset 3px 0 var(--atlas-navigation-active-indicator); }
+/* Only the navigation drawer inherits Navy. Operational panels stay light. */
+.atlas-dialog--drawer:has(.atlas-navigation) .atlas-dialog-header { background: var(--atlas-navigation-surface); border-color: var(--atlas-navigation-border); }
+.atlas-dialog--drawer:has(.atlas-navigation) .atlas-button--ghost { color: var(--atlas-navigation-text); }
+.atlas-dialog--drawer:has(.atlas-navigation) .atlas-button--ghost:hover { background: var(--atlas-navigation-hover); }
 .atlas-shell-body { min-width: 0; flex: 1; }
 .atlas-topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--atlas-space-4); padding: var(--atlas-space-4) var(--atlas-page-space); border-bottom: 1px solid var(--atlas-border); background: var(--atlas-surface); }
 .atlas-topbar-context, .atlas-topbar-account { display: flex; align-items: center; gap: var(--atlas-space-4); min-width: 0; }
