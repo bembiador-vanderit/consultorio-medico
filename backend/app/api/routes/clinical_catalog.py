@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import case, func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import current_user, require_permission
 from app.db import get_db
-from app.models import AnatomicalRegion, Appointment, ClinicalHistory, DoctorProfile, MedicalStudy, Specialty, User
+from app.models import AnatomicalRegion, Appointment, ClinicalHistory, DoctorProfile, MedicalStudy, Specialty, User, medical_study_specialties
 from app.schemas.clinical_catalog import (
     AnatomicalRegionResponse,
     DoctorProfileCreate,
@@ -121,14 +121,21 @@ def list_studies(
     _: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    query = select(MedicalStudy).where(MedicalStudy.is_active)
+    recommendation = select(medical_study_specialties.c.medical_study_id).where(
+        medical_study_specialties.c.specialty_id == specialty_id,
+        medical_study_specialties.c.medical_study_id == MedicalStudy.id,
+    ).exists() if specialty_id is not None else None
+    query = select(MedicalStudy).options(selectinload(MedicalStudy.recommended_specialties)).where(
+        MedicalStudy.is_active,
+        MedicalStudy.is_catalog_entry,
+    )
     if specialty_id is not None and not include_all:
-        query = query.where(MedicalStudy.specialty_id == specialty_id)
+        query = query.where(recommendation)
     if region_id is not None:
         query = query.where(MedicalStudy.anatomical_region_id == region_id)
     ordering = []
     if specialty_id is not None and include_all:
-        ordering.append(case((MedicalStudy.specialty_id == specialty_id, 0), else_=1))
+        ordering.append(case((recommendation, 0), else_=1))
     return list(db.scalars(query.order_by(*ordering, MedicalStudy.category, MedicalStudy.name)))
 
 

@@ -37,9 +37,11 @@ Atlas conserva las solicitudes libres existentes en `requested_tests` como forma
 
 ### Catálogo y migraciones
 
-`0026_clinical_orders` crea las tablas y carga las 57 pruebas iniciales. `0027_expand_laboratory_catalog` añade las pruebas legibles del formulario físico suministrado, hasta un total esperado de 321 pruebas en 16 categorías, y añade las marcas persistentes de órdenes adicionales.
+`0026_clinical_orders` crea las tablas y carga las 57 pruebas iniciales. `0027_expand_laboratory_catalog` añade las pruebas legibles del formulario físico suministrado, hasta un total esperado de 321 pruebas en 16 categorías, y añade las marcas persistentes de órdenes adicionales. `0028_canonical_study_catalog` separa las entradas maestras de estudios de sus recomendaciones por especialidad sin borrar las copias técnicas antiguas ni modificar órdenes históricas.
 
 La migración `0027` usa `laboratory_tests.seed_key` únicamente para sus inserciones y compara nombres normalizados sin distinguir mayúsculas. Su downgrade elimina solamente seeds sin referencias clínicas; una prueba ya usada se preserva. Los nombres equivalentes se mantienen en un único registro canónico, por ejemplo: VSG/eritrosedimentación, TPT-aPTT/TTP, HbA1c/hemoglobina glicosilada, PCR ultrasensible/PCR de alta sensibilidad y examen general de orina/uroanálisis.
+
+La migración `0028` consolida únicamente los 11 grupos técnicos conocidos del seed `0026`. Mantiene 56 filas físicas para preservar referencias, pero expone 12 entradas maestras vigentes en el catálogo actual. La tabla `medical_study_specialties` representa recomendaciones muchos-a-muchos. No se deduplican automáticamente nombres arbitrarios aportados por usuarios.
 
 Una línea entre “Hematocrito” y “Hemograma completo” no fue suficientemente legible para transcribirla sin inventar un nombre. Los renglones libres “Alérgenos” y “Otros” no representan pruebas nombradas; se conservan las pruebas concretas existentes de esas categorías.
 

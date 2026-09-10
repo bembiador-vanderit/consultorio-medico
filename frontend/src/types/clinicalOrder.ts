@@ -37,6 +37,7 @@ export type MedicalStudy = {
   name: string;
   category: string;
   is_active: boolean;
+  recommended_specialty_ids: number[];
 };
 
 export type StudyOrderItem = {

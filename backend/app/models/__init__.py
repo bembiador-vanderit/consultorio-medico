@@ -1,6 +1,6 @@
 from app.models.appointment import Appointment
 from app.models.center import CareCenter
-from app.models.clinical_catalog import AnatomicalRegion, DoctorProfile, MedicalStudy, Specialty, doctor_specialties
+from app.models.clinical_catalog import AnatomicalRegion, DoctorProfile, MedicalStudy, Specialty, doctor_specialties, medical_study_specialties
 from app.models.clinical_audit import ClinicalAuditLog
 from app.models.clinical_addendum import ClinicalAddendum
 from app.models.clinical_order import LaboratoryOrder, LaboratoryOrderItem, LaboratoryTest, StudyOrder, StudyOrderItem
@@ -21,6 +21,6 @@ from app.models.vital_signs import VitalSigns
 __all__ = [
     "Permission", "Role", "User", "Locality", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
     "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "VitalSigns", "Appointment", "FollowUp", "Notification", "CommunicationLog",
-    "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile", "doctor_specialties", "SecretaryCenterScope", "ClinicalAuditLog", "ClinicalAddendum", "ClinicalCoverage", "AppointmentCoverageTransfer",
+    "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile", "doctor_specialties", "medical_study_specialties", "SecretaryCenterScope", "ClinicalAuditLog", "ClinicalAddendum", "ClinicalCoverage", "AppointmentCoverageTransfer",
     "LaboratoryTest", "LaboratoryOrder", "LaboratoryOrderItem", "StudyOrder", "StudyOrderItem",
 ]

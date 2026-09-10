@@ -74,8 +74,14 @@ def clinical_app():
     db.flush()
     laboratory_test = LaboratoryTest(code="CBC", name="Hemograma completo", category="Hematología", is_active=True)
     inactive_laboratory_test = LaboratoryTest(code="OLD", name="Prueba histórica", category="Hematología", is_active=False)
-    medical_study = MedicalStudy(specialty_id=specialty.id, name="Ecografía", category="ultrasound", is_active=True)
-    inactive_medical_study = MedicalStudy(specialty_id=specialty.id, name="Estudio histórico", category="other", is_active=False)
+    medical_study = MedicalStudy(
+        specialty_id=specialty.id, name="Ecografía", category="ultrasound", is_active=True,
+        canonical_key="test:ecografia", recommended_specialties=[specialty],
+    )
+    inactive_medical_study = MedicalStudy(
+        specialty_id=specialty.id, name="Estudio histórico", category="other", is_active=False,
+        canonical_key="test:historical", recommended_specialties=[specialty],
+    )
     db.add_all([laboratory_test, inactive_laboratory_test, medical_study, inactive_medical_study])
     db.flush()
     set_doctor_specialties(db, doctor_a, specialty.id, [specialty.id])
@@ -1736,7 +1742,11 @@ def test_structured_study_order_preserves_fields_and_updates_explicitly(clinical
     other_specialty = Specialty(name="Neurología", is_active=True)
     clinical_app["db"].add(other_specialty)
     clinical_app["db"].flush()
-    other_study = MedicalStudy(specialty_id=other_specialty.id, name="Electroencefalograma", category="functional", is_active=True)
+    other_study = MedicalStudy(
+        specialty_id=other_specialty.id, name="Electroencefalograma", category="functional",
+        is_active=True, canonical_key="test:electroencefalograma",
+        recommended_specialties=[other_specialty],
+    )
     clinical_app["db"].add(other_study)
     clinical_app["db"].commit()
     master_catalog_study = client.post(f"/api/v1/clinical-history/{history.id}/study-orders", json={
@@ -1748,6 +1758,11 @@ def test_structured_study_order_preserves_fields_and_updates_explicitly(clinical
     document = client.get(f"/api/v1/study-orders/{first_id}/pdf")
     assert document.status_code == 200
     assert document.content.startswith(b"%PDF")
+    study.is_active = False
+    clinical_app["db"].commit()
+    historical = client.get(f"/api/v1/clinical-history/{history.id}/study-orders")
+    assert historical.status_code == 200
+    assert next(order for order in historical.json() if order["id"] == first_id)["items"][0]["study_name"] == "Ecografía"
 
 
 def test_clinical_orders_enforce_history_scope_and_completed_immutability(clinical_app):
@@ -1930,8 +1945,19 @@ def test_master_study_catalog_supports_completed_legacy_histories_without_rewrit
         name="Procedimiento de catálogo maestro",
         category="procedure",
         is_active=True,
+        canonical_key="test:master-procedure",
+        recommended_specialties=[other_specialty],
     )
-    db.add(other_study)
+    technical_duplicate = MedicalStudy(
+        specialty_id=other_specialty.id,
+        name="Ecografía",
+        category="ultrasound",
+        is_active=True,
+        is_catalog_entry=False,
+        recommended_specialties=[other_specialty],
+    )
+    db.add_all([other_study, technical_duplicate])
+    clinical_app["medical_study"].recommended_specialties.append(other_specialty)
     db.flush()
 
     histories = [
@@ -1960,9 +1986,13 @@ def test_master_study_catalog_supports_completed_legacy_histories_without_rewrit
     })
     assert active_catalog.status_code == 200
     assert active_catalog.json()[0]["id"] == clinical_app["medical_study"].id
+    assert active_catalog.json()[0]["recommended_specialty_ids"] == sorted([
+        clinical_app["specialty"].id, other_specialty.id,
+    ])
     assert {item["id"] for item in active_catalog.json()} == {
         clinical_app["medical_study"].id, other_study.id,
     }
+    assert sum(item["name"] == "Ecografía" for item in active_catalog.json()) == 1
 
     for legacy_history in histories:
         catalog_params = {"include_all": True}
@@ -1986,6 +2016,12 @@ def test_master_study_catalog_supports_completed_legacy_histories_without_rewrit
             else "No especificada (registro histórico)"
         )
         assert legacy_history.status == "completed"
+
+    duplicate_write = client.post(
+        f"/api/v1/clinical-history/{histories[0].id}/study-orders/additional",
+        json={"items": [{"medical_study_id": technical_duplicate.id}]},
+    )
+    assert duplicate_write.status_code == 422
 
     clinical_app["active_user"]["value"] = clinical_app["doctor_b"]
     assert client.post(

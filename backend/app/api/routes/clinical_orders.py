@@ -129,6 +129,8 @@ def _study_items(db: Session, history, payload: StudyOrderInput) -> list[StudyOr
         raise HTTPException(status_code=422, detail="La orden contiene un estudio inexistente")
     if any(not studies[study_id].is_active for study_id in ids):
         raise HTTPException(status_code=422, detail="Un estudio inactivo no puede utilizarse en una orden nueva")
+    if any(not studies[study_id].is_catalog_entry for study_id in ids):
+        raise HTTPException(status_code=422, detail="El estudio ya no es una entrada vigente del catálogo maestro")
     return [
         StudyOrderItem(
             medical_study_id=study.id,

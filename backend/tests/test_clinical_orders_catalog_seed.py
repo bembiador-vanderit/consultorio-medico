@@ -64,3 +64,14 @@ def test_expanded_laboratory_seed_is_complete_and_has_no_duplicate_names():
         "Otros": "Prueba de embarazo",
     }
     assert all((category, name) in rows for category, name in expected.items())
+
+
+def test_study_catalog_migration_canonicalizes_only_the_known_technical_seed_copies():
+    migration_26 = load_migration("0026_clinical_orders")
+    migration_28 = load_migration("0028_canonical_study_catalog")
+    expected_names = {name.casefold() for _, name in migration_26.STUDY_TYPES}
+    canonicalized_names = {name.casefold() for _, name in migration_28.SEEDED_MASTER_STUDIES}
+
+    assert len(migration_28.SEEDED_MASTER_STUDIES) == 11
+    assert canonicalized_names == expected_names
+    assert len({key for key, _ in migration_28.SEEDED_MASTER_STUDIES}) == 11
