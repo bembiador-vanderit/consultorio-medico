@@ -6,13 +6,24 @@ en PR #25. Rama `frontend/ui-v2-login`, creada desde
 
 ## Presentación y componentes
 
-`LoginLayout` centra una tarjeta de hasta 28rem sobre la superficie secundaria.
-La identidad temporal «A», el nombre Atlas Consultorio y el formulario mantienen
-una jerarquía sencilla en español. Se reutilizan tokens, tipografía, `Card`,
+`LoginLayout` centra una tarjeta clínica de hasta 64rem sobre la superficie
+secundaria. Desde 900px se divide en un panel clínico del 40% y un panel de acceso
+del 60%. El primero combina Sky/Mint, «Cuidar también es innovar» y la identidad
+temporal «A» en la parte inferior, con «Gestión médica simple, segura y confiable».
+El formulario tiene un ancho máximo de 25rem y el título «Bienvenido a Atlas».
+Se reutilizan tokens, tipografía, `Card`,
 `FormField`, `Input`, `Button`, `IconButton`, `Alert` y `LoadingState` existentes.
 El icono de visibilidad es un SVG local decorativo dentro de `IconButton`.
 No se introduce otro sistema de componentes ni un logo definitivo.
 
+El visual clínico es CSS original de esta corrección: cruz decorativa clara y
+anillos sobre un degradado de tokens Atlas. No se introducen imágenes, recursos
+remotos ni material de terceros; no requiere atribución/licencia de stock. Es
+decorativo (`aria-hidden`) y no sustituye la marca temporal, que sigue separada
+y reemplazable.
+
+Por debajo de 900px, el panel se convierte en una cabecera compacta con la marca
+y el lema, ocultando la ilustración y el texto de apoyo para priorizar el acceso.
 La composición tiene una columna y márgenes seguros desde 320px; los campos y el
 control de contraseña miden 44px de alto y el botón principal 48px. El login no
 monta el sidebar ni el shell autenticado. `/__dev/ui-v2` sigue siendo el catálogo

@@ -2,6 +2,30 @@
 
 ## Fase 1 — Login real
 
+### Corrección visual de PR #26
+
+Tarjeta clínica dividida 40/60 desde 900px, banner compacto por debajo de ese
+ancho. Visual CSS original sin imágenes externas. Autenticación y backend sin
+cambios; en la prueba versionada solo cambia el título esperado.
+
+- 21 pruebas aprobadas al reanudar: mismas aserciones y servicios, mediante copias
+  temporales con `configFile: false` en el servidor Vite de tests. El cargador
+  habitual encontró acceso denegado al recorrer directorios superiores en el
+  entorno restringido; ese ajuste de ejecución no se incorpora al repositorio.
+- TypeScript `tsc -b`: correcto.
+- Vite producción con `--configLoader native`: correcto, 112 módulos;
+  CSS 47.64 kB y JS 386.01 kB (106.46 kB gzip). Esta opción evita empaquetar la
+  configuración con esbuild bajo las restricciones del entorno.
+- Navegador: 320/375/768/1024/1440px sin overflow horizontal; capturas desktop y
+  móvil de la entrada real. Se revisó el build conservado, cuyos nombres de
+  assets coinciden con los de la nueva compilación.
+- Docker: build iniciado antes de una interrupción; resultado no recuperable.
+  La repetición quedó bloqueada por acceso denegado a Docker Engine. No se declara
+  validación Docker aprobada para esta corrección. Los resultados anteriores de
+  Docker que siguen abajo corresponden a la entrega funcional inicial.
+
+### Validación de la entrega funcional inicial
+
 Rama `frontend/ui-v2-login`; base exacta
 `30f5efe429ed630da8a8806c5b67ce10ba00b48e` de `feat/complete-care-context`.
 Diseño, contrato preservado, alcance y acceso local en [LOGIN.md](LOGIN.md).

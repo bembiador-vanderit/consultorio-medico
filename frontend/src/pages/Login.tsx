@@ -43,7 +43,7 @@ export default function Login({ onSignIn }: { onSignIn: (credentials: LoginCrede
 
   return <LoginLayout>
     <Card className="atlas-login-card">
-      <h1 className="atlas-page-title atlas-login-heading">Bienvenido</h1>
+      <h1 className="atlas-page-title atlas-login-heading">Bienvenido a Atlas</h1>
       <p className="atlas-muted">Inicia sesión para continuar.</p>
       <form className="atlas-login-form" onSubmit={submit} aria-label="Iniciar sesión">
         {error && <div className="atlas-login-feedback"><Alert tone="danger" title="No se pudo iniciar sesión">{error}</Alert></div>}
