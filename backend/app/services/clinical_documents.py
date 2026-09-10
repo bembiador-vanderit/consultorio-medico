@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from xml.sax.saxutils import escape
 
@@ -28,6 +28,111 @@ class DiagnosisLine:
     description: str
     icd10_code: str | None = None
     is_primary: bool = False
+
+
+def _build_clinical_order_pdf(
+    *,
+    order_id: int,
+    order_kind: str,
+    created_at: datetime,
+    patient_name: str,
+    doctor_name: str,
+    center_name: str | None,
+    specialty_name: str,
+    item_lines: list[str],
+    notes: str | None,
+) -> bytes:
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=20 * mm,
+        leftMargin=20 * mm,
+        topMargin=18 * mm,
+        bottomMargin=18 * mm,
+        title=f"{order_kind} #{order_id}",
+        author="Atlas Consultorio",
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ClinicalOrderTitle", parent=styles["Title"], alignment=TA_CENTER,
+        textColor=colors.HexColor("#0f766e"), fontSize=17, leading=21,
+    )
+    subtitle_style = ParagraphStyle(
+        "ClinicalOrderSubtitle", parent=styles["Normal"], alignment=TA_CENTER,
+        textColor=colors.HexColor("#475569"), fontSize=9, leading=12,
+    )
+    body_style = ParagraphStyle("ClinicalOrderBody", parent=styles["Normal"], fontSize=10, leading=14)
+    header_style = ParagraphStyle(
+        "ClinicalOrderHeader", parent=body_style, textColor=colors.white, fontName="Helvetica-Bold"
+    )
+    safe_center = escape(center_name or "Centro de atención no especificado")
+    story = [
+        Paragraph("Atlas Consultorio", title_style),
+        Paragraph(escape(order_kind.upper()), styles["Heading2"]),
+        Paragraph(safe_center, subtitle_style),
+        Spacer(1, 7 * mm),
+    ]
+    context = [
+        [Paragraph("Paciente", body_style), Paragraph(escape(patient_name), body_style)],
+        [Paragraph("Médico", body_style), Paragraph(escape(doctor_name), body_style)],
+        [Paragraph("Especialidad", body_style), Paragraph(escape(specialty_name), body_style)],
+        [Paragraph("Fecha y hora", body_style), Paragraph(created_at.strftime("%d/%m/%Y %H:%M"), body_style)],
+        [Paragraph("Número de orden", body_style), Paragraph(f"#{order_id}", body_style)],
+    ]
+    context_table = Table(context, colWidths=[38 * mm, 122 * mm])
+    context_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#ccfbf1")),
+        ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#0f766e")),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    story.extend([context_table, Spacer(1, 8 * mm)])
+    rows = [[Paragraph("Indicaciones solicitadas", header_style)]]
+    rows.extend([[Paragraph(f"{index}. {escape(line)}", body_style)] for index, line in enumerate(item_lines, start=1)])
+    items_table = Table(rows, colWidths=[160 * mm], repeatRows=1)
+    items_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(items_table)
+    if notes:
+        story.extend([Spacer(1, 6 * mm), Paragraph(f"<b>Observaciones:</b><br/>{escape(notes)}", body_style)])
+    story.extend([
+        Spacer(1, 20 * mm),
+        Paragraph("________________________________________", subtitle_style),
+        Paragraph(escape(doctor_name), subtitle_style),
+        Paragraph("Firma y sello del médico", subtitle_style),
+    ])
+
+    def add_footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.setFont("Helvetica", 8)
+        canvas.drawString(20 * mm, 10 * mm, f"Atlas Consultorio - Orden #{order_id}")
+        canvas.drawRightString(A4[0] - 20 * mm, 10 * mm, f"Página {doc.page}")
+        canvas.restoreState()
+
+    document.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
+    return buffer.getvalue()
+
+
+def build_laboratory_order_pdf(**kwargs) -> bytes:
+    return _build_clinical_order_pdf(order_kind="Orden de laboratorio", **kwargs)
+
+
+def build_study_order_pdf(**kwargs) -> bytes:
+    return _build_clinical_order_pdf(order_kind="Orden de estudios y procedimientos", **kwargs)
 
 
 def build_requested_tests_pdf(

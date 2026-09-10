@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import case, func, select
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.api.deps import current_user, require_permission
 from app.db import get_db
-from app.models import AnatomicalRegion, Appointment, ClinicalHistory, DoctorProfile, MedicalStudy, Specialty, User
+from app.models import AnatomicalRegion, Appointment, ClinicalHistory, DoctorProfile, MedicalStudy, Specialty, User, medical_study_specialties
 from app.schemas.clinical_catalog import (
     AnatomicalRegionResponse,
     DoctorProfileCreate,
@@ -114,11 +114,29 @@ def list_regions(specialty_id: int, _: User = Depends(current_user), db: Session
 
 
 @router.get("/studies", response_model=list[MedicalStudyResponse])
-def list_studies(specialty_id: int, region_id: int | None = None, _: User = Depends(current_user), db: Session = Depends(get_db)):
-    query = select(MedicalStudy).where(MedicalStudy.specialty_id == specialty_id, MedicalStudy.is_active)
+def list_studies(
+    specialty_id: int | None = None,
+    region_id: int | None = None,
+    include_all: bool = False,
+    _: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    recommendation = select(medical_study_specialties.c.medical_study_id).where(
+        medical_study_specialties.c.specialty_id == specialty_id,
+        medical_study_specialties.c.medical_study_id == MedicalStudy.id,
+    ).exists() if specialty_id is not None else None
+    query = select(MedicalStudy).options(selectinload(MedicalStudy.recommended_specialties)).where(
+        MedicalStudy.is_active,
+        MedicalStudy.is_catalog_entry,
+    )
+    if specialty_id is not None and not include_all:
+        query = query.where(recommendation)
     if region_id is not None:
         query = query.where(MedicalStudy.anatomical_region_id == region_id)
-    return list(db.scalars(query.order_by(MedicalStudy.name)))
+    ordering = []
+    if specialty_id is not None and include_all:
+        ordering.append(case((recommendation, 0), else_=1))
+    return list(db.scalars(query.order_by(*ordering, MedicalStudy.category, MedicalStudy.name)))
 
 
 @router.get("/doctor-profile/me", response_model=DoctorProfileResponse)

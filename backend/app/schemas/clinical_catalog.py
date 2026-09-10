@@ -23,6 +23,7 @@ class MedicalStudyResponse(BaseModel):
     name: str
     category: str
     is_active: bool
+    recommended_specialty_ids: list[int]
     model_config = {"from_attributes": True}
 
 
