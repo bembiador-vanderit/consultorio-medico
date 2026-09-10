@@ -1,0 +1,67 @@
+/* Atlas UI V2: authoritative palette and semantic aliases. */
+:root {
+  --atlas-primary: #6FA8B8;
+  --atlas-sage: #82B5A5;
+  --atlas-sky: #A8C9D6;
+  --atlas-mint: #D9EEE7;
+  --atlas-amber: #F3D9A4;
+  --atlas-coral: #E7A09A;
+  --atlas-surface: #FCFDFD;
+  --atlas-surface-secondary: #F1F5F6;
+  --atlas-text-primary: #334E5A;
+  --atlas-text-secondary: #75868D;
+  /* Derived for readable normal text and meaningful control boundaries. */
+  --atlas-text-muted: #526870;
+  --atlas-action: #315F6D;
+  --atlas-action-hover: #264C58;
+  --atlas-on-action: #FFFFFF;
+  --atlas-success: #285D49;
+  --atlas-warning: #725013;
+  --atlas-danger: #963D38;
+  --atlas-info: #264C58;
+  --atlas-danger-surface: #FBEDEA;
+  --atlas-border: #CEDADC;
+  --atlas-control-border: #75868D;
+  --atlas-focus: #315F6D;
+  --atlas-overlay: rgb(20 39 47 / 45%);
+  --atlas-font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --atlas-type-display: 1.75rem;
+  --atlas-type-section: 1.25rem;
+  --atlas-type-card: 1.0625rem;
+  --atlas-type-body: 1rem;
+  --atlas-type-secondary: .875rem;
+  --atlas-type-label: .875rem;
+  --atlas-type-caption: .75rem;
+  --atlas-leading: 1.5;
+  --atlas-space-1: .25rem;
+  --atlas-space-2: .5rem;
+  --atlas-space-3: .75rem;
+  --atlas-space-4: 1rem;
+  --atlas-space-5: 1.5rem;
+  --atlas-space-6: 2rem;
+  --atlas-page-space: var(--atlas-space-6);
+  --atlas-section-space: var(--atlas-space-5);
+  --atlas-card-space: var(--atlas-space-5);
+  --atlas-form-space: var(--atlas-space-4);
+  --atlas-table-space: var(--atlas-space-3);
+  --atlas-module-space: var(--atlas-space-4);
+  --atlas-radius-sm: .375rem;
+  --atlas-radius: .75rem;
+  --atlas-radius-lg: .875rem;
+  --atlas-shadow: 0 2px 8px rgb(20 39 47 / 5%);
+  --atlas-shadow-overlay: 0 16px 48px rgb(20 39 47 / 18%);
+  --atlas-transition: 120ms ease;
+  --atlas-z-popover: 20;
+  --atlas-z-sticky: 10;
+}
+
+/* CSS-first Tailwind 4 aliases. Existing utility colors remain unchanged. */
+@theme inline {
+  --color-atlas-primary: var(--atlas-primary);
+  --color-atlas-surface: var(--atlas-surface);
+  --color-atlas-surface-secondary: var(--atlas-surface-secondary);
+  --color-atlas-text: var(--atlas-text-primary);
+  --color-atlas-muted: var(--atlas-text-muted);
+  --color-atlas-action: var(--atlas-action);
+  --color-atlas-border: var(--atlas-border);
+}
