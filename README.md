@@ -96,6 +96,9 @@ No se deben incorporar pacientes reales, datos clínicos, contraseñas ni archiv
 
 Consulta [la arquitectura inicial](docs/architecture.md).
 
+La fundación visual, componentes y contratos del shell están documentados en
+[Atlas UI V2 — Fase 0](docs/ui-v2/FOUNDATION.md), incluyendo el catálogo exclusivo de desarrollo.
+
 La política implementada para autorización clínica, contexto inmutable, finalización y auditoría está documentada en [Seguridad clínica y ciclo de vida de consulta](docs/clinical-security-lifecycle.md).
 
 El flujo de solicitudes estructuradas, sus reglas de contexto, seguridad e impresión está documentado en [Órdenes clínicas estructuradas](docs/clinical-orders.md).

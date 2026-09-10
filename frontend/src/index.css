@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "./ui/tokens.css";
+@import "./ui/foundation.css";
 
 :root {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
