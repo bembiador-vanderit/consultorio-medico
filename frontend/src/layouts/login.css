@@ -1,0 +1,17 @@
+/* Login composition reuses foundation surfaces, typography, spacing and controls. */
+.atlas-login { display: grid; align-items: center; justify-items: center; min-height: 100dvh; padding: var(--atlas-space-6) var(--atlas-space-4); background: var(--atlas-surface-secondary); }
+.atlas-login-content { width: 100%; max-width: 28rem; min-width: 0; display: flex; flex-direction: column; gap: var(--atlas-space-5); }
+.atlas-login-brand { display: flex; align-items: center; justify-content: center; gap: var(--atlas-space-3); }
+.atlas-login-mark { display: grid; place-items: center; width: 48px; height: 48px; flex-shrink: 0; background: var(--atlas-primary); color: var(--atlas-navigation-bg); border-radius: var(--atlas-radius); font-size: var(--atlas-type-section); font-weight: 700; }
+.atlas-login-card { --atlas-card-space: var(--atlas-space-6); border-top: 3px solid var(--atlas-primary); }
+.atlas-login-heading { margin-bottom: var(--atlas-space-2); }
+.atlas-login-form { display: flex; flex-direction: column; gap: var(--atlas-form-space); margin-top: var(--atlas-space-5); }
+.atlas-login-password { display: flex; align-items: center; gap: var(--atlas-space-2); min-width: 0; }
+.atlas-login-password .atlas-input { min-width: 0; flex: 1; }
+.atlas-login-submit { width: 100%; margin-top: var(--atlas-space-2); }
+.atlas-login-note { text-align: center; }
+.atlas-login-feedback { min-width: 0; }
+@media (max-width: 639px) {
+  .atlas-login { padding-block: var(--atlas-space-5); }
+  .atlas-login-card { --atlas-card-space: var(--atlas-space-5); }
+}
