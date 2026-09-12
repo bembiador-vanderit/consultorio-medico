@@ -1,5 +1,31 @@
 # Entrega y validación — UI V2
 
+## Fase 3 — Dashboards por rol
+
+Rama `frontend/ui-v2-role-dashboards`; base exacta
+`1e8ee60f5d3fe5833f711818b03e6b449d2adf3a` de `feat/complete-care-context`.
+La composición, datos reales, límites y prueba local están documentados en
+[DASHBOARDS.md](DASHBOARDS.md).
+
+| Validación | Resultado |
+| --- | --- |
+| Frontend Node/Vite/jsdom | 41 aprobadas, 0 fallidas: App Shell 14, Dashboard 6, Login 12 y Foundation 9 |
+| TypeScript `tsc -b` | Correcto |
+| Vite producción | Correcto |
+| Backend | Sin cambios; no corresponde ejecutar pruebas backend por esta fase |
+| Docker Compose build frontend | Correcto, imagen `atlas-ui-v2-dashboard-validation-frontend` |
+
+Las pruebas específicas cubren Médico, Secretaría, Administrador, Médico +
+Administrador, especialidades múltiples, estados de carga/vacío/error y navegación
+de acciones dentro del App Shell. Secretaría y Administrador no reciben bloques
+clínicos por la mera visibilidad del Dashboard.
+
+La validación frontend enumeró los cuatro archivos de prueba explícitamente por una
+limitación de expansión de comodines del PowerShell actual. No se alteró el backend,
+las migraciones, datos clínicos ni volúmenes. El build Compose usó variables efímeras
+y un proyecto de validación aislado; no inició servicios ni ejecutó
+`docker compose down -v`.
+
 ## Fase 2 — App Shell operativo
 
 Rama `frontend/ui-v2-app-shell`; base exacta
