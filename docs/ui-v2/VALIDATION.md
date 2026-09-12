@@ -251,3 +251,20 @@ en [FOUNDATION.md](FOUNDATION.md#revisión-visual-de-junior). El catálogo funci
 cuenta ni backend y solo usa ejemplos ficticios. Su presencia no habilita permisos.
 
 Esperar revisión. No fusionar ni cambiar el destino a main para activar CI.
+
+## Fase 4A — Agenda profesional
+
+Rama `frontend/ui-v2-agenda-phase-4a`; base exacta
+`eda6d7bdfb593d590f5fa469f393ba3a0a6f2d4c` de `feat/complete-care-context`.
+La arquitectura, alcance real y límites están documentados en [AGENDA.md](AGENDA.md).
+
+| Validación | Resultado |
+| --- | --- |
+| Frontend Node/Vite/jsdom | 57 aprobadas, 0 fallidas: Agenda 16, App Shell 14, Dashboard 6, Login 12 y Foundation 9 |
+| TypeScript `tsc -b` y Vite producción | Correctos |
+| Backend | Sin cambios; no corresponde ejecutar pruebas backend |
+
+La fase introduce las vistas Día, Semana y Médicos, navegación por mini calendario,
+filtros sobre datos autorizados, drawer accesible, formulario existente integrado y
+acciones que reutilizan endpoints existentes. No incluye vista Mes, duración,
+intervalos, slots ni disponibilidad horaria.

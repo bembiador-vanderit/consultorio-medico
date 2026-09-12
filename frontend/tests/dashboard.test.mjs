@@ -114,6 +114,6 @@ test("acción rápida usa la navegación real dentro del App Shell", async () =>
   await mount(["doctor"]);
   await clickAction("agenda", main());
   assert.equal(host.querySelector('.atlas-sidebar [aria-current="page"]').textContent, "Agenda");
-  assert.equal(main().querySelector("h2").textContent, "Agenda de citas");
+  assert.equal(main().querySelector("h1").textContent, "Agenda");
   assert.ok(host.querySelector(".atlas-shell"));
 });

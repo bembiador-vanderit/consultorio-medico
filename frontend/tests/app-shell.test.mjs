@@ -13,7 +13,7 @@ const originalAdapter = api.defaults.adapter;
 const host = document.getElementById("root");
 let root, requests, data;
 const baseLabels = ["Dashboard", "Agenda", "Reportes de citas", "Pacientes"];
-const headings = { Dashboard: "Bienvenido, Personal de prueba", Agenda: "Agenda de citas", "Reportes de citas": "Reportes de citas", Pacientes: "Pacientes", Seguimientos: "Seguimiento de pacientes", "Mi disponibilidad": "Mi disponibilidad", "Cobertura clínica": "Cobertura clínica", "Usuarios y roles": "Usuarios y roles", "Localidades y centros": "Localidades y centros" };
+const headings = { Dashboard: "Bienvenido, Personal de prueba", Agenda: "Agenda", "Reportes de citas": "Reportes de citas", Pacientes: "Pacientes", Seguimientos: "Seguimiento de pacientes", "Mi disponibilidad": "Mi disponibilidad", "Cobertura clínica": "Cobertura clínica", "Usuarios y roles": "Usuarios y roles", "Localidades y centros": "Localidades y centros" };
 const listEndpoints = ["/patients", "/appointments", "/centers/mine", "/follow-ups", "/doctor-availability", "/clinical-coverages", "/users", "/centers", "/localities/all", "/clinical-catalog/specialties", "/appointments/doctors"];
 
 beforeEach(() => {
@@ -59,7 +59,7 @@ for (const roles of [[], ["doctor"], ["secretary"], ["admin"], ["doctor", "admin
       await click(button(label, navigation()));
       assert.equal(navigation().querySelectorAll('[aria-current="page"]').length, 1);
       assert.equal(navigation().querySelector('[aria-current="page"]').textContent, label);
-      assert.equal(host.querySelector("main h2").textContent, headings[label]);
+      assert.equal(host.querySelector("main h1, main h2").textContent, headings[label]);
     }
     assert.ok(host.querySelector(".atlas-topbar .atlas-user").textContent.includes("Personal de prueba"));
     if (!roles.includes("doctor")) assert.ok(!button("Seguimientos", navigation()));
@@ -80,7 +80,7 @@ test("patient scheduling opens Agenda with that patient; navigation to Agenda cl
   await click(button("Pacientes", navigation()));
   await click(button("Agendar cita", host.querySelector("main")));
   assert.equal(navigation().querySelector('[aria-current="page"]').textContent, "Agenda");
-  assert.match(host.querySelector("main").textContent, /Paciente Ficticio/);
+  assert.match(document.body.textContent, /Paciente Ficticio/);
   await click(button("Dashboard", navigation()));
   await click(button("Agenda", navigation()));
   assert.doesNotMatch(host.querySelector("main").textContent, /Paciente Ficticio/);
