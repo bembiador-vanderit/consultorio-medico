@@ -14,15 +14,17 @@ from app.api.routes.clinical_catalog import (
     update_specialty,
     update_specialty_status,
 )
+from app.api.routes.clinical_coverages import transfer_appointment
 from app.api.routes.clinical_history import complete_clinical_history, create_clinical_history, get_clinical_history
 from app.api.routes.users import create_user, update_user_specialties
 from app.db import Base
-from app.models import CareCenter, Notification, Patient, Permission, Role, SecretaryCenterScope, Specialty, User
+from app.models import CareCenter, ClinicalCoverage, DoctorProfile, Notification, Patient, Permission, Role, SecretaryCenterScope, Specialty, User
 from app.schemas.appointment import AppointmentCreate
 from app.schemas.auth import UserCreate
 from app.schemas.clinical_catalog import DoctorProfileCreate, SpecialtyCreate, SpecialtyStatusUpdate, SpecialtyUpdate
 from app.schemas.clinical_history import ClinicalHistoryCreate, ClinicalHistoryUpdate
 from app.schemas.user import UserSpecialtiesUpdate
+from app.services.clinical_access import has_normal_history_access
 from app.services.clinical_specialties import resolve_appointment_specialty, set_doctor_specialties
 from app.services import reminders
 
@@ -65,6 +67,22 @@ def appointment_payload(patient_id: int, doctor_id: int, center_id: int, special
         appointment_date=date(2026, 9, 15),
         appointment_time=time(9),
     )
+
+
+def create_osiris(db: Session, center: CareCenter, cardiology: Specialty, internal: Specialty, doctor_role: Role):
+    osiris = User(
+        email="osiris.valdes@example.test",
+        full_name="Dr. Osiris Valdés",
+        password_hash="hash",
+        roles=[doctor_role],
+        centers=[center],
+        is_active=True,
+    )
+    db.add(osiris)
+    db.flush()
+    profile = set_doctor_specialties(db, osiris, cardiology.id, [cardiology.id, internal.id])
+    db.commit()
+    return osiris, profile
 
 
 def test_single_specialty_is_selected_automatically(specialty_context):
@@ -387,3 +405,171 @@ def test_in_use_specialty_can_be_deactivated_but_not_renamed(specialty_context):
 
     reactivated = update_specialty_status(cardiology.id, SpecialtyStatusUpdate(is_active=True), admin, db)
     assert reactivated.is_active is True
+
+
+def test_osiris_preserves_two_specialty_episodes_after_reconfiguring_his_profile(specialty_context):
+    db, patient, center, cardiology, _, internal, doctor_one, _, _, _ = specialty_context
+    osiris, profile = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+
+    assert cardiology.is_active is True
+    assert internal.is_active is True
+    assert {specialty.id for specialty in osiris.specialties} == {cardiology.id, internal.id}
+    assert profile.specialty_id == cardiology.id
+    assert profile.specialty_id in {specialty.id for specialty in osiris.specialties}
+    assert list(db.scalars(select(User).where(User.email == osiris.email))) == [osiris]
+    assert list(db.scalars(select(DoctorProfile).where(DoctorProfile.user_id == osiris.id))) == [profile]
+
+    cardiology_appointment = create_appointment(
+        appointment_payload(patient.id, osiris.id, center.id, cardiology.id), osiris, db
+    )
+    internal_payload = appointment_payload(patient.id, osiris.id, center.id, internal.id)
+    internal_payload.appointment_date = date(2026, 9, 16)
+    internal_payload.appointment_time = time(10)
+    internal_appointment = create_appointment(internal_payload, osiris, db)
+
+    assert cardiology_appointment.id != internal_appointment.id
+    assert cardiology_appointment.specialty_id == cardiology.id
+    assert internal_appointment.specialty_id == internal.id
+
+    cardiology_history = create_clinical_history(
+        patient.id,
+        ClinicalHistoryCreate(consultation_date=date(2026, 9, 15), appointment_id=cardiology_appointment.id),
+        osiris,
+        db,
+    )
+    internal_history = create_clinical_history(
+        patient.id,
+        ClinicalHistoryCreate(consultation_date=date(2026, 9, 16), appointment_id=internal_appointment.id),
+        osiris,
+        db,
+    )
+
+    assert cardiology_history.specialty_id == cardiology.id
+    assert internal_history.specialty_id == internal.id
+    assert {history.doctor_id for history in (cardiology_history, internal_history)} == {osiris.id}
+    assert {history.patient_id for history in (cardiology_history, internal_history)} == {patient.id}
+    assert {history.center_id for history in (cardiology_history, internal_history)} == {center.id}
+
+    changed_profile = set_doctor_specialties(db, osiris, internal.id, [cardiology.id, internal.id])
+    db.commit()
+    assert changed_profile.id == profile.id
+    assert changed_profile.specialty_id == internal.id
+    assert cardiology_appointment.specialty_id == cardiology.id
+    assert internal_appointment.specialty_id == internal.id
+    assert cardiology_history.specialty_id == cardiology.id
+    assert internal_history.specialty_id == internal.id
+
+    set_doctor_specialties(db, osiris, internal.id, [internal.id])
+    db.commit()
+    assert {specialty.id for specialty in osiris.specialties} == {internal.id}
+    histories = {history.id: history for history in get_clinical_history(patient.id, osiris, db)}
+    assert histories[cardiology_history.id].specialty_id == cardiology.id
+    assert histories[internal_history.id].specialty_id == internal.id
+    assert histories[cardiology_history.id].specialty_name == "Cardiología"
+    assert histories[internal_history.id].specialty_name == "Medicina interna"
+
+
+def test_osiris_rejects_an_active_specialty_that_is_not_assigned(specialty_context):
+    db, patient, center, cardiology, pediatrics, internal, doctor_one, _, _, _ = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+
+    assert pediatrics.is_active is True
+    with pytest.raises(HTTPException) as error:
+        create_appointment(appointment_payload(patient.id, osiris.id, center.id, pediatrics.id), osiris, db)
+    assert error.value.status_code == 422
+    assert error.value.detail == "La especialidad no está asignada al médico"
+
+
+def test_osiris_rejects_an_inactive_assigned_specialty(specialty_context):
+    db, patient, center, cardiology, _, internal, doctor_one, _, _, _ = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+    cardiology.is_active = False
+    db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        create_appointment(appointment_payload(patient.id, osiris.id, center.id, cardiology.id), osiris, db)
+    assert error.value.status_code == 422
+    assert error.value.detail == "La especialidad no está asignada al médico"
+
+
+def test_osiris_cannot_change_an_episode_specialty_after_consultation_starts(specialty_context):
+    db, patient, center, cardiology, _, internal, doctor_one, _, _, admin = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+    appointment = create_appointment(
+        appointment_payload(patient.id, osiris.id, center.id, cardiology.id), admin, db
+    )
+    history = create_clinical_history(
+        patient.id,
+        ClinicalHistoryCreate(consultation_date=date(2026, 9, 15), appointment_id=appointment.id),
+        osiris,
+        db,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        update_appointment(
+            appointment.id,
+            appointment_payload(patient.id, osiris.id, center.id, internal.id),
+            admin,
+            db,
+        )
+    assert error.value.status_code == 409
+    assert appointment.specialty_id == cardiology.id
+    assert history.specialty_id == cardiology.id
+
+
+def test_osiris_rejects_a_primary_specialty_outside_his_assignments(specialty_context):
+    db, _, center, cardiology, pediatrics, internal, doctor_one, _, _, _ = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+
+    with pytest.raises(HTTPException) as error:
+        set_doctor_specialties(db, osiris, pediatrics.id, [cardiology.id, internal.id])
+    assert error.value.status_code == 422
+    assert error.value.detail == "La especialidad principal debe estar entre las asignadas"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Brecha conocida: has_normal_history_access no compara specialty_id entre cita e historia.",
+)
+def test_history_access_rejects_a_specialty_mismatch_with_its_appointment(specialty_context):
+    db, patient, center, cardiology, _, internal, doctor_one, _, _, _ = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+    appointment = create_appointment(
+        appointment_payload(patient.id, osiris.id, center.id, cardiology.id), osiris, db
+    )
+    history = create_clinical_history(
+        patient.id,
+        ClinicalHistoryCreate(consultation_date=date(2026, 9, 15), appointment_id=appointment.id),
+        osiris,
+        db,
+    )
+    history.specialty_id = internal.id
+    db.flush()
+
+    assert has_normal_history_access(db, osiris, history) is False
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Brecha conocida: la cobertura no valida que el sustituto tenga la especialidad de la cita.",
+)
+def test_coverage_transfer_rejects_a_substitute_without_the_appointment_specialty(specialty_context):
+    db, patient, center, cardiology, _, internal, doctor_one, substitute, _, _ = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+    appointment = create_appointment(
+        appointment_payload(patient.id, osiris.id, center.id, internal.id), osiris, db
+    )
+    coverage = ClinicalCoverage(
+        principal_doctor_id=osiris.id,
+        substitute_doctor_id=substitute.id,
+        center_id=center.id,
+        starts_at=datetime(2026, 9, 14, 8),
+        ends_at=datetime(2026, 9, 16, 18),
+    )
+    db.add(coverage)
+    db.commit()
+
+    assert internal.id not in {specialty.id for specialty in substitute.specialties}
+    with pytest.raises(HTTPException) as error:
+        transfer_appointment(coverage.id, appointment.id, osiris, db)
+    assert error.value.status_code == 422
