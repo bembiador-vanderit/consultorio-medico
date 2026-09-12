@@ -1,6 +1,32 @@
+export type RequestedTest = {
+  id: number;
+  clinical_history_id: number;
+  test_name: string;
+};
+
+export type ClinicalAddendum = {
+  id: number;
+  clinical_history_id: number;
+  author_user_id: number | null;
+  author_name: string;
+  reason: string | null;
+  note: string;
+  created_at: string;
+};
+
 export type ClinicalHistory = {
   id: number;
   patient_id: number;
+  appointment_id: number | null;
+  doctor_id: number | null;
+  center_id: number | null;
+  specialty_id: number | null;
+  specialty_name: string;
+  doctor_name: string | null;
+  center_name: string | null;
+  status: "in_progress" | "completed";
+  completed_at: string | null;
+  completed_by_id: number | null;
   consultation_date: string;
   reason_for_visit: string | null;
   current_illness: string | null;
@@ -12,11 +38,15 @@ export type ClinicalHistory = {
   chronic_conditions: string | null;
   habits: string | null;
   clinical_notes: string | null;
+  requested_tests: RequestedTest[];
   created_at: string;
   updated_at: string;
 };
 
 export type ClinicalHistoryInput = Omit<
   ClinicalHistory,
-  "id" | "patient_id" | "created_at" | "updated_at"
->;
+  "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "specialty_id" | "specialty_name" | "doctor_name" | "center_name" | "status" | "completed_at" | "completed_by_id" | "created_at" | "updated_at" | "requested_tests"
+> & {
+  appointment_id?: number | null;
+  requested_tests?: string;
+};

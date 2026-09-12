@@ -1,6 +1,9 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from app.schemas.requested_tests import RequestedTestResponse
 
 
 class ClinicalHistoryBase(BaseModel):
@@ -18,13 +21,47 @@ class ClinicalHistoryBase(BaseModel):
 
 
 class ClinicalHistoryCreate(ClinicalHistoryBase):
-    pass
+    # The appointment is the source of truth for the clinical context.
+    # doctor_id and center_id are intentionally not accepted from the client;
+    # they are derived from appointment_id when a consultation is saved.
+    appointment_id: int = Field(gt=0)
+    model_config = {"extra": "forbid"}
+
+
+class ClinicalHistoryUpdate(ClinicalHistoryBase):
+    """Editable clinical content; the original appointment context is immutable."""
+    model_config = {"extra": "forbid"}
 
 
 class ClinicalHistoryResponse(ClinicalHistoryBase):
     id: int
     patient_id: int
+    appointment_id: int | None = None
+    doctor_id: int | None = None
+    center_id: int | None = None
+    specialty_id: int | None
+    specialty_name: str
+    doctor_name: str | None = None
+    center_name: str | None = None
+    status: Literal["in_progress", "completed"]
+    completed_at: datetime | None = None
+    completed_by_id: int | None = None
     created_at: datetime
     updated_at: datetime
+    requested_tests: list[RequestedTestResponse] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class ClinicalAuditLogResponse(BaseModel):
+    id: int
+    user_id: int | None
+    action: str
+    resource_type: str
+    resource_id: int | None
+    clinical_history_id: int | None
+    outcome: str
+    context: dict | None
+    created_at: datetime
 
     model_config = {"from_attributes": True}

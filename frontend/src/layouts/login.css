@@ -1,0 +1,48 @@
+/* Presentation only: approved Atlas tokens and existing foundation controls. */
+.atlas-login { display: grid; place-items: center; min-height: 100dvh; padding: var(--atlas-space-6); background: var(--atlas-surface-secondary); }
+.atlas-login-content { display: grid; grid-template-columns: 40% 60%; width: 100%; max-width: 64rem; min-width: 0; min-height: 37.5rem; overflow: hidden; border: 1px solid var(--atlas-border); border-radius: var(--atlas-radius-lg); background: var(--atlas-surface); box-shadow: var(--atlas-shadow-overlay); }
+.atlas-login-clinical { position: relative; isolation: isolate; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 3rem 2.5rem; background: linear-gradient(145deg, var(--atlas-sky), var(--atlas-mint)); }
+.atlas-login-statement { position: relative; z-index: 1; font-size: 2.25rem; font-weight: 600; line-height: 1.2; letter-spacing: -.035em; }
+/* Original CSS clinical illustration. No external image, font or asset request. */
+.atlas-login-art { position: relative; display: grid; place-items: center; height: 15rem; margin: var(--atlas-space-4) -2.5rem; }
+.atlas-login-orbit { position: absolute; width: 19rem; height: 19rem; border: 1px solid color-mix(in srgb, var(--atlas-surface) 65%, transparent); border-radius: 50%; transform: translate(2rem, 0); }
+.atlas-login-orbit::before, .atlas-login-orbit::after { content: ""; position: absolute; border: inherit; border-radius: inherit; }
+.atlas-login-orbit::before { inset: 1.75rem; }
+.atlas-login-orbit::after { inset: -2rem; }
+.atlas-login-cross { position: relative; width: 9rem; height: 9rem; transform: rotate(-8deg); filter: drop-shadow(0 12px 16px color-mix(in srgb, var(--atlas-action) 12%, transparent)); }
+.atlas-login-cross::before, .atlas-login-cross::after { content: ""; position: absolute; inset: 0; border-radius: var(--atlas-radius); background: var(--atlas-surface); opacity: .85; }
+.atlas-login-cross::before { inset-inline: 3rem; }
+.atlas-login-cross::after { inset-block: 3rem; }
+.atlas-login-identity { position: relative; z-index: 1; }
+.atlas-login-brand { display: flex; align-items: center; gap: var(--atlas-space-3); }
+.atlas-login-mark { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; background: var(--atlas-action); color: var(--atlas-on-action); border-radius: var(--atlas-radius); font-size: var(--atlas-type-section); font-weight: 700; }
+.atlas-login-brand-copy { margin-top: var(--atlas-space-4); color: var(--atlas-text-muted); font-size: var(--atlas-type-secondary); line-height: 1.6; }
+.atlas-login-access { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 3rem 4rem; }
+.atlas-login-card.atlas-card { width: 100%; max-width: 25rem; margin-inline: auto; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+.atlas-login-heading { margin-bottom: var(--atlas-space-2); letter-spacing: -.025em; }
+.atlas-login-form { display: flex; flex-direction: column; gap: var(--atlas-space-5); margin-top: var(--atlas-space-6); }
+.atlas-login-password { display: flex; align-items: center; gap: var(--atlas-space-2); min-width: 0; }
+.atlas-login-password .atlas-input { min-width: 0; flex: 1; }
+.atlas-login-submit { width: 100%; margin-top: var(--atlas-space-2); }
+.atlas-login-note { margin-top: var(--atlas-space-6); text-align: center; }
+.atlas-login-feedback { min-width: 0; }
+@media (max-width: 1100px) and (min-width: 900px) {
+  .atlas-login-clinical { padding-inline: var(--atlas-space-6); }
+  .atlas-login-access { padding-inline: 3rem; }
+  .atlas-login-statement { font-size: 2rem; }
+}
+@media (max-width: 899px) {
+  .atlas-login-content { grid-template-columns: 1fr; max-width: 34rem; min-height: 0; }
+  .atlas-login-clinical { padding: var(--atlas-space-5) var(--atlas-space-6); gap: var(--atlas-space-4); }
+  .atlas-login-identity { order: -1; }
+  .atlas-login-brand-copy, .atlas-login-art { display: none; }
+  .atlas-login-statement { font-size: var(--atlas-type-card); font-weight: 500; letter-spacing: 0; }
+  .atlas-login-statement br { display: none; }
+  .atlas-login-access { padding: var(--atlas-space-6); }
+}
+@media (max-width: 479px) {
+  .atlas-login { padding: var(--atlas-space-5) var(--atlas-space-4); }
+  .atlas-login-clinical, .atlas-login-access { padding: var(--atlas-space-5); }
+  .atlas-login-brand .atlas-section-title { font-size: var(--atlas-type-card); }
+  .atlas-login-heading { font-size: 1.5rem; }
+}
