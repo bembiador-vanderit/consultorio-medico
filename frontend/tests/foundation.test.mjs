@@ -7,7 +7,7 @@ import { createServer } from "vite";
 
 // Reuse the installed Vite TS loader and Node test runner; no extra test dependency.
 const server = await createServer({
-  server: { middlewareMode: true }, appType: "custom",
+  server: { middlewareMode: true, ws: false }, appType: "custom",
   // These are SSR tests: avoid a browser dependency scan racing server.close().
   optimizeDeps: { noDiscovery: true, include: [] },
 });

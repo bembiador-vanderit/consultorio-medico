@@ -66,7 +66,7 @@ export default function NotificationBell({ onOpenNotifications }: Props) {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-[min(92vw,380px)] overflow-hidden rounded-xl border bg-white shadow-xl">
+        <div className="atlas-notification-panel absolute right-0 z-50 mt-2 w-[min(92vw,380px)] overflow-hidden rounded-xl border bg-white shadow-xl">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div><p className="font-bold">Notificaciones pendientes</p><p className="text-xs text-slate-500">Eventos, seguimientos y citas próximas</p></div>
             <button type="button" onClick={() => void load()} className="text-xs font-semibold text-teal-700 hover:underline">Actualizar</button>

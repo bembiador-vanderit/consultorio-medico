@@ -1,5 +1,41 @@
 # Entrega y validación — UI V2
 
+## Fase 2 — App Shell operativo
+
+Rama `frontend/ui-v2-app-shell`; base exacta
+`553af16c1ffab4c216defb0733035cb3f75c225c` de `feat/complete-care-context`.
+Arquitectura, roles, accesibilidad, límites e instrucciones locales en
+[APP_SHELL.md](APP_SHELL.md).
+
+| Validación | Resultado |
+| --- | --- |
+| Frontend Node/Vite/jsdom | 35 aprobadas, 0 fallidas: 14 nuevas del shell, 12 login y 9 fundación |
+| TypeScript `tsc -b` | Correcto |
+| Vite producción | Correcto; 116 módulos, CSS 49.04 kB (10.14 kB gzip), JS 390.02 kB (108.42 kB gzip) |
+| Backend autorización/auth | 19 aprobadas: security, user_management y clinical_permissions; backend sin cambios |
+| Docker Compose build frontend | Correcto, imagen `atlas-ui-v2-shell-validation-frontend` |
+| Navegador autenticado aislado | Doctor, Secretaría y Administrador; login, F5, logout, roles, notificaciones y destinos reales comprobados |
+| Responsive | 320, 375, 768, 1024 y 1440px sin overflow horizontal del shell; drawer y panel de notificaciones comprobados |
+| Catálogo | `/__dev/ui-v2` sigue disponible en desarrollo |
+
+La prueba de navegador usa un backend FastAPI aislado con SQLite temporal, cuentas
+y aviso ficticios creados solo para validación. Usa los endpoints reales de login,
+refresh, perfil, notificaciones y logout; no tocó PostgreSQL ni las cuentas del
+entorno existente. El shell fue revisado en el App autenticado, no en el catálogo.
+
+Las pruebas frontend cubren Doctor, Secretaría, Administrador, todas las
+combinaciones soportadas, rol inesperado, Login sin sesión, restauración, logout,
+estado activo, cambio de vista, Pacientes → Agenda, NotificationBell y drawer
+móvil. Se desactivó el WebSocket de los servidores Vite de prueba porque el runner
+ejecuta varios servidores en el mismo proceso; no afecta el servidor de desarrollo
+ni producción.
+
+La construcción Compose se ejecutó con un nombre de proyecto de validación y
+variables efímeras, sin iniciar el stack ni ejecutar `docker compose down -v`.
+No se modificó backend, migraciones, datos clínicos o volúmenes. Los tests backend
+registraron 87 warnings existentes de Starlette/SQLAlchemy y caché de pytest en
+montaje de solo lectura, sin fallos.
+
 ## Fase 1 — Login real
 
 ### Corrección visual de PR #26
