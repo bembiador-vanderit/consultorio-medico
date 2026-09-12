@@ -24,7 +24,11 @@ from app.schemas.auth import UserCreate
 from app.schemas.clinical_catalog import DoctorProfileCreate, SpecialtyCreate, SpecialtyStatusUpdate, SpecialtyUpdate
 from app.schemas.clinical_history import ClinicalHistoryCreate, ClinicalHistoryUpdate
 from app.schemas.user import UserSpecialtiesUpdate
-from app.services.clinical_access import has_normal_history_access
+from app.services.clinical_access import (
+    can_access_history,
+    has_normal_history_access,
+    require_history_access,
+)
 from app.services.clinical_specialties import resolve_appointment_specialty, set_doctor_specialties
 from app.services import reminders
 
@@ -527,10 +531,22 @@ def test_osiris_rejects_a_primary_specialty_outside_his_assignments(specialty_co
     assert error.value.detail == "La especialidad principal debe estar entre las asignadas"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Brecha conocida: has_normal_history_access no compara specialty_id entre cita e historia.",
-)
+def test_history_access_allows_matching_specialty_with_its_appointment(specialty_context):
+    db, patient, center, cardiology, _, internal, doctor_one, _, _, _ = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+    appointment = create_appointment(
+        appointment_payload(patient.id, osiris.id, center.id, cardiology.id), osiris, db
+    )
+    history = create_clinical_history(
+        patient.id,
+        ClinicalHistoryCreate(consultation_date=date(2026, 9, 15), appointment_id=appointment.id),
+        osiris,
+        db,
+    )
+
+    assert has_normal_history_access(db, osiris, history) is True
+
+
 def test_history_access_rejects_a_specialty_mismatch_with_its_appointment(specialty_context):
     db, patient, center, cardiology, _, internal, doctor_one, _, _, _ = specialty_context
     osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
@@ -547,12 +563,12 @@ def test_history_access_rejects_a_specialty_mismatch_with_its_appointment(specia
     db.flush()
 
     assert has_normal_history_access(db, osiris, history) is False
+    assert can_access_history(db, osiris, history) is False
+    with pytest.raises(HTTPException) as error:
+        require_history_access(db, osiris, history.id, action="clinical_history.read")
+    assert error.value.status_code == 403
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Brecha conocida: la cobertura no valida que el sustituto tenga la especialidad de la cita.",
-)
 def test_coverage_transfer_rejects_a_substitute_without_the_appointment_specialty(specialty_context):
     db, patient, center, cardiology, _, internal, doctor_one, substitute, _, _ = specialty_context
     osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
@@ -565,6 +581,7 @@ def test_coverage_transfer_rejects_a_substitute_without_the_appointment_specialt
         center_id=center.id,
         starts_at=datetime(2026, 9, 14, 8),
         ends_at=datetime(2026, 9, 16, 18),
+        created_by_id=osiris.id,
     )
     db.add(coverage)
     db.commit()
@@ -572,4 +589,64 @@ def test_coverage_transfer_rejects_a_substitute_without_the_appointment_specialt
     assert internal.id not in {specialty.id for specialty in substitute.specialties}
     with pytest.raises(HTTPException) as error:
         transfer_appointment(coverage.id, appointment.id, osiris, db)
+    assert error.value.status_code == 422
+
+
+def test_coverage_transfer_accepts_a_secondary_active_substitute_specialty(specialty_context):
+    (
+        db, patient, center, cardiology, pediatrics, internal,
+        doctor_one, substitute, _, _,
+    ) = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+    appointment = create_appointment(
+        appointment_payload(patient.id, osiris.id, center.id, cardiology.id), osiris, db
+    )
+    coverage = ClinicalCoverage(
+        principal_doctor_id=osiris.id,
+        substitute_doctor_id=substitute.id,
+        center_id=center.id,
+        starts_at=datetime(2026, 9, 14, 8),
+        ends_at=datetime(2026, 9, 16, 18),
+        created_by_id=osiris.id,
+    )
+    db.add(coverage)
+    db.commit()
+
+    assert substitute.doctor_profile.specialty_id == pediatrics.id
+    assert cardiology.id in {specialty.id for specialty in substitute.specialties}
+    result = transfer_appointment(coverage.id, appointment.id, osiris, db)
+
+    assert result["doctor_id"] == substitute.id
+
+
+def test_coverage_transfer_rejects_an_inactive_substitute_specialty(specialty_context):
+    (
+        db, patient, center, cardiology, pediatrics, internal,
+        doctor_one, substitute, _, _,
+    ) = specialty_context
+    osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
+    set_doctor_specialties(
+        db,
+        substitute,
+        pediatrics.id,
+        [pediatrics.id, cardiology.id, internal.id],
+    )
+    appointment = create_appointment(
+        appointment_payload(patient.id, osiris.id, center.id, internal.id), osiris, db
+    )
+    internal.is_active = False
+    coverage = ClinicalCoverage(
+        principal_doctor_id=osiris.id,
+        substitute_doctor_id=substitute.id,
+        center_id=center.id,
+        starts_at=datetime(2026, 9, 14, 8),
+        ends_at=datetime(2026, 9, 16, 18),
+        created_by_id=osiris.id,
+    )
+    db.add(coverage)
+    db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        transfer_appointment(coverage.id, appointment.id, osiris, db)
+
     assert error.value.status_code == 422

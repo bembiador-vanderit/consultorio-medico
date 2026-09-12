@@ -671,16 +671,25 @@ def test_active_coverage_keeps_addenda_read_only_and_revocation_removes_read_acc
         ends_at=now + timedelta(hours=1),
         created_by_id=clinical_app["doctor_a"].id,
     )
-    db.add(coverage)
+    covered_appointment = Appointment(
+        patient_id=history.patient_id,
+        doctor_id=clinical_app["doctor_a"].id,
+        center_id=clinical_app["center"].id,
+        specialty_id=clinical_app["specialty"].id,
+        appointment_date=now.date(),
+        appointment_time=now.time().replace(microsecond=0),
+        status="scheduled",
+    )
+    db.add_all([coverage, covered_appointment])
     db.flush()
     transfer = AppointmentCoverageTransfer(
-        appointment_id=appointment.id,
+        appointment_id=covered_appointment.id,
         coverage_id=coverage.id,
         original_doctor_id=clinical_app["doctor_a"].id,
         substitute_doctor_id=clinical_app["doctor_b"].id,
         executed_by_id=clinical_app["doctor_a"].id,
     )
-    appointment.doctor_id = clinical_app["doctor_b"].id
+    covered_appointment.doctor_id = clinical_app["doctor_b"].id
     db.add(transfer)
     db.commit()
 
@@ -803,6 +812,7 @@ def test_explicit_coverage_grants_only_patient_specific_read_access_and_revocati
     )
     transfer_appointment = Appointment(
         patient_id=clinical_app["patient_a"].id, doctor_id=doctor_a.id, center_id=center.id,
+        specialty_id=clinical_app["specialty"].id,
         appointment_date=now.date(), appointment_time=now.time().replace(microsecond=0), status="scheduled",
     )
     prior_requested_test = RequestedTests(clinical_history_id=history_a.id, test_name="Hemograma previo")
@@ -886,6 +896,7 @@ def test_revoking_coverage_restores_unstarted_appointment_and_preserves_audit(cl
         patient_id=clinical_app["patient_a"].id,
         doctor_id=doctor_a.id,
         center_id=center.id,
+        specialty_id=clinical_app["specialty"].id,
         appointment_date=now.date(),
         appointment_time=now.time().replace(microsecond=0),
         status="scheduled",
@@ -932,6 +943,7 @@ def test_transferred_appointment_context_schedule_and_deletion_are_immutable(cli
         patient_id=clinical_app["patient_a"].id,
         doctor_id=doctor_a.id,
         center_id=center.id,
+        specialty_id=clinical_app["specialty"].id,
         appointment_date=now.date(),
         appointment_time=now.time().replace(microsecond=0),
         status="scheduled",
@@ -1012,6 +1024,7 @@ def test_failed_coverage_transfer_rolls_back_appointment_and_relation(clinical_a
         patient_id=clinical_app["patient_a"].id,
         doctor_id=doctor_a.id,
         center_id=center.id,
+        specialty_id=clinical_app["specialty"].id,
         appointment_date=now.date(),
         appointment_time=now.time().replace(microsecond=0),
         status="scheduled",
@@ -1585,7 +1598,8 @@ def test_coverage_in_another_center_does_not_open_history(clinical_app):
     db.add(other_center); db.flush()
     appointment = Appointment(
         patient_id=clinical_app["patient_a"].id, doctor_id=clinical_app["doctor_a"].id,
-        center_id=other_center.id, appointment_date=now.date(),
+        center_id=other_center.id, specialty_id=clinical_app["specialty"].id,
+        appointment_date=now.date(),
         appointment_time=now.time().replace(microsecond=0), status="scheduled",
     )
     db.add(appointment); db.commit()

@@ -12,6 +12,7 @@ from app.schemas.clinical_coverage import ClinicalCoverageCreate, ClinicalCovera
 from app.services.appointment_scope import is_role, secretary_can_manage
 from app.services.clinical_access import add_clinical_audit
 from app.services.clinical_coverage import coverage_allows_appointment_transfer, coverage_status, installation_now
+from app.services.clinical_specialties import active_doctor_specialties
 from app.services.coverage_notifications import add_coverage_appointment_notifications
 
 router = APIRouter(prefix="/clinical-coverages", tags=["Cobertura clínica"])
@@ -184,6 +185,17 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
     appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
     if not coverage_allows_appointment_transfer(coverage, appointment_at):
         raise HTTPException(status_code=409, detail="La cita está fuera del período de cobertura")
+    substitute = db.get(User, coverage.substitute_doctor_id)
+    substitute_specialty_ids = (
+        {specialty.id for specialty in active_doctor_specialties(substitute)}
+        if substitute is not None
+        else set()
+    )
+    if appointment.specialty_id is None or appointment.specialty_id not in substitute_specialty_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="El médico suplente no tiene asignada y activa la especialidad de la cita",
+        )
     transfer = AppointmentCoverageTransfer(
         appointment_id=appointment.id, coverage_id=coverage.id,
         original_doctor_id=appointment.doctor_id, substitute_doctor_id=coverage.substitute_doctor_id,

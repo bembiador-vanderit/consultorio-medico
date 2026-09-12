@@ -23,20 +23,18 @@ médico, paciente y centro pueden sostener episodios separados por especialidad.
 - La selección automática para médicos con una sola especialidad sigue cubierta
   por `test_single_specialty_is_selected_automatically`.
 
-## Brechas conocidas expuestas sin cambios funcionales
+## Correcciones de integridad
 
-Dos pruebas usan `xfail(strict=True)` para hacer visible el comportamiento
-actual sin modificar producción:
+Las dos brechas detectadas por las regresiones preventivas quedaron corregidas:
 
-1. `has_normal_history_access` compara paciente, médico y centro entre cita e
-   historia, pero no `specialty_id`. Una discrepancia de datos creada fuera del
-   flujo ordinario sigue obteniendo acceso normal.
-2. Una transferencia por cobertura no confirma que el médico sustituto tenga
-   asignada la especialidad de la cita transferida.
+1. El acceso a una historia vinculada exige que paciente, médico, centro y
+   especialidad coincidan con su cita. El contexto inconsistente se rechaza
+   antes de evaluar acceso normal, delegado o continuidad del principal.
+2. La transferencia por cobertura exige que el médico sustituto tenga asignada
+   y activa la especialidad de la cita. Puede ser una especialidad secundaria;
+   no necesita ser la principal del sustituto.
 
-Ambas pruebas deben pasar sin `xfail` únicamente cuando una misión específica
-de integridad y cobertura apruebe el cambio de producción y actualice esta
-documentación.
+Las pruebas que documentaban ambas brechas ya no usan `xfail`.
 
 ## Qué no implementan
 
@@ -46,7 +44,8 @@ App Shell.
 
 ## Validación
 
-- Prueba dirigida: `22 passed, 2 xfailed` en 18.62 s.
-- Suite backend completa: `173 passed, 2 xfailed` en 187.61 s.
-- Los dos `xfail` corresponden exclusivamente a las brechas descritas arriba.
-- No se ejecutaron pruebas frontend porque esta misión no modifica frontend.
+- Prueba dirigida multi-especialidad: `27 passed`.
+- Regresiones dirigidas de cobertura: `18 passed`.
+- Suite backend completa: `178 passed`.
+- Los dos antiguos `xfail` son pruebas normales y pasan.
+- No se ejecutaron pruebas frontend porque esta misión no modifica la interfaz.
