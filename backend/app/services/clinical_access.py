@@ -55,6 +55,20 @@ def principal_continuity_coverage_id(db: Session, user: User, history: ClinicalH
     )
 
 
+def history_appointment_context_is_valid(db: Session, history: ClinicalHistory) -> bool:
+    """Validate the immutable clinical context copied from a linked appointment."""
+    if history.appointment_id is None:
+        return True
+    appointment = db.get(Appointment, history.appointment_id)
+    return bool(
+        appointment
+        and appointment.patient_id == history.patient_id
+        and appointment.doctor_id == history.doctor_id
+        and appointment.center_id == history.center_id
+        and appointment.specialty_id == history.specialty_id
+    )
+
+
 def has_normal_history_access(db: Session, user: User, history: ClinicalHistory) -> bool:
     if not is_role(user, "doctor") or history.doctor_id != user.id:
         return False
@@ -66,18 +80,12 @@ def has_normal_history_access(db: Session, user: User, history: ClinicalHistory)
     # Legacy histories without appointments remain readable, but new orphan
     # histories cannot be created. When an appointment exists, its immutable
     # clinical context must match before any access is granted.
-    if history.appointment_id is None:
-        return True
-    appointment = db.get(Appointment, history.appointment_id)
-    return bool(
-        appointment
-        and appointment.patient_id == history.patient_id
-        and appointment.doctor_id == history.doctor_id
-        and appointment.center_id == history.center_id
-    )
+    return history_appointment_context_is_valid(db, history)
 
 
 def can_access_history(db: Session, user: User, history: ClinicalHistory) -> bool:
+    if not history_appointment_context_is_valid(db, history):
+        return False
     return (
         has_normal_history_access(db, user, history)
         or delegated_coverage_id(db, user, history) is not None
@@ -162,6 +170,18 @@ def require_history_access(
     history = db.get(ClinicalHistory, history_id)
     if history is None:
         raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
+    if not history_appointment_context_is_valid(db, history):
+        _deny(
+            db,
+            user,
+            action=action,
+            history_id=history.id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            reason="invalid_appointment_context",
+            status_code=403,
+            detail="No tiene acceso a esta historia clínica",
+        )
     normal_access = has_normal_history_access(db, user, history)
     delegated_id = None if normal_access else delegated_coverage_id(db, user, history)
     principal_continuity_id = (
