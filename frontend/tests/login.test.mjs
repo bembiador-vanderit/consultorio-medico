@@ -1,15 +1,14 @@
 import { after, afterEach, beforeEach, test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { JSDOM } from "jsdom";
+import { createBrowser } from "./browser.mjs";
 import { createServer } from "vite";
 
-const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: "http://localhost:5184" });
-Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true });
+const { dom } = createBrowser();
 // Import React DOM only after installing the browser environment.
 const { createElement: h, act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { AxiosError } = await import("axios");
-const server = await createServer({ server: { middlewareMode: true }, appType: "custom", optimizeDeps: { noDiscovery: true, include: [] } });
+const server = await createServer({ server: { middlewareMode: true, ws: false }, appType: "custom", optimizeDeps: { noDiscovery: true, include: [] } });
 const { default: Login } = await server.ssrLoadModule("/src/pages/Login.tsx");
 const { default: App } = await server.ssrLoadModule("/src/App.tsx");
 const { authenticate } = await server.ssrLoadModule("/src/services/login.ts");
@@ -188,7 +187,7 @@ function appAdapter(restored) {
   });
 }
 
-test("App mounts operational Login after rejected restoration, then opens the unchanged authenticated workspace", async () => {
+test("App mounts operational Login after rejected restoration, then opens the authenticated shell", async () => {
   appAdapter(false);
   await mount(App, {});
   assert.ok(host.querySelector(".atlas-login"));
@@ -196,8 +195,8 @@ test("App mounts operational Login after rejected restoration, then opens the un
   await submit();
   assert.equal(host.querySelector(".atlas-login"), null);
   assert.match(host.textContent, /Bienvenido, Personal de prueba/);
-  assert.match(host.textContent, /Sistema de gestión/);
-  assert.equal(host.querySelector(".atlas-shell"), null);
+  assert.match(host.textContent, /Espacio de trabajo/);
+  assert.ok(host.querySelector(".atlas-shell"));
 });
 
 test("App restores existing session and preserves logout returning to an empty Login", async () => {

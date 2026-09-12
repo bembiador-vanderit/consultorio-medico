@@ -1,0 +1,19 @@
+/* Frame compatibility only. Operational page bodies retain their existing UI. */
+.atlas-operational-workspace { width: 100%; max-width: 90rem; margin-inline: auto; padding: var(--atlas-page-space); min-width: 0; overflow-x: auto; }
+.atlas-shell .atlas-sidebar { position: sticky; top: 0; height: 100dvh; overflow-y: auto; }
+.atlas-shell-body { background: var(--atlas-surface-secondary); }
+.atlas-topbar { position: sticky; top: 0; z-index: var(--atlas-z-sticky); }
+.atlas-topbar-context { flex-shrink: 0; }
+.atlas-topbar-account { flex-wrap: wrap; justify-content: flex-end; }
+.atlas-topbar-account .atlas-user { min-width: 0; max-width: 24rem; }
+.atlas-topbar-account > .atlas-button { flex-shrink: 0; }
+@media (max-width: 1023px) {
+  .atlas-operational-workspace { --atlas-page-space: var(--atlas-space-5); }
+}
+@media (max-width: 639px) {
+  .atlas-operational-workspace { --atlas-page-space: var(--atlas-space-4); }
+  .atlas-topbar-account { justify-content: space-between; gap: var(--atlas-space-3); }
+  .atlas-topbar-account .atlas-user { order: -1; flex-basis: 100%; max-width: none; }
+  /* The bell sits at the left edge on narrow screens; keep its real panel visible. */
+  .atlas-topbar .atlas-notification-panel { left: 0; right: auto; width: min(calc(100vw - 2rem), 380px); }
+}
