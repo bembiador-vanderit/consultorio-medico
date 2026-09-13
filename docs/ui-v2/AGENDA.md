@@ -53,3 +53,46 @@ tipo de cita, llegada, inicio/fin, historial de reprogramación ni estados nuevo
 La futura 4B necesita duración, disponibilidad horaria, bloqueos, prevención de
 solapamiento y filtros/paginación backend. La 4C puede construir timeline
 proporcional, mes escalable y agenda avanzada sobre esas capacidades.
+## Correcciones pre-merge de PR #31
+
+- La fecha seleccionada sigue a la cita guardada en las tres vistas. Un contador
+  de refresco obliga a recargar incluso dentro de la misma semana. Drawer y
+  tarjetas se reconcilian con la respuesta del rango vigente.
+- Cada carga tiene una generación; las respuestas y errores anteriores se
+  descartan. El contenido se oculta hasta que corresponde al rango actual y se
+  vacía ante un fallo vigente.
+- Los permisos visuales comparten `appointmentRules`. El backend sigue siendo
+  la autoridad final. Médico puro no cambia paciente, centro ni médico desde la
+  edición; la especialidad se conserva editable antes de consulta/cobertura,
+  según el contrato actual.
+- Cobertura protege contexto y especialidad. Secretaría sin rol Admin conserva
+  la edición de fecha/hora cuando no hay historia clínica. Los datos de la cita
+  no incluyen el intervalo de cobertura: la API valida el nuevo horario y sus
+  errores aparecen en el diálogo activo. No se amplían scopes.
+- Una historia iniciada impide ofrecer reprogramación, cancelación, no_show y
+  eliminación. Atender requiere usuario activo, rol Médico y `doctor_id` propio,
+  incluso para Médico+Admin y Médico+Secretaría.
+- Los filtros reconcilian médico y especialidad al cambiar centro, médico y
+  opciones de alcance. Médicos homónimos se agrupan por ID.
+- Los cinco estados conservan texto y color en todas las vistas. Médicos permite
+  columnas menores de 17rem en pantallas estrechas. Los controles de búsqueda
+  tienen campos, IDs y etiquetas independientes; Agenda no anida otro `main`.
+- Eliminar reutiliza la confirmación y `DELETE /appointments/{id}` anteriores,
+  para citas no finalizadas, sin historia y sin cobertura. La nota adicional
+  reutiliza `ClinicalHistoryPanel` con `initialAddendumHistoryId` y el endpoint
+  existente; solo se ofrece al médico autor activo de una consulta completada.
+
+### Deudas preexistentes conservadas
+
+- Backend da precedencia a Secretaría sobre Médico en el alcance de Agenda;
+  esta PR no cambia esa precedencia ni promete una unión completa de scopes.
+- Las opciones de alcance pueden omitir al suplente de una cita transferida
+  visible por autorización sobre el médico original. No se añaden opciones
+  administrativas ampliando permisos desde frontend.
+- Hoy usa la zona del navegador; la configuración del equipo debe coincidir con
+  America/Santo_Domingo. Una política explícita para equipos de otras zonas queda
+  pendiente y no forma parte de los MINOR seleccionados para esta corrección.
+- `scope-options` se recarga con el rango. Un caché separado puede evaluarse si
+  las mediciones lo justifican.
+
+Los límites de 4A y las funcionalidades reservadas para 4B/4C no cambian.

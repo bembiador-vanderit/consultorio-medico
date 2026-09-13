@@ -1,34 +1,357 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Appointment } from "../types/appointment";
 import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
 import { Alert, Button, Card, LoadingState, PageHeader } from "../ui";
 import { api } from "../services/api";
 import { announceNotificationsChanged } from "../services/notificationEvents";
+import ClinicalHistoryPanel from "../components/patients/ClinicalHistoryPanel";
 import { AgendaFiltersPanel } from "../components/agenda/AgendaFiltersPanel";
 import { AgendaMiniCalendar } from "../components/agenda/AgendaMiniCalendar";
-import { AgendaDayView, AgendaDoctorsView, AgendaWeekView } from "../components/agenda/AgendaViews";
+import {
+  AgendaDayView,
+  AgendaDoctorsView,
+  AgendaWeekView,
+} from "../components/agenda/AgendaViews";
 import { AppointmentDrawer } from "../components/agenda/AppointmentDrawer";
 import { AppointmentForm } from "../components/agenda/AppointmentForm";
-import { addDays, filterAppointments, isoDate, rangeForView, type AgendaFilters, type AgendaView } from "../components/agenda/agenda";
+import {
+  addDays,
+  appointmentRules,
+  filterAppointments,
+  isoDate,
+  rangeForView,
+  reconcileFilters,
+  type AgendaFilters,
+  type AgendaScope,
+  type AgendaView,
+} from "../components/agenda/agenda";
 
-type Center = { id: number; name: string; city?: string | null };
-type Doctor = { id: number; full_name: string; center_ids: number[]; specialties: { id: number; name: string }[] };
-type ScopeOptions = { centers: Center[]; doctors: Doctor[] };
-type Props = { user: User; onBack: () => void; initialPatient?: Patient | null; canAccessClinical: boolean; onAttendAppointment: (appointment: Appointment) => void };
-const emptyFilters: AgendaFilters = { centerId: "", doctorId: "", specialtyId: "", status: "" };
-function errorMessage(reason: any) { return typeof reason?.response?.data?.detail === "string" ? reason.response.data.detail : "No fue posible cargar la Agenda."; }
-function asInput(appointment: Appointment, status: Appointment["status"]) { return { patient_id: appointment.patient_id, doctor_id: appointment.doctor_id, center_id: appointment.center_id, specialty_id: appointment.specialty_id, appointment_date: appointment.appointment_date, appointment_time: appointment.appointment_time, reason: appointment.reason, status, notes: appointment.notes }; }
-export default function Appointments({ user, onBack, initialPatient, canAccessClinical, onAttendAppointment }: Props) {
- const [view, setView] = useState<AgendaView>("day"); const [date, setDate] = useState(isoDate(new Date())); const [items, setItems] = useState<Appointment[]>([]); const [scope, setScope] = useState<ScopeOptions>({ centers: [], doctors: [] }); const [filters, setFilters] = useState(emptyFilters); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [selected, setSelected] = useState<Appointment | null>(null); const [editor, setEditor] = useState<Appointment | null | "new">(initialPatient ? "new" : null); const [mutating, setMutating] = useState(false);
- const range = rangeForView(date, view);
- async function load(nextRange = range) { setLoading(true); setError(""); try { const [appointments, options] = await Promise.all([api.get<Appointment[]>("/appointments", { params: { start: nextRange.start, end: nextRange.end } }), api.get<ScopeOptions>("/appointments/scope-options")]); setItems(appointments.data); setScope(options.data); setSelected((current) => current ? appointments.data.find((item) => item.id === current.id) ?? null : null); } catch (reason) { setError(errorMessage(reason)); } finally { setLoading(false); } }
- useEffect(() => { void load(); }, [range.start, range.end]);
- useEffect(() => { if (initialPatient) setEditor("new"); }, [initialPatient]);
- const visible = useMemo(() => filterAppointments(items, filters), [items, filters]);
- function chooseDate(next: string) { setDate(next); }
- async function updateStatus(appointment: Appointment, status: Appointment["status"]) { setMutating(true); setError(""); try { const { data } = await api.put<Appointment>(`/appointments/${appointment.id}`, asInput(appointment, status)); announceNotificationsChanged(); setItems((current) => current.map((item) => item.id === data.id ? data : item)); setSelected(data); } catch (reason) { setError(errorMessage(reason)); } finally { setMutating(false); } }
- function handleSaved(saved: Appointment) { setEditor(null); announceNotificationsChanged(); setSelected(saved); const nextRange = rangeForView(saved.appointment_date, view); if (saved.appointment_date !== date && view !== "doctors") setDate(saved.appointment_date); else void load(nextRange); }
- const activeLabel = view === "day" ? "Día" : view === "week" ? "Semana" : "Médicos";
- return <div className="atlas-page agenda-page"><PageHeader title="Agenda" description="Citas con datos reales dentro de su alcance." actions={<div className="atlas-actions"><Button variant="outline" onClick={onBack}>Volver al dashboard</Button><Button onClick={() => setEditor("new")}>+ Nueva cita</Button></div>} /><div className="agenda-toolbar"><div className="atlas-actions"><Button variant="outline" onClick={() => chooseDate(isoDate(new Date()))}>Hoy</Button><Button variant="outline" aria-label="Fecha anterior" onClick={() => chooseDate(addDays(date, view === "week" ? -7 : -1))}>‹</Button><strong>{activeLabel}</strong><Button variant="outline" aria-label="Fecha siguiente" onClick={() => chooseDate(addDays(date, view === "week" ? 7 : 1))}>›</Button></div><div className="atlas-actions" role="group" aria-label="Vista de Agenda">{([ ["day", "Día"], ["week", "Semana"], ["doctors", "Médicos"] ] as const).map(([id, label]) => <Button key={id} variant={view === id ? "primary" : "outline"} aria-pressed={view === id} onClick={() => setView(id)}>{label}</Button>)}</div></div>{error && <Alert tone="danger" title="Agenda no disponible">{error}</Alert>}<div className="agenda-layout"><aside className="agenda-sidebar"><AgendaMiniCalendar selectedDate={date} onSelect={chooseDate} /><AgendaFiltersPanel filters={filters} centers={scope.centers} doctors={scope.doctors} onChange={setFilters} onClear={() => setFilters(emptyFilters)} /></aside><main aria-live="polite">{loading ? <Card><LoadingState label="Cargando citas del período seleccionado…" /></Card> : view === "day" ? <AgendaDayView appointments={visible} date={date} onSelect={setSelected} /> : view === "week" ? <AgendaWeekView appointments={visible} date={date} onSelect={setSelected} /> : <AgendaDoctorsView appointments={visible} onSelect={setSelected} />}</main></div><AppointmentDrawer appointment={selected} open={Boolean(selected)} onClose={() => setSelected(null)} canAccessClinical={canAccessClinical} onEdit={(appointment) => { setSelected(null); setEditor(appointment); }} onAttend={onAttendAppointment} onSetStatus={(appointment, status) => void updateStatus(appointment, status)} busy={mutating} />{editor !== null && <AppointmentForm appointment={editor === "new" ? null : editor} initialPatient={editor === "new" ? initialPatient : null} date={date} centers={scope.centers} user={user} onClose={() => setEditor(null)} onSaved={handleSaved} />}</div>;
+type Props = {
+  user: User;
+  onBack: () => void;
+  initialPatient?: Patient | null;
+  canAccessClinical: boolean;
+  onAttendAppointment: (appointment: Appointment) => void;
+};
+const emptyFilters: AgendaFilters = {
+  centerId: "",
+  doctorId: "",
+  specialtyId: "",
+  status: "",
+};
+function errorMessage(reason: any) {
+  return typeof reason?.response?.data?.detail === "string"
+    ? reason.response.data.detail
+    : "No fue posible realizar la operación. Inténtelo de nuevo.";
+}
+function asInput(appointment: Appointment, status: Appointment["status"]) {
+  return {
+    patient_id: appointment.patient_id,
+    doctor_id: appointment.doctor_id,
+    center_id: appointment.center_id,
+    specialty_id: appointment.specialty_id,
+    appointment_date: appointment.appointment_date,
+    appointment_time: appointment.appointment_time,
+    reason: appointment.reason,
+    status,
+    notes: appointment.notes,
+  };
+}
+export default function Appointments({
+  user,
+  onBack,
+  initialPatient,
+  canAccessClinical,
+  onAttendAppointment,
+}: Props) {
+  const [view, setView] = useState<AgendaView>("day");
+  const [date, setDate] = useState(isoDate(new Date()));
+  const [items, setItems] = useState<Appointment[]>([]);
+  const [scope, setScope] = useState<AgendaScope>({ centers: [], doctors: [] });
+  const [filters, setFilters] = useState(emptyFilters);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [selected, setSelected] = useState<Appointment | null>(null);
+  const [editor, setEditor] = useState<Appointment | null | "new">(
+    initialPatient ? "new" : null,
+  );
+  const [addendum, setAddendum] = useState<Appointment | null>(null);
+  const [mutating, setMutating] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const [loadedKey, setLoadedKey] = useState("");
+  const generation = useRef(0);
+  const range = rangeForView(date, view);
+  const rangeKey = `${range.start}/${range.end}/${refresh}`;
+
+  useEffect(() => {
+    const request = ++generation.current;
+    setLoading(true);
+    setError("");
+    setItems([]);
+    void Promise.all([
+      api.get<Appointment[]>("/appointments", {
+        params: { start: range.start, end: range.end },
+      }),
+      api.get<AgendaScope>("/appointments/scope-options"),
+    ])
+      .then(([appointments, options]) => {
+        if (request !== generation.current) return;
+        setItems(appointments.data);
+        setScope(options.data);
+        setFilters((current) => reconcileFilters(current, options.data));
+        setSelected((current) =>
+          current
+            ? (appointments.data.find((item) => item.id === current.id) ?? null)
+            : null,
+        );
+      })
+      .catch((reason) => {
+        if (request !== generation.current) return;
+        setItems([]);
+        setSelected(null);
+        setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (request === generation.current) {
+          setLoading(false);
+          setLoadedKey(rangeKey);
+        }
+      });
+    return () => {
+      generation.current += 1;
+    };
+  }, [range.start, range.end, refresh]);
+  useEffect(() => {
+    if (initialPatient) setEditor("new");
+  }, [initialPatient]);
+  const visible = useMemo(
+    () => filterAppointments(items, filters),
+    [items, filters],
+  );
+  function chooseDate(next: string) {
+    setSelected(null);
+    setActionError("");
+    setDate(next);
+  }
+  function chooseView(next: AgendaView) {
+    setSelected(null);
+    setActionError("");
+    setView(next);
+  }
+  function selectAppointment(item: Appointment) {
+    setActionError("");
+    setSelected(item);
+  }
+  async function updateStatus(
+    appointment: Appointment,
+    status: Appointment["status"],
+  ) {
+    if (mutating || loading || loadedKey !== rangeKey) return;
+    setMutating(true);
+    setActionError("");
+    // Invalidate a refresh already in flight so it cannot overwrite this mutation.
+    generation.current += 1;
+    try {
+      const { data } = await api.put<Appointment>(
+        `/appointments/${appointment.id}`,
+        asInput(appointment, status),
+      );
+      announceNotificationsChanged();
+      setItems((current) =>
+        current.map((item) => (item.id === data.id ? data : item)),
+      );
+      setSelected(data);
+    } catch (reason) {
+      setActionError(errorMessage(reason));
+    } finally {
+      setMutating(false);
+    }
+  }
+  function handleSaved(saved: Appointment) {
+    generation.current += 1;
+    setEditor(null);
+    setActionError("");
+    announceNotificationsChanged();
+    setDate(saved.appointment_date);
+    setSelected(saved);
+    setRefresh((current) => current + 1);
+  }
+  async function remove(appointment: Appointment) {
+    if (
+      mutating ||
+      loading ||
+      loadedKey !== rangeKey ||
+      !appointmentRules(appointment, user).canDelete ||
+      !window.confirm("¿Eliminar esta cita?")
+    )
+      return;
+    setMutating(true);
+    setActionError("");
+    generation.current += 1;
+    try {
+      await api.delete(`/appointments/${appointment.id}`);
+      setItems((current) =>
+        current.filter((item) => item.id !== appointment.id),
+      );
+      setSelected(null);
+      announceNotificationsChanged();
+      setRefresh((current) => current + 1);
+    } catch (reason) {
+      setActionError(errorMessage(reason));
+    } finally {
+      setMutating(false);
+    }
+  }
+  const activeLabel =
+    view === "day" ? "Día" : view === "week" ? "Semana" : "Médicos";
+  return (
+    <div className="atlas-page agenda-page">
+      <PageHeader
+        title="Agenda"
+        description="Citas con datos reales dentro de su alcance."
+        actions={
+          <div className="atlas-actions">
+            <Button variant="outline" onClick={onBack}>
+              Volver al dashboard
+            </Button>
+            <Button onClick={() => setEditor("new")}>+ Nueva cita</Button>
+          </div>
+        }
+      />
+      <div className="agenda-toolbar">
+        <div className="atlas-actions">
+          <Button
+            variant="outline"
+            onClick={() => chooseDate(isoDate(new Date()))}
+          >
+            Hoy
+          </Button>
+          <Button
+            variant="outline"
+            aria-label="Fecha anterior"
+            onClick={() => chooseDate(addDays(date, view === "week" ? -7 : -1))}
+          >
+            ‹
+          </Button>
+          <strong>{activeLabel}</strong>
+          <Button
+            variant="outline"
+            aria-label="Fecha siguiente"
+            onClick={() => chooseDate(addDays(date, view === "week" ? 7 : 1))}
+          >
+            ›
+          </Button>
+        </div>
+        <div
+          className="atlas-actions"
+          role="group"
+          aria-label="Vista de Agenda"
+        >
+          {(
+            [
+              ["day", "Día"],
+              ["week", "Semana"],
+              ["doctors", "Médicos"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              variant={view === id ? "primary" : "outline"}
+              aria-pressed={view === id}
+              onClick={() => chooseView(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {error && (
+        <Alert tone="danger" title="Agenda no disponible">
+          {error}
+        </Alert>
+      )}
+      <div className="agenda-layout">
+        <aside className="agenda-sidebar">
+          <AgendaMiniCalendar selectedDate={date} onSelect={chooseDate} />
+          <AgendaFiltersPanel
+            filters={filters}
+            centers={scope.centers}
+            doctors={scope.doctors}
+            onChange={(next) => setFilters(reconcileFilters(next, scope))}
+            onClear={() => setFilters(emptyFilters)}
+          />
+        </aside>
+        <section aria-label="Citas del período seleccionado" aria-live="polite">
+          {loading || loadedKey !== rangeKey ? (
+            <Card>
+              <LoadingState label="Cargando citas del período seleccionado…" />
+            </Card>
+          ) : view === "day" ? (
+            <AgendaDayView
+              appointments={visible}
+              date={date}
+              onSelect={selectAppointment}
+            />
+          ) : view === "week" ? (
+            <AgendaWeekView
+              appointments={visible}
+              date={date}
+              onSelect={selectAppointment}
+            />
+          ) : (
+            <AgendaDoctorsView
+              appointments={visible}
+              onSelect={selectAppointment}
+            />
+          )}
+        </section>
+      </div>
+      <AppointmentDrawer
+        appointment={selected}
+        open={Boolean(selected)}
+        user={user}
+        onClose={() => {
+          if (!mutating) setSelected(null);
+        }}
+        canAccessClinical={canAccessClinical}
+        onEdit={(appointment) => {
+          setSelected(null);
+          setEditor(appointment);
+        }}
+        onAttend={onAttendAppointment}
+        onSetStatus={(appointment, status) =>
+          void updateStatus(appointment, status)
+        }
+        onDelete={(appointment) => void remove(appointment)}
+        onAddAddendum={(appointment) => {
+          setSelected(null);
+          setAddendum(appointment);
+        }}
+        busy={mutating || loading || loadedKey !== rangeKey}
+        error={actionError}
+      />
+      {editor !== null && (
+        <AppointmentForm
+          appointment={editor === "new" ? null : editor}
+          initialPatient={editor === "new" ? initialPatient : null}
+          date={date}
+          centers={scope.centers}
+          user={user}
+          onClose={() => setEditor(null)}
+          onSaved={handleSaved}
+        />
+      )}
+      {addendum && (
+        <ClinicalHistoryPanel
+          patientId={addendum.patient_id}
+          patientName={addendum.patient_name}
+          user={user}
+          initialAddendumHistoryId={addendum.clinical_history_id}
+          onClose={() => setAddendum(null)}
+        />
+      )}
+    </div>
+  );
 }

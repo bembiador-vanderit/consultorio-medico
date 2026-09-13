@@ -268,3 +268,37 @@ La fase introduce las vistas Día, Semana y Médicos, navegación por mini calen
 filtros sobre datos autorizados, drawer accesible, formulario existente integrado y
 acciones que reutilizan endpoints existentes. No incluye vista Mes, duración,
 intervalos, slots ni disponibilidad horaria.
+
+## PR #31 — correcciones pre-merge
+
+Validación ejecutada sobre la corrección, en una copia aislada de
+`frontend/ui-v2-agenda-phase-4a`, con Node 22 en contenedor:
+
+| Validación | Resultado |
+| --- | --- |
+| Agenda: `node --test tests/agenda.test.mjs tests/agenda-ui.test.mjs` | 42 passed / 0 failed |
+| Suite frontend: `npm test` | 83 passed / 0 failed |
+| TypeScript: `tsc -b` | PASS |
+| Producción: `npm run build` (`tsc -b && vite build`) | PASS |
+| `docker compose -p atlas-pr31-fixes config -q` | PASS, variables efímeras de validación, sin levantar backend/DB |
+| `docker compose -p atlas-pr31-fixes build frontend` | PASS; imagen aislada, sin modificar servicios existentes |
+| Edge headless, tres vistas a 320/375/768/1024/1440 px | 15 casos PASS: sin overflow de página/contenedor, estados visibles, Drawer dentro del viewport, Escape y retorno de foco |
+
+Las pruebas nuevas verifican parámetros y cantidades de GET, crear/editar,
+refresco en la misma semana, reprogramación en Médicos, respuestas/errores fuera
+de orden, payloads de Confirmar/Cancelar/no_show, restricciones de historia,
+cobertura, médico puro y multirol, errores dentro del Drawer, filtros combinados
+y reconciliados, homónimos, especialidades por cita, cinco etiquetas de estado,
+IDs y labels, DELETE y apertura/guardado de la nota adicional existente.
+El test del Shell valida la limpieza del paciente también fuera de `main`, donde
+vive el portal del formulario.
+
+Los datos del navegador fueron ficticios, con API interceptada; esa comprobación
+valida layout e interacción, no reemplaza una prueba integrada de permisos con
+backend. La disponibilidad diaria y el intervalo de cobertura continúan siendo
+validados por los endpoints existentes.
+
+El workflow existente solo escucha push y pull_request hacia `main`, además de
+workflow_dispatch. Un push de esta rama y este PR hacia
+`feat/complete-care-context` no cumple esos disparadores. No se cambia el workflow
+ni la base del PR para activar CI.

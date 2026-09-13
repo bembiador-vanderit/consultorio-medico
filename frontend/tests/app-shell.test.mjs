@@ -83,7 +83,7 @@ test("patient scheduling opens Agenda with that patient; navigation to Agenda cl
   assert.match(document.body.textContent, /Paciente Ficticio/);
   await click(button("Dashboard", navigation()));
   await click(button("Agenda", navigation()));
-  assert.doesNotMatch(host.querySelector("main").textContent, /Paciente Ficticio/);
+  assert.doesNotMatch(document.body.textContent, /Paciente Ficticio/);
 });
 
 test("real notification bell keeps unread data, read endpoint and Dashboard callback", async () => {
