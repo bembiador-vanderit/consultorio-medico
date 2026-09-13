@@ -96,3 +96,10 @@ export function AgendaFiltersPanel({
     </Card>
   );
 }
+
+export function AgendaStatusLegend() {
+  return <Card className="agenda-status-legend" aria-label="Leyenda de estados">
+    <h3 className="atlas-card-title">Estados</h3>
+    {Object.entries(appointmentStatusLabels).map(([status, label]) => <span className={`agenda-status-legend-item agenda-status-legend-item--${status}`} key={status}><i aria-hidden="true" />{label}</span>)}
+  </Card>;
+}

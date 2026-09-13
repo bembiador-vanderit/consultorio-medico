@@ -179,6 +179,11 @@ test("Mes carga el rango completo y navega por primer día de cada mes", () => {
  assert.equal(agenda.addMonths("2026-03-31", -1), "2026-02-01");
  assert.equal(agenda.addMonths("2026-12-15", 1), "2027-01-01");
 });
+test("eje semanal se limita a las horas registradas sin inferir duración", () => {
+ assert.deepEqual(agenda.weekTimelineBounds([{ appointment_time: "08:30:00" }, { appointment_time: "10:15:00" }]), { startMinutes: 480, endMinutes: 660, hours: 3 });
+ assert.equal(agenda.weekTimelineBounds([]), null);
+ assert.equal(agenda.formatTimelineHour(600), "10:00");
+});
 test("workspace de Agenda no conserva un max-width global restrictivo", async () => {
  const { readFile } = await import("node:fs/promises");
  const shell = await readFile(new URL("../src/layouts/operational-shell.css", import.meta.url), "utf8");
@@ -186,6 +191,9 @@ test("workspace de Agenda no conserva un max-width global restrictivo", async ()
  assert.match(shell, /atlas-operational-workspace--agenda \{ max-width: none/);
  assert.match(css, /\.agenda-page \{ max-width:none/);
  assert.match(css, /agenda-layout--panel/);
+ assert.match(css, /agenda-week-grid \{ --agenda-week-hours: 1; display:grid/);
+ assert.match(css, /agenda-week-appointment-card--scheduled/);
+ assert.match(css, /agenda-week-appointment-card--no_show/);
  assert.match(css, /grid-template-rows:auto repeat\(6,minmax\(5\.5rem,1fr\)\)/);
  assert.match(css, /agenda-month-panel-scroll\{min-height:0;overflow-y:auto/);
 });

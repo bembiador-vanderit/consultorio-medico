@@ -1,20 +1,22 @@
 # Entrega y validación — UI V2
 
-## PR #31 — Agenda Mes y aprovechamiento del viewport
+## PR #31 — Agenda Mes, Semana y aprovechamiento del viewport
 
-La vista Mes usa una sola consulta mensual y mantiene las celdas uniformes,
-incluso ante más de tres citas. Día vacío, celda, `+N más` y una cita directa
-resuelven en el mismo panel derecho: lista local, detalle, retorno y cierre.
-El shell deja que Agenda use el ancho restante después de la barra lateral; el
-calendario recupera su espacio al cerrar el panel.
+Mes usa una sola consulta mensual y mantiene las celdas uniformes, incluso ante
+más de tres citas. Semana usa eje de horas registradas, tarjetas compactas y
+colores para los cinco estados sin ocultar su texto. Día vacío, celda, `+N más`,
+encabezado de día semanal y una cita directa resuelven en el mismo panel derecho:
+lista local, detalle, retorno y cierre. El shell deja que Agenda use el ancho
+restante después de la barra lateral; el calendario recupera su espacio al cerrar
+el panel.
 
 | Validación | Resultado |
 | --- | --- |
-| Pruebas frontend Node/Vite/jsdom | 89 aprobadas, 0 fallidas |
+| Pruebas frontend Node/Vite/jsdom | 91 aprobadas, 0 fallidas |
 | TypeScript `tsc -b` | Correcto |
 | Vite producción | Correcto |
-| Docker Node/Linux | 89 aprobadas, 0 fallidas; build correcto |
-| Navegador aislado | 1920×1200, 1440×1000, 1366×900, 1024×900, 768×900, 375×812 y 320×700 sin overflow horizontal |
+| Docker Node/Linux | 91 aprobadas, 0 fallidas; build correcto |
+| Navegador aislado | 1920×1200, 1440×1000, 1366×900, 1280×800, 1024×900, 768×900, 375×812 y 320×700 sin overflow horizontal |
 
 En 1920×1200 el espacio útil de Agenda fue 1664 px: el calendario midió 1376 px
 sin panel y 992 px con panel de 360 px; al cerrarlo volvió a 1376 px. El panel

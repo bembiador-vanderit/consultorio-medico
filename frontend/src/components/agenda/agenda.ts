@@ -164,6 +164,23 @@ export function formatDate(
 export function formatTime(value: string) {
   return value.slice(0, 5);
 }
+export function timeToMinutes(value: string) {
+  const [hour = "0", minute = "0"] = value.split(":");
+  return Number(hour) * 60 + Number(minute);
+}
+export function weekTimelineBounds(items: Appointment[]) {
+  const times = items.map((item) => timeToMinutes(item.appointment_time));
+  if (!times.length) return null;
+  const startMinutes = Math.floor(Math.min(...times) / 60) * 60;
+  const endMinutes = Math.max(
+    startMinutes + 60,
+    Math.ceil((Math.max(...times) + 1) / 60) * 60,
+  );
+  return { startMinutes, endMinutes, hours: (endMinutes - startMinutes) / 60 };
+}
+export function formatTimelineHour(minutes: number) {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:00`;
+}
 export function sortByTime(items: Appointment[]) {
   return [...items].sort(
     (a, b) =>

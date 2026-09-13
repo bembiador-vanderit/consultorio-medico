@@ -13,8 +13,11 @@ drawer, badge de estado y formulario.
 
 - **Día** es la vista inicial. Solicita `GET /appointments?start=fecha&end=fecha`
   y presenta eventos por su hora registrada.
-- **Semana** hace una única solicitud para siete días y agrupa sus resultados por
-  día.
+- **Semana** hace una única solicitud para siete días y usa una cuadrícula con
+  eje horario. La escala empieza y termina en horas realmente registradas; no
+  representa duración, disponibilidad ni slots. Cada cita conserva hora,
+  paciente, motivo, especialidad y estado en una tarjeta compacta con texto
+  contenido y color semántico.
 - **Mes** hace una única solicitud desde el primer hasta el último día del mes y
   presenta una cuadrícula de seis semanas. Cada celda conserva la misma altura:
   muestra hasta tres citas y `+N más`, sin crecer con la cantidad de registros.
@@ -28,7 +31,8 @@ Al elegir un día en Mes, o `+N más`, se abre el panel derecho **Citas del día
 con solo las citas ya autorizadas y filtradas. Elegir una cita transforma ese
 mismo panel en su detalle; `← Citas del día` regresa a la lista y cerrar libera
 el espacio para el calendario. No se abre un segundo drawer ni se realiza una
-consulta por día.
+consulta por día. En Semana, el encabezado de cada día abre esa misma lista y
+una tarjeta abre el detalle en el mismo panel.
 
 ## Datos y acciones reales
 
