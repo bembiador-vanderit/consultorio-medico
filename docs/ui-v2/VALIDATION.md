@@ -1,5 +1,28 @@
 # Entrega y validación — UI V2
 
+## PR #31 — Agenda Mes y aprovechamiento del viewport
+
+La vista Mes usa una sola consulta mensual y mantiene las celdas uniformes,
+incluso ante más de tres citas. Día vacío, celda, `+N más` y una cita directa
+resuelven en el mismo panel derecho: lista local, detalle, retorno y cierre.
+El shell deja que Agenda use el ancho restante después de la barra lateral; el
+calendario recupera su espacio al cerrar el panel.
+
+| Validación | Resultado |
+| --- | --- |
+| Pruebas frontend Node/Vite/jsdom | 89 aprobadas, 0 fallidas |
+| TypeScript `tsc -b` | Correcto |
+| Vite producción | Correcto |
+| Docker Node/Linux | 89 aprobadas, 0 fallidas; build correcto |
+| Navegador aislado | 1920×1200, 1440×1000, 1366×900, 1024×900, 768×900, 375×812 y 320×700 sin overflow horizontal |
+
+En 1920×1200 el espacio útil de Agenda fue 1664 px: el calendario midió 1376 px
+sin panel y 992 px con panel de 360 px; al cerrarlo volvió a 1376 px. El panel
+mantiene scroll local. En 1440, 1366 y 1024 se verificó el mismo cierre y
+recuperación; en tablet/móvil el panel se apila y conserva su scroll local.
+
+No se modificaron backend, contratos, migraciones ni datos clínicos.
+
 ## Fase 3 — Dashboards por rol
 
 Rama `frontend/ui-v2-role-dashboards`; base exacta

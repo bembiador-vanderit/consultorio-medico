@@ -659,3 +659,36 @@ test("las cinco etiquetas de estado permanecen en Semana y Médicos", async () =
   assert.deepEqual([...host.querySelectorAll(".atlas-badge")].map(item=>item.textContent),["Programada","Confirmada","Completada","Cancelada","No asistió"]);
  }
 });
+
+test("Mes hace una carga mensual, abre lista completa, detalle y libera panel", async () => {
+  items = Array.from({ length: 5 }, (_, index) => ({ ...fixture, id: index + 1, patient_name: `Paciente ${index + 1}`, appointment_time: `0${8 + index}:00:00` }));
+  await mount(); await click(button("Mes", host));
+  assert.deepEqual(gets().at(-1).params, { start: "2026-09-01", end: "2026-09-30" });
+  const day = [...host.querySelectorAll(".agenda-month-day")].find((item) => item.querySelector(".agenda-month-date").textContent === "14" && !item.classList.contains("agenda-month-day--outside"));
+  await click(day); assert.match(host.textContent, /Citas del día/); assert.equal(host.querySelectorAll(".agenda-day-list-item").length, 5); assert.match(host.textContent, /\+2 más/);
+  await click(host.querySelector(".agenda-day-list-item")); assert.match(host.textContent, /Detalle de la cita/); assert.equal(document.querySelector("dialog[open]"), null);
+  await click(button("← Citas del día", host)); assert.equal(host.querySelectorAll(".agenda-day-list-item").length, 5);
+  await click(host.querySelector('[aria-label="Cerrar panel del día"]')); assert.equal(host.querySelector(".agenda-month-panel"), null);
+});
+
+test("click directo de una cita mensual abre detalle en el mismo panel", async () => {
+  await mount(); await click(button("Mes", host));
+  await click(host.querySelector(".agenda-month-entry"));
+  assert.match(host.textContent, /Detalle de la cita/); assert.equal(document.querySelectorAll("dialog[open]").length, 0);
+});
+
+test("+N más abre la lista completa del día sin expandir su celda", async () => {
+  items = Array.from({ length: 5 }, (_, index) => ({ ...fixture, id: index + 1, patient_name: `Paciente ${index + 1}`, appointment_time: `0${8 + index}:00:00` }));
+  await mount(); await click(button("Mes", host));
+  await click(button("+2 más", host));
+  assert.match(host.textContent, /Citas del día/);
+  assert.equal(host.querySelectorAll(".agenda-day-list-item").length, 5);
+});
+
+test("Mes aplica filtros antes de construir la lista del día", async () => {
+  items = [{ ...fixture }, { ...fixture, id: 9, specialty_id: 7, specialty_name: "Cardiología" }];
+  await mount(); await click(button("Mes", host));
+  const selects = host.querySelector(".agenda-filters").querySelectorAll("select"); await change(selects[2], "7");
+  const day = [...host.querySelectorAll(".agenda-month-day")].find((item) => item.querySelector(".agenda-month-date").textContent === "14" && !item.classList.contains("agenda-month-day--outside"));
+  await click(day); assert.equal(host.querySelectorAll(".agenda-day-list-item").length, 1); assert.match(host.textContent, /Cardiología/);
+});

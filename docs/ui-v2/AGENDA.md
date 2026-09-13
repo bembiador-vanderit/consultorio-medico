@@ -15,14 +15,20 @@ drawer, badge de estado y formulario.
   y presenta eventos por su hora registrada.
 - **Semana** hace una única solicitud para siete días y agrupa sus resultados por
   día.
+- **Mes** hace una única solicitud desde el primer hasta el último día del mes y
+  presenta una cuadrícula de seis semanas. Cada celda conserva la misma altura:
+  muestra hasta tres citas y `+N más`, sin crecer con la cantidad de registros.
 - **Médicos** agrupa solo las citas ya visibles para el usuario. No afirma que
   un médico sin citas esté disponible.
 - El mini calendario navega fechas y el botón Hoy restaura la fecha actual.
 - Centro y médico proceden de `GET /appointments/scope-options`; especialidad y
   estado filtran el rango cargado. Los filtros no alteran autorización.
 
-No hay vista Mes en 4A: el endpoint aún no aporta paginación ni agregados
-mensuales.
+Al elegir un día en Mes, o `+N más`, se abre el panel derecho **Citas del día**
+con solo las citas ya autorizadas y filtradas. Elegir una cita transforma ese
+mismo panel en su detalle; `← Citas del día` regresa a la lista y cerrar libera
+el espacio para el calendario. No se abre un segundo drawer ni se realiza una
+consulta por día.
 
 ## Datos y acciones reales
 
@@ -41,10 +47,14 @@ verificación clínica.
 
 La API sigue determinando scope de Médico, Secretaría, Administrador y roles
 combinados. Secretaría no recibe datos clínicos; Administración no recibe acceso
-clínico por su rol administrativo. La composición pasa de barra lateral y área
-principal a una sola columna en tablet/móvil; las citas son tarjetas sin scroll
-horizontal. El drawer usa el componente accesible compartido: foco inicial,
-trampa de Tab, Escape, retorno de foco y etiquetas semánticas.
+clínico por su rol administrativo. En escritorio Agenda ocupa el ancho útil tras
+el shell: mini calendario, filtros y leyenda a la izquierda; calendario al centro;
+y el panel derecho solo al seleccionar día o cita. La Agenda de Mes y las columnas
+semanales contienen su propio scroll para aprovechar el viewport sin hacer crecer
+la página. En tablet/móvil la composición pasa a una columna; el panel se sitúa
+debajo del calendario con altura local limitada y las citas son tarjetas sin scroll
+horizontal. El drawer usa el componente accesible compartido: foco inicial, trampa
+de Tab, Escape, retorno de foco y etiquetas semánticas.
 
 ## Límites de 4A
 
@@ -52,7 +62,7 @@ No se representan duración, intervalos, huecos disponibles, recesos, bloqueos,
 tipo de cita, llegada, inicio/fin, historial de reprogramación ni estados nuevos.
 La futura 4B necesita duración, disponibilidad horaria, bloqueos, prevención de
 solapamiento y filtros/paginación backend. La 4C puede construir timeline
-proporcional, mes escalable y agenda avanzada sobre esas capacidades.
+proporcional y agenda avanzada sobre esas capacidades.
 ## Correcciones pre-merge de PR #31
 
 - La fecha seleccionada sigue a la cita guardada en las tres vistas. Un contador

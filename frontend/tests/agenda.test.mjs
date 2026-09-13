@@ -173,3 +173,19 @@ test("nota adicional y atención no elevan permisos por rol administrativo ni us
  assert.equal(agenda.appointmentRules(appointment,{id:9,roles:["doctor","admin"],is_active:true}).canAddAddendum,false);
  assert.equal(agenda.appointmentRules({...appointment,status:"scheduled"},{id:2,roles:["doctor"],is_active:false}).canAttend,false);
 });
+test("Mes carga el rango completo y navega por primer día de cada mes", () => {
+ assert.deepEqual(agenda.rangeForView("2026-09-14", "month"), { start: "2026-09-01", end: "2026-09-30" });
+ assert.deepEqual(agenda.rangeForView("2028-02-14", "month"), { start: "2028-02-01", end: "2028-02-29" });
+ assert.equal(agenda.addMonths("2026-03-31", -1), "2026-02-01");
+ assert.equal(agenda.addMonths("2026-12-15", 1), "2027-01-01");
+});
+test("workspace de Agenda no conserva un max-width global restrictivo", async () => {
+ const { readFile } = await import("node:fs/promises");
+ const shell = await readFile(new URL("../src/layouts/operational-shell.css", import.meta.url), "utf8");
+ const css = await readFile(new URL("../src/index.css", import.meta.url), "utf8");
+ assert.match(shell, /atlas-operational-workspace--agenda \{ max-width: none/);
+ assert.match(css, /\.agenda-page \{ max-width:none/);
+ assert.match(css, /agenda-layout--panel/);
+ assert.match(css, /grid-template-rows:auto repeat\(6,minmax\(5\.5rem,1fr\)\)/);
+ assert.match(css, /agenda-month-panel-scroll\{min-height:0;overflow-y:auto/);
+});

@@ -1,7 +1,7 @@
 import type { Appointment } from "../../types/appointment";
 import type { User } from "../../types/user";
 
-export type AgendaView = "day" | "week" | "doctors";
+export type AgendaView = "day" | "week" | "month" | "doctors";
 export type AgendaFilters = {
   centerId: string;
   doctorId: string;
@@ -139,10 +139,17 @@ export function addDays(value: string, days: number) {
   date.setDate(date.getDate() + days);
   return isoDate(date);
 }
+export function addMonths(value: string, months: number) {
+  const date = parseDate(value);
+  return isoDate(new Date(date.getFullYear(), date.getMonth() + months, 1));
+}
 export function rangeForView(date: string, view: AgendaView) {
-  return view === "week"
-    ? { start: startOfWeek(date), end: addDays(startOfWeek(date), 6) }
-    : { start: date, end: date };
+  if (view === "week") return { start: startOfWeek(date), end: addDays(startOfWeek(date), 6) };
+  if (view === "month") {
+    const value = parseDate(date);
+    return { start: isoDate(new Date(value.getFullYear(), value.getMonth(), 1)), end: isoDate(new Date(value.getFullYear(), value.getMonth() + 1, 0)) };
+  }
+  return { start: date, end: date };
 }
 export function formatDate(
   value: string,
