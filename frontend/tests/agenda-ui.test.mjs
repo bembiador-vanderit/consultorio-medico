@@ -363,6 +363,7 @@ test("crear cita para otra fecha refresca lista y abre el panel contextual", asy
       first_name: "Ana",
       last_name: "Torres",
       date_of_birth: "1988-01-01",
+      selection_token: "fixture-selection-proof",
     },
   });
   await change(control("Centro"), "1");
@@ -374,6 +375,7 @@ test("crear cita para otra fecha refresca lista y abre el panel contextual", asy
     (item) => item.method === "post" && item.url === "/appointments",
   );
   assert.equal(JSON.parse(call.data).specialty_id, 7);
+  assert.equal(JSON.parse(call.data).patient_selection_token, "fixture-selection-proof");
   assert.deepEqual(gets().at(-1).params, {
     start: "2026-09-15",
     end: "2026-09-15",
@@ -743,6 +745,7 @@ test("detalle modal de Día cierra por backdrop, botón, Escape y conserva conte
   const filters = host.querySelector(".agenda-filters").querySelectorAll("select");
   await change(filters[3], "scheduled");
   const trigger = host.querySelector(".agenda-appointment-card--day");
+  trigger.focus(); // jsdom click() does not apply native mouse focus before opening.
   const initialGets = gets().length;
   await click(trigger);
   const modal = dialog();

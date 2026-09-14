@@ -6,4 +6,5 @@ export type Patient = {
   phone: string | null;
   email: string | null;
   created_at: string;
+  selection_token?: string;
 };

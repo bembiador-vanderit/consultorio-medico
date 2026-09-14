@@ -28,6 +28,7 @@ type Identity = {
   date_of_birth: string;
   phone_masked: string | null;
   email_masked: string | null;
+  selection_token?: string;
 };
 const blank = (date: string, patient?: Patient | null): AppointmentInput => ({
   patient_id: patient?.id ?? 0,
@@ -210,9 +211,10 @@ export function AppointmentForm({
     setSaving(true);
     setError("");
     try {
+      const payload = { ...form, patient_selection_token: patient?.selection_token };
       const response = appointment
-        ? await api.put<Appointment>(`/appointments/${appointment.id}`, form)
-        : await api.post<Appointment>("/appointments", form);
+        ? await api.put<Appointment>(`/appointments/${appointment.id}`, payload)
+        : await api.post<Appointment>("/appointments", payload);
       onSaved(response.data);
     } catch (reason) {
       setError(message(reason));

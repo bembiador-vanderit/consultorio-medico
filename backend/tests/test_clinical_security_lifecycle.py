@@ -216,7 +216,7 @@ def test_restricted_identity_search_returns_minimum_without_clinical_data(clinic
     assert response.status_code == 200
     assert len(response.json()) == 1
     identity = response.json()[0]
-    assert set(identity) == {"id", "first_name", "last_name", "date_of_birth", "phone_masked", "email_masked"}
+    assert set(identity) == {"id", "first_name", "last_name", "date_of_birth", "phone_masked", "email_masked", "selection_token"}
     assert identity["id"] == patient.id
     assert identity["phone_masked"].endswith("0101")
     assert "clinical_history" not in identity
@@ -230,8 +230,12 @@ def test_new_own_appointment_grants_patient_context_but_not_other_doctors_histor
     clinical_app["active_user"]["value"] = doctor
     before_count = clinical_app["db"].scalar(select(func.count()).select_from(Patient))
 
+    selected = client.get("/api/v1/patients/identity-search", params={"date_of_birth": patient.date_of_birth.isoformat(), "phone": patient.phone})
+    assert selected.status_code == 200
+
     created = client.post("/api/v1/appointments", json={
         "patient_id": patient.id,
+        "patient_selection_token": selected.json()[0]["selection_token"],
         "doctor_id": doctor.id,
         "center_id": clinical_app["center"].id,
         "specialty_id": clinical_app["specialty"].id,

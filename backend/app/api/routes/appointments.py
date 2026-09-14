@@ -18,6 +18,7 @@ from app.services.appointment_scope import (
 from app.services.clinical_specialties import active_doctor_specialties, resolve_appointment_specialty
 from app.services.clinical_coverage import coverage_allows_appointment_transfer
 from app.services.reminders import sync_in_app_appointment_reminder
+from app.services.patient_scope import require_patient_selection
 
 router = APIRouter(prefix="/appointments", tags=["Citas"])
 access = require_permission("patients:access")
@@ -209,14 +210,13 @@ def create_appointment(payload: AppointmentCreate, user: User = Depends(access),
             status_code=409,
             detail="Una cita nueva no puede crearse como completada",
         )
-    if not db.get(Patient, payload.patient_id):
-        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    require_patient_selection(db, user, payload.patient_id, center_id=payload.center_id, doctor_id=payload.doctor_id, token=payload.patient_selection_token)
 
     doctor, center, specialty = validate_appointment_assignment(
         db, user, payload.doctor_id, payload.center_id, payload.appointment_date, payload.specialty_id
     )
 
-    data = payload.model_dump()
+    data = payload.model_dump(exclude={"patient_selection_token"})
     data["doctor_id"] = doctor.id
     data["center_id"] = center.id
     data["specialty_id"] = specialty.id
@@ -232,7 +232,6 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
     appointment = db.get(Appointment, appointment_id)
     if not appointment: raise HTTPException(status_code=404, detail="Cita no encontrada")
     ensure_appointment_access(user, appointment, db)
-    if not db.get(Patient, payload.patient_id): raise HTTPException(status_code=404, detail="Paciente no encontrado")
     requested_specialty_id = payload.specialty_id if payload.specialty_id is not None else appointment.specialty_id
     identity_context_changed = (
         payload.patient_id != appointment.patient_id
@@ -303,7 +302,9 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
         ),
     )
 
-    data = payload.model_dump()
+    if payload.patient_id != appointment.patient_id:
+        require_patient_selection(db, user, payload.patient_id, center_id=center.id, doctor_id=doctor.id, token=payload.patient_selection_token)
+    data = payload.model_dump(exclude={"patient_selection_token"})
     data["doctor_id"] = doctor.id
     data["center_id"] = center.id
     data["specialty_id"] = specialty.id
