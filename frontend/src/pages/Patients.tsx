@@ -6,6 +6,7 @@ import ClinicalHistoryPanel from "../components/patients/ClinicalHistoryPanel";
 import { Alert, Button, Card, Drawer, EmptyState, FormField, Input, LoadingState, Modal, PageHeader, Select } from "../ui";
 import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
+import { NavigationIcon } from "../layouts/NavigationIcon";
 import "./patients.css";
 
 type Props = { onBack: () => void; onPatientChanged: () => void; onScheduleAppointment: (patient: Patient) => void; user: User };
@@ -90,17 +91,17 @@ export default function Patients({ onBack, onPatientChanged, onScheduleAppointme
   function detail() {
     if (!selected) return <EmptyState title="Selecciona un paciente para ver su información" description="Su ficha y acciones aparecerán aquí." />;
     return <div className="patients-detail-content">
-      <div className="patients-detail-summary"><div className="patients-identity"><Avatar patient={selected} /><div><p className="atlas-caption">Ficha del paciente</p><h3 className="atlas-section-title">{fullName(selected)}</h3><p className="atlas-muted">{ageLabel(selected)}</p></div></div>
+      <div className="patients-detail-summary"><div className="patients-identity"><Avatar patient={selected} /><div><p className="atlas-caption">Ficha del paciente</p><h3 className="atlas-section-title" title={fullName(selected)}>{fullName(selected)}</h3><p className="atlas-muted">{ageLabel(selected)}</p></div></div>
       <dl className="patients-facts">
         <div><dt>Fecha de nacimiento</dt><dd>{birthLabel(selected.date_of_birth)}</dd></div>
         <div><dt>Teléfono</dt><dd>{selected.phone || "Sin teléfono registrado"}</dd></div>
         <div><dt>Correo</dt><dd>{selected.email || "Sin correo registrado"}</dd></div>
       </dl></div>
       <div className="patients-quick-actions" aria-label="Acciones del paciente">
-        <Button onClick={() => onScheduleAppointment(selected)}>Agendar cita</Button>
-        <Button variant="outline" onClick={() => { setEditing(selected); setShowForm(true); }}>Editar</Button>
-        <Button variant="outline" onClick={() => setInsurancePatient(selected)}>Seguro</Button>
-        {canAccessClinical && <Button variant="outline" onClick={() => setHistoryPatient(selected)}>Historia clínica</Button>}
+        <Button icon={<NavigationIcon name="calendar" />} onClick={() => onScheduleAppointment(selected)}>Agendar cita</Button>
+        <Button icon={<NavigationIcon name="patient" />} variant="outline" onClick={() => { setEditing(selected); setShowForm(true); }}>Editar</Button>
+        <Button icon={<NavigationIcon name="clinical" />} variant="outline" onClick={() => setInsurancePatient(selected)}>Seguro</Button>
+        {canAccessClinical && <Button icon={<NavigationIcon name="report" />} variant="outline" onClick={() => setHistoryPatient(selected)}>Historia clínica</Button>}
       </div>
     </div>;
   }

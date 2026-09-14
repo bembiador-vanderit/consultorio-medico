@@ -1,5 +1,26 @@
 # Agenda profesional — UI V2 Fase 4A
 
+## Corrección visual móvil vigente — PR #33
+
+El marco desktop usa altura flex disponible después de la Topbar compacta,
+sin el cálculo fijo de 77px; conserva la cuadrícula semanal, eje horario, estados
+azul/verde/gris/coral/ámbar y tarjetas delimitadas. No cambia endpoints ni reglas.
+
+Por debajo de 1024px, Calendario y filtros revela/oculta el mismo panel sin
+requests ni controles duplicados; inicia cerrado para priorizar citas. Cambiar
+fecha lo vuelve a cerrar, conservando filtros. Por debajo de 640px, Semana usa
+una única lista de citas reales agrupada por día, con hora, paciente, motivo,
+especialidad y estado legibles. Desde 640px vuelve a la cuadrícula sin nuevas
+consultas. No crea duración, hora final, disponibilidad ni slots.
+
+En tablet/móvil, los paneles de Semana, Mes y Médicos reutilizan el contenido
+existente dentro del Drawer Foundation. Lista/detalle/← Citas del día cambian en
+el mismo Drawer, con scroll interno, cierre, backdrop, Escape y retorno de foco.
+La vista Día mantiene su Modal emergente y no se migra al panel lateral.
+En móvil, encabezado y tarjetas se compactan; Inicio en la barra inferior ofrece
+el retorno al Dashboard, sin repetir ese botón en el encabezado. El final de la
+lista permanece alcanzable por encima de la barra inferior.
+
 Base: `feat/complete-care-context` en `eda6d7bdfb593d590f5fa469f393ba3a0a6f2d4c`.
 
 ## Alcance

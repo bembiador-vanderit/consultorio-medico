@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { NavigationIcon } from "../layouts/NavigationIcon";
 import { api } from "../services/api";
 import { announceNotificationsChanged, notificationsChangedEvent } from "../services/notificationEvents";
 
@@ -19,6 +20,7 @@ type Props = { onOpenNotifications: () => void };
 export default function NotificationBell({ onOpenNotifications }: Props) {
   const [items, setItems] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
+  const panelId = useId();
 
   async function load() {
     try {
@@ -59,14 +61,16 @@ export default function NotificationBell({ onOpenNotifications }: Props) {
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-label={`Notificaciones${unread ? `, ${unread} sin leer` : ""}`}
-        className="relative rounded-lg border border-slate-200 bg-white px-3 py-2 text-xl hover:bg-slate-50"
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        className="atlas-notification-trigger relative rounded-lg border border-slate-200 bg-white px-3 py-2 text-xl hover:bg-slate-50"
       >
-        🔔
+        <NavigationIcon name="bell" />
         {unread > 0 && <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1 text-center text-[11px] font-bold leading-5 text-white">{unread > 99 ? "99+" : unread}</span>}
       </button>
 
       {open && (
-        <div className="atlas-notification-panel absolute right-0 z-50 mt-2 w-[min(92vw,380px)] overflow-hidden rounded-xl border bg-white shadow-xl">
+        <div id={panelId} className="atlas-notification-panel absolute right-0 z-50 mt-2 w-[min(92vw,380px)] overflow-hidden rounded-xl border bg-white shadow-xl">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div><p className="font-bold">Notificaciones pendientes</p><p className="text-xs text-slate-500">Eventos, seguimientos y citas próximas</p></div>
             <button type="button" onClick={() => void load()} className="text-xs font-semibold text-teal-700 hover:underline">Actualizar</button>

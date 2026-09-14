@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useId, useState, type CSSProperties } from "react";
 import type { Appointment } from "../../types/appointment";
 import { Card, EmptyState } from "../../ui";
 import { AgendaAppointmentCard } from "./AgendaAppointmentCard";
@@ -30,11 +30,12 @@ export function AgendaDayView({
   date: string;
   onSelect: (appointment: Appointment) => void;
 }) {
+  const headingId = useId();
   return (
-    <section className="agenda-day" aria-labelledby="agenda-day-heading">
+    <section className="agenda-day" aria-labelledby={headingId}>
       <header className="agenda-view-heading">
         <div>
-          <h3 id="agenda-day-heading" className="atlas-section-title">
+          <h3 id={headingId} className="atlas-section-title">
             {formatDate(date)}
           </h3>
           <p className="atlas-muted">Eventos ordenados por hora registrada.</p>
@@ -66,6 +67,13 @@ export function AgendaWeekView({
   onSelectDay: (day: string) => void;
 }) {
   const start = startOfWeek(date);
+  const [mobile, setMobile] = useState(() => !window.matchMedia("(min-width: 640px)").matches);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 640px)");
+    const change = () => setMobile(!media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
   const timeline = weekTimelineBounds(appointments);
   const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
   return (
@@ -78,7 +86,7 @@ export function AgendaWeekView({
           <p className="atlas-muted">Escala construida solo con horas registradas.</p>
         </div>
       </header>
-      {!timeline ? <Card><NoAppointments description="No hay citas registradas en esta semana dentro de tu alcance." /></Card> : <div className="agenda-week-grid" style={{ "--agenda-week-hours": String(timeline.hours) } as CSSProperties} role="grid" aria-label="Agenda semanal por hora">
+      {!timeline ? <Card><NoAppointments description="No hay citas registradas en esta semana dentro de tu alcance." /></Card> : mobile ? <div className="agenda-week-mobile">{days.filter((day) => appointments.some((item) => item.appointment_date === day)).map((day) => <AgendaDayView key={day} date={day} appointments={appointments.filter((item) => item.appointment_date === day)} onSelect={onSelect} />)}</div> : <div className="agenda-week-grid" style={{ "--agenda-week-hours": String(timeline.hours) } as CSSProperties} role="grid" aria-label="Agenda semanal por hora">
         <span className="agenda-week-time-heading">Hora</span>
         {days.map((day) => <button key={day} type="button" className="agenda-week-day-heading" onClick={() => onSelectDay(day)} aria-label={`Ver citas de ${formatDate(day)}`}><span>{formatDate(day, { weekday: "short" })}</span><strong>{formatDate(day, { day: "numeric" })}</strong></button>)}
         {Array.from({ length: timeline.hours }, (_, index) => <time className="agenda-week-time-label" key={index} style={{ gridRow: index + 2 }}>{formatTimelineHour(timeline.startMinutes + index * 60)}</time>)}

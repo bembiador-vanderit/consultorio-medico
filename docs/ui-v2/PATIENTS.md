@@ -8,7 +8,13 @@ Patients conserva su integración con App y la navegación por estado. PageHeade
 
 La lista compacta sustituye la tabla de acciones. Cada registro es un botón con iniciales locales, nombre, edad calculada, nacimiento, teléfono y correo. El estado seleccionado usa texto, color, borde y aria-pressed. Enter/Espacio funcionan como botones nativos; el foco es visible. La ficha permite scroll local del resumen cuando hay datos extensos, conservando visibles las acciones.
 
-Desktop mantiene lista y ficha lado a lado. La lista domina aproximadamente el 71% del área; la ficha ocupa el resto, con un mínimo útil de 17rem. Al no seleccionar un paciente se muestra un estado vacío contextual. Nombre/contacto extensos se delimitan en las filas; en la ficha se muestran completos con ajuste de línea. Las acciones se concentran debajo de los datos, sin navegar a otra página de ficha.
+Desktop mantiene lista y ficha lado a lado. La lista domina aproximadamente el 71% del área; la ficha ocupa el resto, con un mínimo útil de 17rem. Al no seleccionar un paciente se muestra un estado vacío contextual. Nombre/contacto extensos se delimitan en las filas. En la ficha desktop, nombre a dos líneas con title completo y contacto con ajuste de línea; en móvil, nombre completo. Las acciones se concentran debajo de los datos, sin navegar a otra página de ficha.
+
+La corrección visual del mismo PR #33 incorpora cabeceras tonales, iconos de
+acción y acentos Sky/Amber/Mint usando tokens vigentes. El Shell de 224px y
+Topbar compacta dejan más espacio útil; tablet reserva la barra inferior en su
+altura disponible y la lista móvil conserva su margen final. Búsqueda, selección,
+alta/edición, seguro y prueba de selección mantienen sus contratos y tests.
 
 ## Datos reales
 

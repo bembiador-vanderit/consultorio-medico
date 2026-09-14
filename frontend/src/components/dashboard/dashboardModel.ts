@@ -1,5 +1,6 @@
 import type { AppView } from "../../navigation/navigation";
 import type { User } from "../../types/user";
+import type { NavigationIcon } from "../../navigation/navigation";
 
 export type DashboardRole = "doctor" | "secretary" | "admin";
 
@@ -9,6 +10,9 @@ export type DashboardAction = {
   description: string;
   view: AppView;
   roles?: readonly DashboardRole[];
+  icon: NavigationIcon;
+  tone: "sky" | "sage" | "amber" | "coral" | "mint";
+  intent?: "new-appointment";
 };
 
 export type DashboardRoleSummary = {
@@ -18,14 +22,15 @@ export type DashboardRoleSummary = {
 };
 
 const quickActions: readonly DashboardAction[] = [
-  { id: "agenda", label: "Ver agenda", description: "Revise las citas dentro de su alcance.", view: "appointments" },
-  { id: "patients", label: "Pacientes", description: "Consulte los pacientes disponibles para su rol.", view: "patients" },
-  { id: "reports", label: "Reportes de citas", description: "Genere reportes de la agenda permitida.", view: "reports" },
-  { id: "follow-ups", label: "Ver seguimientos", description: "Revise sus seguimientos pendientes.", view: "follow-ups", roles: ["doctor"] },
-  { id: "availability", label: "Mi disponibilidad", description: "Actualice su disponibilidad clínica.", view: "availability", roles: ["doctor"] },
-  { id: "coverages", label: "Cobertura clínica", description: "Consulte las coberturas vigentes permitidas.", view: "clinical-coverages", roles: ["doctor", "secretary"] },
-  { id: "users", label: "Usuarios y roles", description: "Administre cuentas y roles autorizados.", view: "users", roles: ["admin"] },
-  { id: "centers", label: "Centros de atención", description: "Administre localidades y centros autorizados.", view: "care-context", roles: ["admin"] },
+  { id: "new-appointment", label: "Nueva cita", description: "Registrar una cita", view: "appointments", intent: "new-appointment", icon: "calendar", tone: "amber", roles: ["doctor", "secretary", "admin"] },
+  { id: "patients", label: "Pacientes", description: "Buscar y gestionar", view: "patients", icon: "patient", tone: "sage" },
+  { id: "agenda", label: "Ver agenda", description: "Citas y confirmaciones", view: "appointments", icon: "calendar", tone: "sky" },
+  { id: "reports", label: "Reportes de citas", description: "Consultar reportes", view: "reports", icon: "report", tone: "coral" },
+  { id: "follow-ups", label: "Ver seguimientos", description: "Seguimientos propios", view: "follow-ups", roles: ["doctor"], icon: "bell", tone: "mint" },
+  { id: "availability", label: "Mi disponibilidad", description: "Gestionar disponibilidad", view: "availability", roles: ["doctor"], icon: "clock", tone: "sage" },
+  { id: "coverages", label: "Cobertura clínica", description: "Coberturas vigentes", view: "clinical-coverages", roles: ["doctor", "secretary"], icon: "clinical", tone: "mint" },
+  { id: "users", label: "Usuarios y roles", description: "Gestionar cuentas", view: "users", roles: ["admin"], icon: "users", tone: "sky" },
+  { id: "centers", label: "Centros de atención", description: "Localidades y centros", view: "care-context", roles: ["admin"], icon: "center", tone: "sage" },
 ];
 
 const roleSummaries: readonly DashboardRoleSummary[] = [
@@ -39,7 +44,10 @@ function hasRole(user: Pick<User, "roles">, role: DashboardRole) {
 }
 
 export function getDashboardActions(user: Pick<User, "roles">): DashboardAction[] {
-  return quickActions.filter((action) => !action.roles || action.roles.some((role) => hasRole(user, role)));
+  const actions = quickActions.filter((action) => !action.roles || action.roles.some((role) => hasRole(user, role)));
+  return hasRole(user, "admin") && !hasRole(user, "doctor") && !hasRole(user, "secretary")
+    ? [...actions.filter((action) => action.id === "users" || action.id === "centers"), ...actions.filter((action) => action.id !== "users" && action.id !== "centers")]
+    : actions;
 }
 
 export function getDashboardRoleSummaries(user: Pick<User, "roles">): DashboardRoleSummary[] {

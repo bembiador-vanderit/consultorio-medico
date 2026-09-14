@@ -194,8 +194,8 @@ test("App mounts operational Login after rejected restoration, then opens the au
   await fillCredentials();
   await submit();
   assert.equal(host.querySelector(".atlas-login"), null);
-  assert.match(host.textContent, /Bienvenido, Personal de prueba/);
-  assert.match(host.textContent, /Espacio de trabajo/);
+  assert.match(host.textContent, /Hola, Personal de prueba/);
+  assert.equal(host.querySelector(".atlas-bottom-navigation [aria-current=page]").textContent, "Inicio");
   assert.ok(host.querySelector(".atlas-shell"));
 });
 
@@ -203,7 +203,7 @@ test("App restores existing session and preserves logout returning to an empty L
   appAdapter(true);
   await mount(App, {});
   assert.equal(host.querySelector(".atlas-login"), null);
-  assert.match(host.textContent, /Bienvenido, Personal de prueba/);
+  assert.match(host.textContent, /Hola, Personal de prueba/);
   assert.ok(!requests.some((request) => request.url === "/auth/login"));
   const signOut = [...host.querySelectorAll("button")].find((button) => button.textContent === "Cerrar sesión");
   await click(signOut);

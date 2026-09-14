@@ -4,7 +4,7 @@
 .patients-search-actions { display:flex; gap:var(--atlas-space-2); }
 .patients-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(17rem,29%); gap:var(--atlas-space-4); min-height:0; flex:1; }
 .patients-master,.patients-detail { display:flex; flex-direction:column; padding:0; min-width:0; min-height:0; overflow:hidden; }
-.patients-list-header,.patients-detail-header { display:flex; justify-content:space-between; align-items:center; gap:var(--atlas-space-3); padding:var(--atlas-space-4); border-bottom:1px solid var(--atlas-border); flex-shrink:0; }
+.patients-list-header,.patients-detail-header { display:flex; justify-content:space-between; align-items:center; gap:var(--atlas-space-3); padding:var(--atlas-space-4); border-bottom:1px solid var(--atlas-border); flex-shrink:0; background:color-mix(in srgb,var(--atlas-sky) 18%,var(--atlas-surface)); }
 .patients-list-header>.atlas-field { max-width:12rem; min-width:0; }
 .patients-list-header .atlas-input { min-height:40px; padding-block:var(--atlas-space-2); font-size:var(--atlas-type-secondary); }
 .patients-list-scroll,.patients-detail-scroll { overflow-y:auto; overscroll-behavior:contain; min-height:0; flex:1; }
@@ -20,12 +20,13 @@
 .patients-row-identity>span,.patients-row-contact { font-size:var(--atlas-type-caption); color:var(--atlas-text-muted); }
 .patients-row-status { font-size:var(--atlas-type-caption); color:var(--atlas-action); font-weight:600; }
 .patients-list-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--atlas-space-2); padding:var(--atlas-space-3) var(--atlas-space-4); border-top:1px solid var(--atlas-border); flex-shrink:0; }
-.patients-detail-content { padding:var(--atlas-space-5); display:flex; flex-direction:column; height:100%; gap:var(--atlas-space-5); min-width:0; min-height:0; }
-.patients-detail-summary { display:grid; gap:var(--atlas-space-5); flex:0 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.patients-detail-content { padding:var(--atlas-space-4); display:flex; flex-direction:column; height:100%; gap:var(--atlas-space-4); min-width:0; min-height:0; }
+.patients-detail-summary { display:grid; gap:var(--atlas-space-4); flex:0 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 .atlas-dialog-body:has(>.patients-detail-content) { display:flex; flex:1; min-height:0; }
 .atlas-dialog-body>.patients-detail-content { padding:0; }
 .patients-identity { display:flex; align-items:center; gap:var(--atlas-space-3); }
 .patients-identity>div { min-width:0; overflow-wrap:anywhere; }
+@media (min-width:1024px) { .patients-identity h3 { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }.patients-facts { gap:var(--atlas-space-3); grid-template-columns:repeat(2,minmax(0,1fr)); }.patients-facts>div:last-child { grid-column:1/-1; } }
 .patients-identity .patients-avatar { width:3.25rem; height:3.25rem; font-size:var(--atlas-type-card); }
 .patients-facts { display:grid; gap:var(--atlas-space-4); margin:0; }
 .patients-facts>div { display:grid; gap:var(--atlas-space-1); }
@@ -35,6 +36,9 @@
 .patients-quick-actions>.atlas-button:first-child { grid-column:1/-1; }
 .patients-quick-actions>.atlas-button:nth-child(4) { grid-column:1/-1; }
 .patients-quick-actions>.atlas-button { white-space:normal; }
+.patients-quick-actions>.atlas-button:nth-child(2) { background:color-mix(in srgb,var(--atlas-sky) 25%,var(--atlas-surface)); }
+.patients-quick-actions>.atlas-button:nth-child(3) { background:color-mix(in srgb,var(--atlas-amber) 25%,var(--atlas-surface)); }
+.patients-quick-actions>.atlas-button:nth-child(4) { background:var(--atlas-mint); }
 .patients-error { display:grid; gap:var(--atlas-space-3); padding:var(--atlas-space-4); }
 .patient-form { display:grid; gap:var(--atlas-space-5); min-width:0; }
 .patient-form-actions { display:flex; gap:var(--atlas-space-2); flex-wrap:wrap; }

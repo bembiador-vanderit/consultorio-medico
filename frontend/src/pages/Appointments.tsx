@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Appointment } from "../types/appointment";
 import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
@@ -34,6 +34,7 @@ type Props = {
   user: User;
   onBack: () => void;
   initialPatient?: Patient | null;
+  initialCreate?: boolean;
   canAccessClinical: boolean;
   onAttendAppointment: (appointment: Appointment) => void;
 };
@@ -65,10 +66,13 @@ export default function Appointments({
   user,
   onBack,
   initialPatient,
+  initialCreate = false,
   canAccessClinical,
   onAttendAppointment,
 }: Props) {
   const [view, setView] = useState<AgendaView>("day");
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const filtersId = useId();
   const [date, setDate] = useState(isoDate(new Date()));
   const [items, setItems] = useState<Appointment[]>([]);
   const [scope, setScope] = useState<AgendaScope>({ centers: [], doctors: [] });
@@ -84,7 +88,7 @@ export default function Appointments({
   const [weekDetail, setWeekDetail] = useState<Appointment | null>(null);
   const [weekFromList, setWeekFromList] = useState(false);
   const [editor, setEditor] = useState<Appointment | null | "new">(
-    initialPatient ? "new" : null,
+    initialPatient || initialCreate ? "new" : null,
   );
   const [addendum, setAddendum] = useState<Appointment | null>(null);
   const [mutating, setMutating] = useState(false);
@@ -137,6 +141,7 @@ export default function Appointments({
     [items, filters],
   );
   function chooseDate(next: string) {
+    setFiltersExpanded(false);
     setDirectDay(null);
     setDirectDetail(null);
     setMonthDay(null);
@@ -250,6 +255,7 @@ export default function Appointments({
         }
       />
       <div className="agenda-toolbar">
+        <Button className="agenda-mobile-filter-toggle" variant="outline" aria-expanded={filtersExpanded} aria-controls={filtersId} onClick={() => setFiltersExpanded((current) => !current)}>Calendario y filtros</Button>
         <div className="atlas-actions">
           <Button
             variant="outline"
@@ -303,7 +309,7 @@ export default function Appointments({
         </Alert>
       )}
       <div className={`agenda-layout${view === "month" ? " agenda-layout--month" : view === "week" ? " agenda-layout--week" : view === "day" ? " agenda-layout--day" : " agenda-layout--doctors"}${panelDay ? " agenda-layout--panel" : ""}`}>
-        <aside className="agenda-sidebar">
+        <aside id={filtersId} className={`agenda-sidebar${!filtersExpanded ? " agenda-sidebar--collapsed" : ""}`}>
           <AgendaMiniCalendar selectedDate={date} onSelect={chooseDate} />
           <AgendaFiltersPanel
             filters={filters}

@@ -376,3 +376,38 @@ frontend Docker reenvían al backend. Un servidor estático diferente debe confi
 ese reenvío. VITE_API_URL explícito mantiene el modo de API separada.
 
 Diseño, roles y deuda futura: [PATIENTS.md](PATIENTS.md).
+
+## Corrección visual conjunta — mismo PR #33
+
+Dashboard, Pacientes, Agenda y App Shell revisados contra la composición Atlas
+aprobada. No se añade una paleta, backend, permiso ni endpoint paralelo.
+
+| Validación | Resultado |
+| --- | --- |
+| Frontend completo, Node 22 Docker, secuencial | 142 passed / 0 failed / 0 skipped |
+| Dashboard | 14 casos: roles, prioridades, multi-role, especialidades, fuentes reales, vacíos/errores, acciones, Nueva cita, expansión móvil y ausencia de cargas extra |
+| Shell | Navegación inferior, Inicio activo, Más según rol, vista única, cuenta/Escape/logout, foco y transición desktop |
+| Agenda | Modal de Día y contexto preservados; Semana móvil sin duplicar citas, filtros desplegables, mismo Drawer Mes para lista/detalle/volver/Escape/foco |
+| Pacientes/contrato/API | 29 casos Patients, 2 selection-contract y 4 routing, incluidos en suite completa |
+| TypeScript + Vite | PASS, 130 módulos; CSS 90.22 kB y JS 421.47 kB antes de gzip |
+| Docker build / Compose config -q | PASS, imagen preview aislada y variables ficticias |
+| Edge headless, cuatro módulos × ocho tamaños | PASS, sin overflow horizontal de página o módulo activo |
+| Topbar / bottom navigation | 64px desktop/tablet, 56px móvil; barra inferior visible y margen final reservado |
+| Dashboard 320px | Cuatro accesos principales 2×2, métricas en dos columnas y resumen visible en viewport inicial |
+| Agenda desktop | Semana completa visible con eje horario y tarjetas delimitadas; sin scroll horizontal ni vertical de página como mecanismo normal |
+| Pacientes desktop/tablet | Altura de página igual al viewport, scroll local y cuatro acciones de médico visibles |
+| Requests | Una carga principal Patients, cero al seleccionar; seguro bajo demanda; abrir cuenta/expandir accesos/filtros/cerrar modal no añade recargas |
+| Datos/autorización/backend | Contratos y guards conservados, backend sin diff; pruebas UI con fixtures ficticios |
+
+Tamaños: 1920×1200, 1440×1000, 1366×900, 1280×800, 1024×900,
+768×900, 375×812 y 320×700. En móvil, listas principales permiten scroll
+vertical natural; modales/Drawers usan scroll interno. El panel de lista/detalle
+de Agenda queda en el mismo Drawer; Día sigue siendo Modal.
+
+Se verificaron también los Dashboard de Secretaría y Admin a 375px. Las fuentes
+de notificaciones de campana y Dashboard conservan sus dos cargas independientes
+previas; no se añade polling ni N+1. No se reconstruyó ni reinició la instalación
+operativa. La comprobación visual no certifica permisos contra una base real.
+
+Documentación de presentación vigente: [Dashboard](DASHBOARDS.md),
+[App Shell](APP_SHELL.md), [Pacientes](PATIENTS.md) y [Agenda](AGENDA.md).
