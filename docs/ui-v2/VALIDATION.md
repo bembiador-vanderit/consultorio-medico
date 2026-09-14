@@ -1,27 +1,29 @@
 # Entrega y validación — UI V2
 
-## PR #31 — Agenda Mes, Semana y aprovechamiento del viewport
+## PR #31 — Agenda unificada y aprovechamiento del viewport
 
-Mes usa una sola consulta mensual y mantiene las celdas uniformes, incluso ante
-más de tres citas. Semana usa eje de horas registradas, tarjetas compactas y
-colores para los cinco estados sin ocultar su texto. Día vacío, celda, `+N más`,
-encabezado de día semanal y una cita directa resuelven en el mismo panel derecho:
-lista local, detalle, retorno y cierre. El shell deja que Agenda use el ancho
-restante después de la barra lateral; el calendario recupera su espacio al cerrar
-el panel.
+Día, Semana, Mes y Médicos usan la misma semántica de color y tarjeta de cita:
+hora, paciente, motivo resumido, especialidad y estado textual. Día es una agenda
+`Hora | Cita`; Semana conserva su cuadrícula con eje de horas registradas; Mes
+mantiene celdas uniformes y `+N más`; Médicos agrupa filas compactas por profesional.
+Una lista de día, o una cita directa, usa el mismo panel contextual para el detalle.
+No queda un drawer/overlay para el detalle de Agenda. El shell deja que Agenda use
+el ancho restante después de la barra lateral; el calendario recupera espacio al
+cerrar el panel.
 
 | Validación | Resultado |
 | --- | --- |
-| Pruebas frontend Node/Vite/jsdom | 91 aprobadas, 0 fallidas |
+| Pruebas específicas de Agenda en Docker Node 22/Linux | 52 aprobadas, 0 fallidas |
+| Suite frontend completa en Docker Node 22/Linux | 93 aprobadas, 0 fallidas |
 | TypeScript `tsc -b` | Correcto |
 | Vite producción | Correcto |
-| Docker Node/Linux | 91 aprobadas, 0 fallidas; build correcto |
-| Navegador aislado | 1920×1200, 1440×1000, 1366×900, 1280×800, 1024×900, 768×900, 375×812 y 320×700 sin overflow horizontal |
+| Navegador aislado — Semana | 1920×1200, 1440×1000, 1366×900, 1280×800, 1024×900, 768×900, 375×812 y 320×700 sin overflow horizontal; panel con scroll local |
+| Navegador aislado — Día y Médicos | 1920×1200 y 1280×800 sin overflow horizontal; detalle en panel, sin diálogo, con scroll local |
 
-En 1920×1200 el espacio útil de Agenda fue 1664 px: el calendario midió 1376 px
-sin panel y 992 px con panel de 360 px; al cerrarlo volvió a 1376 px. El panel
-mantiene scroll local. En 1440, 1366 y 1024 se verificó el mismo cierre y
-recuperación; en tablet/móvil el panel se apila y conserva su scroll local.
+En 1920×1200 el espacio útil de Semana fue 1664 px: la cuadrícula midió 1376 px
+sin panel y 992 px con panel de 360 px; al cerrarlo volvió a 1376 px. En 1280×800
+la cuadrícula permaneció dentro de 736 px y no introdujo barra horizontal de página.
+El panel mantiene scroll local; en tablet/móvil se apila bajo el calendario.
 
 No se modificaron backend, contratos, migraciones ni datos clínicos.
 

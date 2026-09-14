@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Appointment } from "../../types/appointment";
 import { Card, EmptyState } from "../../ui";
-import { AppointmentStatusBadge } from "./AppointmentStatusBadge";
+import { AgendaAppointmentCard } from "./AgendaAppointmentCard";
 import {
   addDays,
   formatDate,
@@ -13,43 +13,6 @@ import {
   weekTimelineBounds,
 } from "./agenda";
 
-function AppointmentCard({
-  appointment,
-  onSelect,
-}: {
-  appointment: Appointment;
-  onSelect: (appointment: Appointment) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="agenda-appointment-card"
-      onClick={() => onSelect(appointment)}
-      aria-label={`Ver cita de ${appointment.patient_name} a las ${formatTime(appointment.appointment_time)}`}
-    >
-      <time className="agenda-appointment-time">
-        {formatTime(appointment.appointment_time)}
-      </time>
-      <span className="agenda-appointment-content">
-        <strong>{appointment.patient_name}</strong>
-        <span>{appointment.reason || "Sin motivo registrado"}</span>
-        <span className="agenda-appointment-meta">
-          {appointment.specialty_name} · {appointment.doctor_name}
-          {appointment.center_name ? ` · ${appointment.center_name}` : ""}
-        </span>
-        {appointment.coverage_id && (
-          <span className="agenda-coverage">
-            Cobertura
-            {appointment.original_doctor_name
-              ? ` · original: ${appointment.original_doctor_name}`
-              : ""}
-          </span>
-        )}
-      </span>
-      <AppointmentStatusBadge status={appointment.status} />
-    </button>
-  );
-}
 function NoAppointments({ description }: { description: string }) {
   return (
     <EmptyState
@@ -68,7 +31,7 @@ export function AgendaDayView({
   onSelect: (appointment: Appointment) => void;
 }) {
   return (
-    <section aria-labelledby="agenda-day-heading">
+    <section className="agenda-day" aria-labelledby="agenda-day-heading">
       <header className="agenda-view-heading">
         <div>
           <h3 id="agenda-day-heading" className="atlas-section-title">
@@ -78,19 +41,16 @@ export function AgendaDayView({
         </div>
         <span className="atlas-help">{appointments.length} citas</span>
       </header>
-      <Card className="agenda-events">
+      <div className="agenda-day-grid" role="grid" aria-label="Agenda diaria por hora">
+        <span>Hora</span><span>Cita</span>
         {appointments.length ? (
           sortByTime(appointments).map((appointment) => (
-            <AppointmentCard
-              key={appointment.id}
-              appointment={appointment}
-              onSelect={onSelect}
-            />
+            <div className="agenda-day-row" role="row" key={appointment.id}><time>{formatTime(appointment.appointment_time)}</time><AgendaAppointmentCard appointment={appointment} variant="day" onSelect={onSelect} /></div>
           ))
         ) : (
           <NoAppointments description="No hay citas para esta fecha dentro de tu alcance." />
         )}
-      </Card>
+      </div>
     </section>
   );
 }
@@ -131,9 +91,7 @@ export function AgendaWeekView({
               const sameTime = lanes.get(item.appointment_time) ?? [item];
               const lane = sameTime.findIndex((entry) => entry.id === item.id);
               const position = ((timeToMinutes(item.appointment_time) - timeline.startMinutes) / (timeline.endMinutes - timeline.startMinutes)) * 100;
-              return <button key={item.id} type="button" className={`agenda-week-appointment-card agenda-week-appointment-card--${item.status}`} style={{ top: `${position}%`, left: `calc(${(lane / sameTime.length) * 100}% + 2px)`, width: `calc(${100 / sameTime.length}% - 4px)` }} onClick={() => onSelect(item)} aria-label={`Ver cita ${item.patient_name}, ${formatTime(item.appointment_time)}, ${item.status}`}>
-                <time>{formatTime(item.appointment_time)}</time><span className="agenda-week-appointment-summary"><strong>{item.patient_name}</strong><span>{item.reason || "Sin motivo registrado"}</span><span>{item.specialty_name}</span><span className="agenda-week-status">{item.status === "scheduled" ? "Programada" : item.status === "confirmed" ? "Confirmada" : item.status === "completed" ? "Completada" : item.status === "cancelled" ? "Cancelada" : "No asistió"}</span></span>
-              </button>;
+              return <AgendaAppointmentCard key={item.id} appointment={item} variant="week" onSelect={onSelect} style={{ top: `${position}%`, left: `calc(${(lane / sameTime.length) * 100}% + 2px)`, width: `calc(${100 / sameTime.length}% - 4px)` }} />;
             })}
           </div>;
         })}
@@ -170,11 +128,7 @@ export function AgendaDoctorsView({
             <Card key={doctor} className="agenda-doctor-group">
               <h3 className="atlas-card-title">{entries[0].doctor_name}</h3>
               {entries.map((item) => (
-                <AppointmentCard
-                  key={item.id}
-                  appointment={item}
-                  onSelect={onSelect}
-                />
+                <AgendaAppointmentCard key={item.id} appointment={item} variant="doctor" onSelect={onSelect} />
               ))}
             </Card>
           ))}

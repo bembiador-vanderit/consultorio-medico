@@ -186,6 +186,15 @@ async function click(target) {
 function dialog() {
   return document.querySelector("dialog[open]");
 }
+function panel() {
+  return host.querySelector(".agenda-month-panel");
+}
+function detailSurface() {
+  return dialog() ?? panel();
+}
+function closePanel() {
+  return panel()?.querySelector('[aria-label="Cerrar panel del día"], [aria-label="Cerrar detalle de cita"]');
+}
 function control(label, container = dialog()) {
   const target = [...container.querySelectorAll("label")].find((item) =>
     item.textContent.startsWith(label),
@@ -217,7 +226,7 @@ async function open() {
 }
 async function edit() {
   await open();
-  await click(button("Editar cita", dialog() ?? host.querySelector(".agenda-month-panel")));
+  await click(button("Editar cita", detailSurface()));
 }
 function navigateDay(day) {
   return click(
@@ -254,10 +263,10 @@ for (const [label, status] of [
   ["Cancelar", "cancelled"],
   ["Marcar No asistió", "no_show"],
 ]) {
-  test(`${label} usa PUT /appointments/8 con payload completo y actualiza Drawer/lista`, async () => {
+  test(`${label} usa PUT /appointments/8 con payload completo y actualiza el panel/lista`, async () => {
     await mount();
     await open();
-    await click(button(label, dialog()));
+    await click(button(label, detailSurface()));
     const call = calls.find((item) => item.method === "put");
     assert.equal(call.url, "/appointments/8");
     assert.deepEqual(JSON.parse(call.data), {
@@ -277,11 +286,11 @@ for (const [label, status] of [
       no_show: "No asistió",
     };
     assert.equal(
-      dialog().querySelector(".atlas-badge").textContent,
+      detailSurface().querySelector(".atlas-badge").textContent,
       labels[status],
     );
     assert.equal(
-      host.querySelector(".atlas-badge").textContent,
+      panel().querySelector(".atlas-badge").textContent,
       labels[status],
     );
   });
@@ -339,12 +348,12 @@ test("reprogramación Médicos mantiene fecha/rango/calendario y transición a D
     "15",
   );
   assert.equal(host.querySelectorAll(".agenda-appointment-card").length, 1);
-  await click(button("Cerrar", dialog()));
+  await click(closePanel());
   await click(button("Día", host));
   assert.match(host.querySelector("#agenda-day-heading").textContent, /martes/);
   assert.equal(host.querySelectorAll(".agenda-appointment-card").length, 1);
 });
-test("crear cita para otra fecha refresca lista y abre el Drawer real", async () => {
+test("crear cita para otra fecha refresca lista y abre el panel contextual", async () => {
   await mount(["secretary"], {
     initialPatient: {
       id: 6,
@@ -367,7 +376,7 @@ test("crear cita para otra fecha refresca lista y abre el Drawer real", async ()
     end: "2026-09-15",
   });
   assert.equal(host.querySelectorAll(".agenda-appointment-card").length, 1);
-  assert.match(dialog().textContent, /Ana Torres/);
+  assert.match(panel().textContent, /Ana Torres/);
 });
 test("respuesta y error antiguos no reemplazan Día C", async () => {
   const pending = [];
@@ -448,8 +457,8 @@ for (const roles of [["doctor"], ["admin"], ["secretary", "admin"]])
     items[0].coverage_id = 4;
     await mount(roles);
     await open();
-    assert.equal(button("Reprogramar", dialog()), undefined);
-    await click(button("Editar cita", dialog()));
+    assert.equal(button("Reprogramar", detailSurface()), undefined);
+    await click(button("Editar cita", detailSurface()));
     assert.equal(control("Fecha").disabled, true);
     assert.equal(control("Hora").disabled, true);
   });
@@ -467,8 +476,8 @@ test("consulta iniciada oculta acciones prohibidas y bloquea horario/contexto", 
     "Marcar No asistió",
     "Eliminar cita",
   ])
-    assert.equal(button(label, dialog()), undefined);
-  await click(button("Editar cita", dialog()));
+    assert.equal(button(label, detailSurface()), undefined);
+  await click(button("Editar cita", detailSurface()));
   for (const label of ["Fecha", "Hora", "Centro", "Médico", "Especialidad"])
     assert.equal(control(label).disabled, true);
   assert.ok(
@@ -499,49 +508,49 @@ for (const roles of [
     });
     await mount(roles);
     await click(host.querySelectorAll(".agenda-appointment-card")[1]);
-    assert.equal(button("Iniciar consulta", dialog()), undefined);
-    await click(button("Cerrar", dialog()));
+    assert.equal(button("Iniciar consulta", detailSurface()), undefined);
+    await click(closePanel());
     await open();
-    await click(button("Iniciar consulta", dialog()));
+    await click(button("Iniciar consulta", detailSurface()));
     assert.deepEqual(attended, [8]);
   });
 test("Admin puro no recibe acceso clínico", async () => {
   await mount(["admin"]);
   await open();
-  assert.equal(button("Iniciar consulta", dialog()), undefined);
+  assert.equal(button("Iniciar consulta", detailSurface()), undefined);
 });
-test("errores de PUT y DELETE son visibles dentro del Drawer activo", async () => {
+test("errores de PUT y DELETE son visibles dentro del panel activo", async () => {
   intercept = (config) => {
     if (config.method === "put" || config.method === "delete")
       fail("Operación rechazada por Atlas");
   };
   await mount();
   await open();
-  await click(button("Confirmar", dialog()));
+  await click(button("Confirmar", detailSurface()));
   assert.match(
-    dialog().querySelector('[role="alert"]').textContent,
+    detailSurface().querySelector('[role="alert"]').textContent,
     /Operación rechazada/,
   );
-  assert.equal(button("Confirmar", dialog()).disabled, false);
+  assert.equal(button("Confirmar", detailSurface()).disabled, false);
   const originalConfirm = window.confirm;
   window.confirm = () => true;
   try {
-    await click(button("Eliminar cita", dialog()));
+    await click(button("Eliminar cita", detailSurface()));
     assert.match(
-      dialog().querySelector('[role="alert"]').textContent,
+      detailSurface().querySelector('[role="alert"]').textContent,
       /Operación rechazada/,
     );
   } finally {
     window.confirm = originalConfirm;
   }
 });
-test("Eliminar reutiliza DELETE, cierra Drawer y refresca lista", async () => {
+test("Eliminar reutiliza DELETE, cierra el panel y refresca lista", async () => {
   const originalConfirm = window.confirm;
   window.confirm = () => true;
   try {
     await mount();
     await open();
-    await click(button("Eliminar cita", dialog()));
+    await click(button("Eliminar cita", detailSurface()));
     assert.ok(
       calls.some(
         (item) => item.method === "delete" && item.url === "/appointments/8",
@@ -564,9 +573,9 @@ test("nota adicional solo está disponible para autor médico de consulta comple
   };
   await mount(["doctor", "admin"]);
   await open();
-  assert.ok(button("Agregar nota adicional", dialog()));
-  assert.equal(button("Eliminar cita", dialog()), undefined);
-  assert.equal(button("Editar cita", dialog()), undefined);
+  assert.ok(button("Agregar nota adicional", detailSurface()));
+  assert.equal(button("Eliminar cita", detailSurface()), undefined);
+  assert.equal(button("Editar cita", detailSurface()), undefined);
 });
 test("filtros combinados reconcilian especialidad al cambiar centro/médico y scope", async () => {
   items.push({
@@ -612,16 +621,16 @@ test("homónimos no se fusionan y cada cita conserva especialidad y estado en la
     },
   ];
   await mount();
-  assert.equal(host.querySelectorAll(".atlas-badge").length, 2);
+  assert.equal(host.querySelectorAll(".agenda-event-status").length, 2);
   await click(button("Semana", host));
   assert.equal(host.querySelectorAll(".agenda-week-appointment-card").length, 2);
-  assert.deepEqual([...host.querySelectorAll(".agenda-week-status")].map((item) => item.textContent), ["Programada", "Confirmada"]);
+  assert.deepEqual([...host.querySelectorAll(".agenda-event-status")].map((item) => item.textContent), ["Programada", "Confirmada"]);
   await click(button("Médicos", host));
   assert.equal(host.querySelectorAll(".agenda-doctor-group").length, 2);
   assert.match(host.textContent, /Medicina Interna/);
   assert.match(host.textContent, /Cardiología/);
   assert.deepEqual(
-    [...host.querySelectorAll(".atlas-badge")].map((item) => item.textContent),
+    [...host.querySelectorAll(".agenda-event-status")].map((item) => item.textContent),
     ["Programada", "Confirmada"],
   );
 });
@@ -644,7 +653,7 @@ test("Agregar nota adicional abre el flujo existente y usa su POST sin editar la
     if (config.method === "get" && /^\/clinical-history\/42\//.test(config.url)) return response(config, config.url.endsWith("vital-signs") ? null : []);
     if (config.method === "post" && config.url === "/clinical-history/42/addenda") return response(config, { id: 1, clinical_history_id: 42, author_user_id: 2, author_name: "Usuario", ...JSON.parse(config.data), created_at: "2026-09-14" });
   };
-  await mount(["doctor"]); await open(); await click(button("Agregar nota adicional", dialog()));
+  await mount(["doctor"]); await open(); await click(button("Agregar nota adicional", detailSurface()));
   const addendum = document.querySelector('[aria-label="Agregar nota clínica adicional"]'); assert.ok(addendum);
   await change(addendum.querySelector("input"), "Aclaración administrativa ficticia"); await click(button("Guardar nota adicional", addendum));
   const call = calls.find((item) => item.method === "post" && item.url === "/clinical-history/42/addenda");
@@ -656,9 +665,9 @@ test("las cinco etiquetas de estado permanecen en Semana y Médicos", async () =
  items = ["scheduled","confirmed","completed","cancelled","no_show"].map((status,index)=>({...fixture,id:index+1,status}));
  await mount();
  await click(button("Semana",host));
- assert.deepEqual([...host.querySelectorAll(".agenda-week-status")].map(item=>item.textContent),["Programada","Confirmada","Completada","Cancelada","No asistió"]);
+ assert.deepEqual([...host.querySelectorAll(".agenda-event-status")].map(item=>item.textContent),["Programada","Confirmada","Completada","Cancelada","No asistió"]);
  await click(button("Médicos",host));
- assert.deepEqual([...host.querySelectorAll(".atlas-badge")].map(item=>item.textContent),["Programada","Confirmada","Completada","Cancelada","No asistió"]);
+ assert.deepEqual([...host.querySelectorAll(".agenda-event-status")].map(item=>item.textContent),["Programada","Confirmada","Completada","Cancelada","No asistió"]);
 });
 
 test("Semana usa eje horario, tarjetas delimitadas y el panel único para lista y detalle", async () => {
@@ -669,7 +678,7 @@ test("Semana usa eje horario, tarjetas delimitadas y el panel único para lista 
   await mount(); await click(button("Semana", host));
   assert.equal(host.querySelector('[role="grid"][aria-label="Agenda semanal por hora"]') !== null, true);
   assert.match(host.querySelector(".agenda-week-grid").textContent, /Hora[\s\S]*08:00[\s\S]*09:00[\s\S]*10:00/);
-  const card = host.querySelector(".agenda-week-appointment-card--cancelled");
+  const card = host.querySelector(".agenda-week-appointment-card.agenda-appointment-card--cancelled");
   assert.match(card.textContent, /10:15[\s\S]*Berta[\s\S]*Motivo muy extenso[\s\S]*Cardiología[\s\S]*Cancelada/);
   await click(host.querySelector(".agenda-week-day-heading"));
   assert.match(host.textContent, /Citas del día/); assert.equal(host.querySelectorAll(".agenda-day-list-item").length, 2);
@@ -710,4 +719,40 @@ test("Mes aplica filtros antes de construir la lista del día", async () => {
   const selects = host.querySelector(".agenda-filters").querySelectorAll("select"); await change(selects[2], "7");
   const day = [...host.querySelectorAll(".agenda-month-day")].find((item) => item.querySelector(".agenda-month-date").textContent === "14" && !item.classList.contains("agenda-month-day--outside"));
   await click(day); assert.equal(host.querySelectorAll(".agenda-day-list-item").length, 1); assert.match(host.textContent, /Cardiología/);
+});
+
+test("Día y Médicos abren el detalle en el panel único sin overlay", async () => {
+  await mount();
+  await click(host.querySelector(".agenda-appointment-card--day"));
+  assert.match(panel().textContent, /Detalle de la cita/);
+  assert.equal(dialog(), null);
+  assert.ok(host.querySelector(".agenda-day-grid"));
+  await click(closePanel());
+  await click(button("Médicos", host));
+  await click(host.querySelector(".agenda-appointment-card--doctor"));
+  assert.match(panel().textContent, /Detalle de la cita/);
+  assert.equal(dialog(), null);
+  assert.ok(host.querySelector(".agenda-doctor-group"));
+});
+
+test("las tarjetas comparten color y texto de estado en las cuatro vistas", async () => {
+  const statuses = ["scheduled", "confirmed", "completed", "cancelled", "no_show"];
+  items = statuses.map((status, index) => ({ ...fixture, id: index + 1, status }));
+  await mount();
+  for (const status of statuses)
+    assert.ok(host.querySelector(`.agenda-appointment-card--day.agenda-appointment-card--${status}`));
+  await click(button("Semana", host));
+  for (const status of statuses)
+    assert.ok(host.querySelector(`.agenda-week-appointment-card.agenda-appointment-card--${status}`));
+  await click(button("Mes", host));
+  await click(button("+2 más", host));
+  for (const status of statuses) {
+    const card = host.querySelector(`.agenda-day-list-item.agenda-appointment-card--${status}`);
+    assert.ok(card);
+    assert.match(card.textContent, /Programada|Confirmada|Completada|Cancelada|No asistió/);
+  }
+  await click(host.querySelector('[aria-label="Cerrar panel del día"]'));
+  await click(button("Médicos", host));
+  for (const status of statuses)
+    assert.ok(host.querySelector(`.agenda-appointment-card--doctor.agenda-appointment-card--${status}`));
 });

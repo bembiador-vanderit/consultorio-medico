@@ -6,13 +6,14 @@ Base: `feat/complete-care-context` en `eda6d7bdfb593d590f5fa469f393ba3a0a6f2d4c`
 
 La Agenda reemplaza la tabla como experiencia principal usando únicamente citas y
 reglas ya expuestas por Atlas. `Appointments.tsx` coordina datos y mutaciones;
-`components/agenda` separa navegación temporal, filtros, vistas, tarjetas,
-drawer, badge de estado y formulario.
+`components/agenda` separa navegación temporal, filtros, vistas, una tarjeta
+compartida, panel contextual, badge de estado y formulario.
 
 ## Vistas y datos
 
 - **Día** es la vista inicial. Solicita `GET /appointments?start=fecha&end=fecha`
-  y presenta eventos por su hora registrada.
+  y presenta una agenda compacta `Hora | Cita`; seleccionar una cita abre el
+  detalle en el panel contextual, sin overlay.
 - **Semana** hace una única solicitud para siete días y usa una cuadrícula con
   eje horario. La escala empieza y termina en horas realmente registradas; no
   representa duración, disponibilidad ni slots. Cada cita conserva hora,
@@ -21,8 +22,9 @@ drawer, badge de estado y formulario.
 - **Mes** hace una única solicitud desde el primer hasta el último día del mes y
   presenta una cuadrícula de seis semanas. Cada celda conserva la misma altura:
   muestra hasta tres citas y `+N más`, sin crecer con la cantidad de registros.
-- **Médicos** agrupa solo las citas ya visibles para el usuario. No afirma que
-  un médico sin citas esté disponible.
+- **Médicos** agrupa solo las citas ya visibles para el usuario en filas compactas
+  con la misma tarjeta, color y estado textual. No afirma que un médico sin citas
+  esté disponible.
 - El mini calendario navega fechas y el botón Hoy restaura la fecha actual.
 - Centro y médico proceden de `GET /appointments/scope-options`; especialidad y
   estado filtran el rango cargado. Los filtros no alteran autorización.
@@ -30,18 +32,21 @@ drawer, badge de estado y formulario.
 Al elegir un día en Mes, o `+N más`, se abre el panel derecho **Citas del día**
 con solo las citas ya autorizadas y filtradas. Elegir una cita transforma ese
 mismo panel en su detalle; `← Citas del día` regresa a la lista y cerrar libera
-el espacio para el calendario. No se abre un segundo drawer ni se realiza una
+el espacio para el calendario. No se abre un segundo panel ni se realiza una
 consulta por día. En Semana, el encabezado de cada día abre esa misma lista y
-una tarjeta abre el detalle en el mismo panel.
+una tarjeta abre el detalle en el mismo panel; el retorno solo aparece después
+de entrar por la lista. Día y Médicos abren directamente el detalle en esa misma
+superficie, por lo que no muestran retorno artificial.
 
 ## Datos y acciones reales
 
-Cada tarjeta y drawer muestra paciente, fecha, hora, especialidad, estado,
+Cada tarjeta muestra hora, paciente, motivo resumido, especialidad y estado;
+el panel de detalle muestra paciente, fecha, hora, especialidad, estado,
 centro, médico, motivo, observaciones y cobertura cuando corresponda. La
 especialidad pertenece a la cita, por lo que una jornada puede mezclar
 Cardiología y Medicina Interna para el mismo médico.
 
-El drawer reutiliza `PUT /appointments/{id}` para confirmar, cancelar, marcar no
+El panel reutiliza `PUT /appointments/{id}` para confirmar, cancelar, marcar no
 asistió y reprogramar. Crear y editar conservan búsqueda protegida de paciente,
 selección de centro, médico, especialidad y disponibilidad diaria. Iniciar
 consulta solo aparece para quien tiene rol médico; la API mantiene la
@@ -57,8 +62,8 @@ y el panel derecho solo al seleccionar día o cita. La Agenda de Mes y las colum
 semanales contienen su propio scroll para aprovechar el viewport sin hacer crecer
 la página. En tablet/móvil la composición pasa a una columna; el panel se sitúa
 debajo del calendario con altura local limitada y las citas son tarjetas sin scroll
-horizontal. El drawer usa el componente accesible compartido: foco inicial, trampa
-de Tab, Escape, retorno de foco y etiquetas semánticas.
+horizontal. Los formularios mantienen el diálogo accesible existente; el detalle
+operativo no depende de un drawer ni de un modal.
 
 ## Límites de 4A
 

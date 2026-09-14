@@ -1,5 +1,5 @@
 import type { Appointment } from "../../types/appointment";
-import { AppointmentStatusBadge } from "./AppointmentStatusBadge";
+import { AgendaAppointmentCard } from "./AgendaAppointmentCard";
 import { addDays, formatDate, formatTime, isoDate, parseDate, sortByTime } from "./agenda";
 
 type Props = {
@@ -24,7 +24,7 @@ export function AgendaMonthView({ appointments, date, selectedDay, onSelectDay, 
         const entries = sortByTime(appointments.filter((item) => item.appointment_date === day));
         return <div key={day} role="gridcell" tabIndex={inMonth ? 0 : -1} aria-selected={selectedDay === day} className={`agenda-month-day${inMonth ? "" : " agenda-month-day--outside"}${selectedDay === day ? " agenda-month-day--selected" : ""}`} onClick={() => inMonth && onSelectDay(day)} onKeyDown={(event) => { if (inMonth && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelectDay(day); } }}>
           <span className="agenda-month-date">{parseDate(day).getDate()}</span>
-          <div className="agenda-month-entries">{entries.slice(0, 3).map((item) => <button key={item.id} type="button" className="agenda-month-entry" onClick={(event) => { event.stopPropagation(); onSelectAppointment(item); }} aria-label={`Ver cita de ${item.patient_name} a las ${formatTime(item.appointment_time)}`}><time>{formatTime(item.appointment_time)}</time><span>{item.patient_name}</span><AppointmentStatusBadge status={item.status} /></button>)}</div>
+          <div className="agenda-month-entries">{entries.slice(0, 3).map((item) => <AgendaAppointmentCard key={item.id} appointment={item} variant="month" onSelect={onSelectAppointment} />)}</div>
           {entries.length > 3 && <button type="button" className="agenda-month-more" onClick={(event) => { event.stopPropagation(); onSelectDay(day); }}>+{entries.length - 3} más</button>}
         </div>;
       })}

@@ -15,7 +15,6 @@ import {
   AgendaDoctorsView,
   AgendaWeekView,
 } from "../components/agenda/AgendaViews";
-import { AppointmentDrawer } from "../components/agenda/AppointmentDrawer";
 import { AppointmentForm } from "../components/agenda/AppointmentForm";
 import {
   addDays,
@@ -76,11 +75,13 @@ export default function Appointments({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
-  const [selected, setSelected] = useState<Appointment | null>(null);
+  const [directDay, setDirectDay] = useState<string | null>(null);
+  const [directDetail, setDirectDetail] = useState<Appointment | null>(null);
   const [monthDay, setMonthDay] = useState<string | null>(null);
   const [monthDetail, setMonthDetail] = useState<Appointment | null>(null);
   const [weekDay, setWeekDay] = useState<string | null>(null);
   const [weekDetail, setWeekDetail] = useState<Appointment | null>(null);
+  const [weekFromList, setWeekFromList] = useState(false);
   const [editor, setEditor] = useState<Appointment | null | "new">(
     initialPatient ? "new" : null,
   );
@@ -108,16 +109,13 @@ export default function Appointments({
         setItems(appointments.data);
         setScope(options.data);
         setFilters((current) => reconcileFilters(current, options.data));
-        setSelected((current) =>
-          current
-            ? (appointments.data.find((item) => item.id === current.id) ?? null)
-            : null,
-        );
+        setDirectDetail((current) => current ? (appointments.data.find((item) => item.id === current.id) ?? null) : null);
       })
       .catch((reason) => {
         if (request !== generation.current) return;
         setItems([]);
-        setSelected(null);
+        setDirectDay(null);
+        setDirectDetail(null);
         setError(errorMessage(reason));
       })
       .finally(() => {
@@ -138,26 +136,31 @@ export default function Appointments({
     [items, filters],
   );
   function chooseDate(next: string) {
-    setSelected(null);
+    setDirectDay(null);
+    setDirectDetail(null);
     setMonthDay(null);
     setMonthDetail(null);
     setWeekDay(null);
     setWeekDetail(null);
+    setWeekFromList(false);
     setActionError("");
     setDate(next);
   }
   function chooseView(next: AgendaView) {
-    setSelected(null);
+    setDirectDay(null);
+    setDirectDetail(null);
     setMonthDay(null);
     setMonthDetail(null);
     setWeekDay(null);
     setWeekDetail(null);
+    setWeekFromList(false);
     setActionError("");
     setView(next);
   }
   function selectAppointment(item: Appointment) {
     setActionError("");
-    setSelected(item);
+    setDirectDay(item.appointment_date);
+    setDirectDetail(item);
   }
   async function updateStatus(
     appointment: Appointment,
@@ -177,7 +180,7 @@ export default function Appointments({
       setItems((current) =>
         current.map((item) => (item.id === data.id ? data : item)),
       );
-      setSelected(data);
+      setDirectDetail(data);
       setMonthDetail(data);
       setWeekDetail(data);
     } catch (reason) {
@@ -193,8 +196,8 @@ export default function Appointments({
     announceNotificationsChanged();
     setDate(saved.appointment_date);
     if (view === "month") { setMonthDay(saved.appointment_date); setMonthDetail(saved); }
-    else if (view === "week") { setWeekDay(saved.appointment_date); setWeekDetail(saved); }
-    else setSelected(saved);
+    else if (view === "week") { setWeekDay(saved.appointment_date); setWeekDetail(saved); setWeekFromList(false); }
+    else { setDirectDay(saved.appointment_date); setDirectDetail(saved); }
     setRefresh((current) => current + 1);
   }
   async function remove(appointment: Appointment) {
@@ -214,7 +217,8 @@ export default function Appointments({
       setItems((current) =>
         current.filter((item) => item.id !== appointment.id),
       );
-      setSelected(null);
+      setDirectDay(null);
+      setDirectDetail(null);
       setMonthDetail(null);
       setWeekDetail(null);
       announceNotificationsChanged();
@@ -227,8 +231,9 @@ export default function Appointments({
   }
   const activeLabel =
     view === "day" ? "Día" : view === "week" ? "Semana" : view === "month" ? "Mes" : "Médicos";
-  const panelDay = view === "month" ? monthDay : view === "week" ? weekDay : null;
-  const panelDetail = view === "month" ? monthDetail : view === "week" ? weekDetail : null;
+  const panelDay = view === "month" ? monthDay : view === "week" ? weekDay : directDay;
+  const panelDetail = view === "month" ? monthDetail : view === "week" ? weekDetail : directDetail;
+  const panelShowBack = view === "month" || (view === "week" && weekFromList);
   return (
     <div className="atlas-page agenda-page">
       <PageHeader
@@ -296,7 +301,7 @@ export default function Appointments({
           {error}
         </Alert>
       )}
-      <div className={`agenda-layout${view === "month" ? " agenda-layout--month" : view === "week" ? " agenda-layout--week" : ""}${panelDay ? " agenda-layout--panel" : ""}`}>
+      <div className={`agenda-layout${view === "month" ? " agenda-layout--month" : view === "week" ? " agenda-layout--week" : view === "day" ? " agenda-layout--day" : " agenda-layout--doctors"}${panelDay ? " agenda-layout--panel" : ""}`}>
         <aside className="agenda-sidebar">
           <AgendaMiniCalendar selectedDate={date} onSelect={chooseDate} />
           <AgendaFiltersPanel
@@ -323,8 +328,8 @@ export default function Appointments({
             <AgendaWeekView
               appointments={visible}
               date={date}
-              onSelect={(item) => { setWeekDay(item.appointment_date); setWeekDetail(item); }}
-              onSelectDay={(day) => { setWeekDay(day); setWeekDetail(null); }}
+              onSelect={(item) => { setWeekDay(item.appointment_date); setWeekDetail(item); setWeekFromList(false); }}
+              onSelectDay={(day) => { setWeekDay(day); setWeekDetail(null); setWeekFromList(true); }}
             />
           ) : view === "month" ? (
             <AgendaMonthView appointments={visible} date={date} selectedDay={monthDay} onSelectDay={(day) => { setMonthDay(day); setMonthDetail(null); }} onSelectAppointment={(item) => { setMonthDay(item.appointment_date); setMonthDetail(item); }} />
@@ -335,32 +340,8 @@ export default function Appointments({
             />
           )}
         </section>
-        {panelDay && <AgendaMonthPanel day={panelDay} appointments={visible.filter((item) => item.appointment_date === panelDay)} detail={panelDetail} user={user} canAccessClinical={canAccessClinical} busy={mutating || loading || loadedKey !== rangeKey} error={actionError} onClose={() => { if (!mutating) { setMonthDay(null); setMonthDetail(null); setWeekDay(null); setWeekDetail(null); } }} onBack={() => { setMonthDetail(null); setWeekDetail(null); }} onSelect={(item) => { if (view === "week") setWeekDetail(item); else setMonthDetail(item); }} onEdit={(item) => { setMonthDetail(null); setWeekDetail(null); setEditor(item); }} onAttend={onAttendAppointment} onSetStatus={(item, status) => void updateStatus(item, status)} onDelete={(item) => void remove(item)} onAddAddendum={(item) => { setMonthDetail(null); setWeekDetail(null); setAddendum(item); }} />}
+        {panelDay && <AgendaMonthPanel day={panelDay} appointments={visible.filter((item) => item.appointment_date === panelDay)} detail={panelDetail} showBack={panelShowBack} user={user} canAccessClinical={canAccessClinical} busy={mutating || loading || loadedKey !== rangeKey} error={actionError} onClose={() => { if (!mutating) { setMonthDay(null); setMonthDetail(null); setWeekDay(null); setWeekDetail(null); setWeekFromList(false); setDirectDay(null); setDirectDetail(null); } }} onBack={() => { setMonthDetail(null); setWeekDetail(null); }} onSelect={(item) => { if (view === "week") setWeekDetail(item); else if (view === "month") setMonthDetail(item); else setDirectDetail(item); }} onEdit={(item) => { setMonthDetail(null); setWeekDetail(null); setDirectDetail(null); setEditor(item); }} onAttend={onAttendAppointment} onSetStatus={(item, status) => void updateStatus(item, status)} onDelete={(item) => void remove(item)} onAddAddendum={(item) => { setMonthDetail(null); setWeekDetail(null); setDirectDetail(null); setAddendum(item); }} />}
       </div>
-      <AppointmentDrawer
-        appointment={selected}
-        open={view !== "month" && view !== "week" && Boolean(selected)}
-        user={user}
-        onClose={() => {
-          if (!mutating) setSelected(null);
-        }}
-        canAccessClinical={canAccessClinical}
-        onEdit={(appointment) => {
-          setSelected(null);
-          setEditor(appointment);
-        }}
-        onAttend={onAttendAppointment}
-        onSetStatus={(appointment, status) =>
-          void updateStatus(appointment, status)
-        }
-        onDelete={(appointment) => void remove(appointment)}
-        onAddAddendum={(appointment) => {
-          setSelected(null);
-          setAddendum(appointment);
-        }}
-        busy={mutating || loading || loadedKey !== rangeKey}
-        error={actionError}
-      />
       {editor !== null && (
         <AppointmentForm
           appointment={editor === "new" ? null : editor}
