@@ -1,6 +1,6 @@
 import type { Appointment } from "../../types/appointment";
 import type { User } from "../../types/user";
-import { Alert, Button, Divider, Drawer } from "../../ui";
+import { Alert, Button, Divider, Modal } from "../../ui";
 import { AppointmentStatusBadge } from "./AppointmentStatusBadge";
 import { appointmentRules, formatDate, formatTime } from "./agenda";
 
@@ -40,11 +40,13 @@ export function AppointmentDrawer({
   const active =
     appointment.status === "scheduled" || appointment.status === "confirmed";
   return (
-    <Drawer
+    <Modal
       open={open}
       onClose={onClose}
       title="Detalle de cita"
       description="Datos registrados en Atlas."
+      closeLabel="Cerrar detalle de cita"
+      closeOnBackdrop
       footer={
         <Button variant="outline" disabled={busy} onClick={onClose}>
           Cerrar
@@ -179,6 +181,6 @@ export function AppointmentDrawer({
           </div>
         </section>
       </div>
-    </Drawer>
+    </Modal>
   );
 }

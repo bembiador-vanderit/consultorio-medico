@@ -15,6 +15,7 @@ import {
   AgendaDoctorsView,
   AgendaWeekView,
 } from "../components/agenda/AgendaViews";
+import { AppointmentDrawer } from "../components/agenda/AppointmentDrawer";
 import { AppointmentForm } from "../components/agenda/AppointmentForm";
 import {
   addDays,
@@ -231,8 +232,8 @@ export default function Appointments({
   }
   const activeLabel =
     view === "day" ? "Día" : view === "week" ? "Semana" : view === "month" ? "Mes" : "Médicos";
-  const panelDay = view === "month" ? monthDay : view === "week" ? weekDay : directDay;
-  const panelDetail = view === "month" ? monthDetail : view === "week" ? weekDetail : directDetail;
+  const panelDay = view === "month" ? monthDay : view === "week" ? weekDay : view === "doctors" ? directDay : null;
+  const panelDetail = view === "month" ? monthDetail : view === "week" ? weekDetail : view === "doctors" ? directDetail : null;
   const panelShowBack = view === "month" || (view === "week" && weekFromList);
   return (
     <div className="atlas-page agenda-page">
@@ -342,6 +343,20 @@ export default function Appointments({
         </section>
         {panelDay && <AgendaMonthPanel day={panelDay} appointments={visible.filter((item) => item.appointment_date === panelDay)} detail={panelDetail} showBack={panelShowBack} user={user} canAccessClinical={canAccessClinical} busy={mutating || loading || loadedKey !== rangeKey} error={actionError} onClose={() => { if (!mutating) { setMonthDay(null); setMonthDetail(null); setWeekDay(null); setWeekDetail(null); setWeekFromList(false); setDirectDay(null); setDirectDetail(null); } }} onBack={() => { setMonthDetail(null); setWeekDetail(null); }} onSelect={(item) => { if (view === "week") setWeekDetail(item); else if (view === "month") setMonthDetail(item); else setDirectDetail(item); }} onEdit={(item) => { setMonthDetail(null); setWeekDetail(null); setDirectDetail(null); setEditor(item); }} onAttend={onAttendAppointment} onSetStatus={(item, status) => void updateStatus(item, status)} onDelete={(item) => void remove(item)} onAddAddendum={(item) => { setMonthDetail(null); setWeekDetail(null); setDirectDetail(null); setAddendum(item); }} />}
       </div>
+      <AppointmentDrawer
+        appointment={directDetail}
+        open={view === "day" && Boolean(directDetail)}
+        user={user}
+        canAccessClinical={canAccessClinical}
+        onClose={() => { if (!mutating) { setActionError(""); setDirectDay(null); setDirectDetail(null); } }}
+        onEdit={(item) => { setDirectDetail(null); setEditor(item); }}
+        onAttend={onAttendAppointment}
+        onSetStatus={(item, status) => void updateStatus(item, status)}
+        onDelete={(item) => void remove(item)}
+        onAddAddendum={(item) => { setDirectDetail(null); setAddendum(item); }}
+        busy={mutating || loading || loadedKey !== rangeKey}
+        error={actionError}
+      />
       {editor !== null && (
         <AppointmentForm
           appointment={editor === "new" ? null : editor}

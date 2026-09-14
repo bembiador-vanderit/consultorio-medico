@@ -12,8 +12,8 @@ compartida, panel contextual, badge de estado y formulario.
 ## Vistas y datos
 
 - **Día** es la vista inicial. Solicita `GET /appointments?start=fecha&end=fecha`
-  y presenta una agenda compacta `Hora | Cita`; seleccionar una cita abre el
-  detalle en el panel contextual, sin overlay.
+  y presenta una agenda compacta `Hora | Cita`; seleccionar una cita abre un
+  modal con botón de cierre, Escape, retorno de foco y cierre por backdrop.
 - **Semana** hace una única solicitud para siete días y usa una cuadrícula con
   eje horario. La escala empieza y termina en horas realmente registradas; no
   representa duración, disponibilidad ni slots. Cada cita conserva hora,
@@ -35,8 +35,8 @@ mismo panel en su detalle; `← Citas del día` regresa a la lista y cerrar libe
 el espacio para el calendario. No se abre un segundo panel ni se realiza una
 consulta por día. En Semana, el encabezado de cada día abre esa misma lista y
 una tarjeta abre el detalle en el mismo panel; el retorno solo aparece después
-de entrar por la lista. Día y Médicos abren directamente el detalle en esa misma
-superficie, por lo que no muestran retorno artificial.
+de entrar por la lista. Médicos abre directamente el detalle en esa misma
+superficie. Día conserva su modal para no desplazar la agenda al consultar una cita.
 
 ## Datos y acciones reales
 
@@ -62,8 +62,9 @@ y el panel derecho solo al seleccionar día o cita. La Agenda de Mes y las colum
 semanales contienen su propio scroll para aprovechar el viewport sin hacer crecer
 la página. En tablet/móvil la composición pasa a una columna; el panel se sitúa
 debajo del calendario con altura local limitada y las citas son tarjetas sin scroll
-horizontal. Los formularios mantienen el diálogo accesible existente; el detalle
-operativo no depende de un drawer ni de un modal.
+horizontal. Día usa un modal accesible y no recarga la Agenda al cerrarse; los
+formularios conservan el mismo diálogo. Los detalles de Semana, Mes y Médicos no
+dependen de un drawer ni de un modal.
 
 ## Límites de 4A
 

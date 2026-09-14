@@ -195,6 +195,9 @@ function detailSurface() {
 function closePanel() {
   return panel()?.querySelector('[aria-label="Cerrar panel del día"], [aria-label="Cerrar detalle de cita"]');
 }
+function closeDetail() {
+  return dialog() ? button("Cerrar", dialog()) : closePanel();
+}
 function control(label, container = dialog()) {
   const target = [...container.querySelectorAll("label")].find((item) =>
     item.textContent.startsWith(label),
@@ -263,7 +266,7 @@ for (const [label, status] of [
   ["Cancelar", "cancelled"],
   ["Marcar No asistió", "no_show"],
 ]) {
-  test(`${label} usa PUT /appointments/8 con payload completo y actualiza el panel/lista`, async () => {
+  test(`${label} usa PUT /appointments/8 con payload completo y actualiza el detalle/lista`, async () => {
     await mount();
     await open();
     await click(button(label, detailSurface()));
@@ -290,7 +293,7 @@ for (const [label, status] of [
       labels[status],
     );
     assert.equal(
-      panel().querySelector(".atlas-badge").textContent,
+      dialog().querySelector(".atlas-badge").textContent,
       labels[status],
     );
   });
@@ -376,7 +379,7 @@ test("crear cita para otra fecha refresca lista y abre el panel contextual", asy
     end: "2026-09-15",
   });
   assert.equal(host.querySelectorAll(".agenda-appointment-card").length, 1);
-  assert.match(panel().textContent, /Ana Torres/);
+  assert.match(dialog().textContent, /Ana Torres/);
 });
 test("respuesta y error antiguos no reemplazan Día C", async () => {
   const pending = [];
@@ -509,7 +512,7 @@ for (const roles of [
     await mount(roles);
     await click(host.querySelectorAll(".agenda-appointment-card")[1]);
     assert.equal(button("Iniciar consulta", detailSurface()), undefined);
-    await click(closePanel());
+    await click(closeDetail());
     await open();
     await click(button("Iniciar consulta", detailSurface()));
     assert.deepEqual(attended, [8]);
@@ -721,18 +724,42 @@ test("Mes aplica filtros antes de construir la lista del día", async () => {
   await click(day); assert.equal(host.querySelectorAll(".agenda-day-list-item").length, 1); assert.match(host.textContent, /Cardiología/);
 });
 
-test("Día y Médicos abren el detalle en el panel único sin overlay", async () => {
+test("Día abre el detalle modal y Médicos conserva el panel contextual", async () => {
   await mount();
   await click(host.querySelector(".agenda-appointment-card--day"));
-  assert.match(panel().textContent, /Detalle de la cita/);
-  assert.equal(dialog(), null);
+  assert.match(dialog().textContent, /Detalle de cita/);
+  assert.equal(panel(), null);
   assert.ok(host.querySelector(".agenda-day-grid"));
-  await click(closePanel());
+  await click(closeDetail());
   await click(button("Médicos", host));
   await click(host.querySelector(".agenda-appointment-card--doctor"));
   assert.match(panel().textContent, /Detalle de la cita/);
   assert.equal(dialog(), null);
   assert.ok(host.querySelector(".agenda-doctor-group"));
+});
+
+test("detalle modal de Día cierra por backdrop, botón, Escape y conserva contexto", async () => {
+  await mount();
+  const filters = host.querySelector(".agenda-filters").querySelectorAll("select");
+  await change(filters[3], "scheduled");
+  const trigger = host.querySelector(".agenda-appointment-card--day");
+  const initialGets = gets().length;
+  await click(trigger);
+  const modal = dialog();
+  await click(modal.querySelector(".atlas-dialog-body"));
+  assert.ok(dialog(), "un click dentro del contenido no debe cerrar");
+  await act(async () => modal.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+  assert.equal(dialog(), null, "el backdrop debe cerrar el modal");
+  assert.equal(document.activeElement, trigger, "el foco vuelve a la cita que abrió el modal");
+  assert.equal(filters[3].value, "scheduled");
+  assert.equal(host.querySelector('.agenda-calendar-day[aria-pressed="true"]').textContent, "14");
+  assert.equal(gets().length, initialGets, "cerrar no recarga la Agenda");
+  await click(trigger);
+  await click(button("Cerrar", dialog()));
+  assert.equal(dialog(), null, "el botón Cerrar debe funcionar");
+  await click(trigger);
+  await act(async () => dialog().dispatchEvent(new dom.window.Event("cancel", { bubbles: true, cancelable: true })));
+  assert.equal(dialog(), null, "Escape debe seguir cerrando el modal");
 });
 
 test("las tarjetas comparten color y texto de estado en las cuatro vistas", async () => {
