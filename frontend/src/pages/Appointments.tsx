@@ -1,155 +1,382 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../services/api";
-import type { Appointment, AppointmentInput } from "../types/appointment";
+import type { Appointment } from "../types/appointment";
 import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
-import { sortAppointments, type AppointmentSortKey, type SortDirection } from "../utils/appointmentSort";
+import { Alert, Button, Card, LoadingState, PageHeader } from "../ui";
+import { api } from "../services/api";
 import { announceNotificationsChanged } from "../services/notificationEvents";
 import ClinicalHistoryPanel from "../components/patients/ClinicalHistoryPanel";
+import { AgendaFiltersPanel, AgendaStatusLegend } from "../components/agenda/AgendaFiltersPanel";
+import { AgendaMiniCalendar } from "../components/agenda/AgendaMiniCalendar";
+import { AgendaMonthPanel } from "../components/agenda/AgendaMonthPanel";
+import { AgendaMonthView } from "../components/agenda/AgendaMonthView";
+import {
+  AgendaDayView,
+  AgendaDoctorsView,
+  AgendaWeekView,
+} from "../components/agenda/AgendaViews";
+import { AppointmentDrawer } from "../components/agenda/AppointmentDrawer";
+import { AppointmentForm } from "../components/agenda/AppointmentForm";
+import {
+  addDays,
+  addMonths,
+  appointmentRules,
+  filterAppointments,
+  isoDate,
+  rangeForView,
+  reconcileFilters,
+  type AgendaFilters,
+  type AgendaScope,
+  type AgendaView,
+} from "../components/agenda/agenda";
 
-type Center = { id: number; name: string; city: string; center_type: string; is_active: boolean };
-type Specialty = { id: number; name: string };
-type Doctor = { id: number; full_name: string; specialties: Specialty[] };
-type PatientIdentity = { id: number; first_name: string; last_name: string; date_of_birth: string; phone_masked: string | null; email_masked: string | null };
-type AddendumTarget = { patientId: number; patientName: string; historyId: number };
-type Props = { user: User; onBack: () => void; initialPatient?: Patient | null; canAccessClinical: boolean; onAttendAppointment: (appointment: Appointment) => void };
-
-const empty: AppointmentInput = { patient_id: 0, doctor_id: null, center_id: null, specialty_id: null, appointment_date: new Date().toISOString().slice(0, 10), appointment_time: "08:00", reason: "", status: "scheduled", notes: "" };
-const labels: Record<string, string> = { scheduled: "Programada", confirmed: "Confirmada", completed: "Completada", cancelled: "Cancelada", no_show: "No asistió" };
-
-function errorMessage(reason: any, fallback: string) {
-  const detail = reason?.response?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) return detail.map((item) => item?.msg).filter(Boolean).join(" ") || fallback;
-  return reason?.message || fallback;
+type Props = {
+  user: User;
+  onBack: () => void;
+  initialPatient?: Patient | null;
+  canAccessClinical: boolean;
+  onAttendAppointment: (appointment: Appointment) => void;
+};
+const emptyFilters: AgendaFilters = {
+  centerId: "",
+  doctorId: "",
+  specialtyId: "",
+  status: "",
+};
+function errorMessage(reason: any) {
+  return typeof reason?.response?.data?.detail === "string"
+    ? reason.response.data.detail
+    : "No fue posible realizar la operación. Inténtelo de nuevo.";
 }
-
-export default function Appointments({ user, onBack, initialPatient, canAccessClinical, onAttendAppointment }: Props) {
+function asInput(appointment: Appointment, status: Appointment["status"]) {
+  return {
+    patient_id: appointment.patient_id,
+    doctor_id: appointment.doctor_id,
+    center_id: appointment.center_id,
+    specialty_id: appointment.specialty_id,
+    appointment_date: appointment.appointment_date,
+    appointment_time: appointment.appointment_time,
+    reason: appointment.reason,
+    status,
+    notes: appointment.notes,
+  };
+}
+export default function Appointments({
+  user,
+  onBack,
+  initialPatient,
+  canAccessClinical,
+  onAttendAppointment,
+}: Props) {
+  const [view, setView] = useState<AgendaView>("day");
+  const [date, setDate] = useState(isoDate(new Date()));
   const [items, setItems] = useState<Appointment[]>([]);
-  const [centers, setCenters] = useState<Center[]>([]);
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [patientResults, setPatientResults] = useState<PatientIdentity[]>([]);
-  const [selectedPatient, setSelectedPatient] = useState<Patient | PatientIdentity | null>(null);
-  const [patientQuery, setPatientQuery] = useState("");
-  const [patientBirthDate, setPatientBirthDate] = useState("");
-  const [form, setForm] = useState<AppointmentInput>({ ...empty });
-  const [editing, setEditing] = useState<Appointment | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [scope, setScope] = useState<AgendaScope>({ centers: [], doctors: [] });
+  const [filters, setFilters] = useState(emptyFilters);
   const [loading, setLoading] = useState(true);
-  const [searchingPatients, setSearchingPatients] = useState(false);
   const [error, setError] = useState("");
-  const [formError, setFormError] = useState("");
-  const [loadingDoctors, setLoadingDoctors] = useState(false);
-  const [savingAppointment, setSavingAppointment] = useState(false);
-  const [addendumTarget, setAddendumTarget] = useState<AddendumTarget | null>(null);
-  const [sort, setSort] = useState<{ key: AppointmentSortKey; direction: SortDirection }>({ key: "dateTime", direction: "asc" });
-  const doctorRequest = useRef(0);
-  const initialPatientHandled = useRef(false);
-  const completedContextLocked = Boolean(editing && (
-    editing.status === "completed" || editing.clinical_history_status === "completed"
-  ));
-  const contextLocked = Boolean(editing && (completedContextLocked || editing.coverage_id || (user.roles.includes("doctor") && !user.roles.includes("admin"))));
-  const specialtyLocked = Boolean(editing && (completedContextLocked || editing.coverage_id || editing.has_clinical_history));
-  const scheduleLocked = Boolean(editing && (
-    completedContextLocked
-    || (editing.coverage_id && (!user.roles.includes("secretary") || user.roles.includes("admin")))
-  ));
-  const canAddAddendum = Boolean(
-    editing
-    && completedContextLocked
-    && editing.clinical_history_id
-    && editing.clinical_history_doctor_id === user.id
-    && user.is_active
-    && user.roles.includes("doctor"),
+  const [actionError, setActionError] = useState("");
+  const [directDay, setDirectDay] = useState<string | null>(null);
+  const [directDetail, setDirectDetail] = useState<Appointment | null>(null);
+  const [monthDay, setMonthDay] = useState<string | null>(null);
+  const [monthDetail, setMonthDetail] = useState<Appointment | null>(null);
+  const [weekDay, setWeekDay] = useState<string | null>(null);
+  const [weekDetail, setWeekDetail] = useState<Appointment | null>(null);
+  const [weekFromList, setWeekFromList] = useState(false);
+  const [editor, setEditor] = useState<Appointment | null | "new">(
+    initialPatient ? "new" : null,
   );
+  const [addendum, setAddendum] = useState<Appointment | null>(null);
+  const [mutating, setMutating] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const [loadedKey, setLoadedKey] = useState("");
+  const generation = useRef(0);
+  const range = rangeForView(date, view);
+  const rangeKey = `${range.start}/${range.end}/${refresh}`;
 
-  async function load() { setLoading(true); try { const [a, c] = await Promise.all([api.get<Appointment[]>("/appointments"), api.get<Center[]>("/centers/mine")]); setItems(a.data.map((item) => item.coverage_id && item.original_doctor_name ? { ...item, doctor_name: `${item.doctor_name} · cobertura de ${item.original_doctor_name}` } : item)); setCenters(c.data); } catch (e: any) { setError(e?.response?.data?.detail || "No fue posible cargar la agenda."); } finally { setLoading(false); } }
-  useEffect(() => { void load(); }, []);
-  useEffect(() => { if (loading || !initialPatient || initialPatientHandled.current) return; initialPatientHandled.current = true; openNew(initialPatient); }, [loading, initialPatient, centers]);
-  useEffect(() => { if (!showForm || selectedPatient || patientQuery.trim().length < 4 || !patientBirthDate || (user.roles.includes("secretary") && (!form.center_id || !form.doctor_id))) { setPatientResults([]); return; } const timer = window.setTimeout(async () => { setSearchingPatients(true); try { const identifier = patientQuery.trim(); const { data } = await api.get<PatientIdentity[]>("/patients/identity-search", { params: { date_of_birth: patientBirthDate, phone: identifier.includes("@") ? undefined : identifier, email: identifier.includes("@") ? identifier : undefined, center_id: form.center_id || undefined, doctor_id: form.doctor_id || undefined } }); setPatientResults(data); } catch (e: any) { setPatientResults([]); setFormError(errorMessage(e, "No fue posible buscar pacientes.")); } finally { setSearchingPatients(false); } }, 250); return () => window.clearTimeout(timer); }, [patientQuery, patientBirthDate, selectedPatient, showForm, form.center_id, form.doctor_id, user.roles]);
-
-  async function loadDoctors(centerId: number | null, date: string, preferredDoctorId?: number | null) {
-    const request = ++doctorRequest.current;
-    if (!centerId || !date) { setDoctors([]); setLoadingDoctors(false); return; }
-    setLoadingDoctors(true);
-    try {
-      const { data } = await api.get<Doctor[]>("/appointments/doctors", { params: { center_id: centerId, appointment_date: date } });
-      if (request !== doctorRequest.current) return;
-      setDoctors(data);
-      setForm((current) => {
-        if (current.center_id !== centerId || current.appointment_date !== date) return current;
-        const preferred = preferredDoctorId === undefined ? current.doctor_id : preferredDoctorId;
-        const validPreferred = preferred && data.some((doctor) => doctor.id === preferred) ? preferred : null;
-        const currentDoctor = user.roles.includes("doctor") && data.some((doctor) => doctor.id === user.id) ? user.id : null;
-        const doctorId = validPreferred || currentDoctor;
-        const selectedDoctor = data.find((doctor) => doctor.id === doctorId);
-        const currentSpecialtyIsValid = selectedDoctor?.specialties.some((item) => item.id === current.specialty_id);
-        return { ...current, doctor_id: doctorId, specialty_id: currentSpecialtyIsValid ? current.specialty_id : (selectedDoctor?.specialties.length === 1 ? selectedDoctor.specialties[0].id : null) };
+  useEffect(() => {
+    const request = ++generation.current;
+    setLoading(true);
+    setError("");
+    setItems([]);
+    void Promise.all([
+      api.get<Appointment[]>("/appointments", {
+        params: { start: range.start, end: range.end },
+      }),
+      api.get<AgendaScope>("/appointments/scope-options"),
+    ])
+      .then(([appointments, options]) => {
+        if (request !== generation.current) return;
+        setItems(appointments.data);
+        setScope(options.data);
+        setFilters((current) => reconcileFilters(current, options.data));
+        setDirectDetail((current) => current ? (appointments.data.find((item) => item.id === current.id) ?? null) : null);
+      })
+      .catch((reason) => {
+        if (request !== generation.current) return;
+        setItems([]);
+        setDirectDay(null);
+        setDirectDetail(null);
+        setError(errorMessage(reason));
+      })
+      .finally(() => {
+        if (request === generation.current) {
+          setLoading(false);
+          setLoadedKey(rangeKey);
+        }
       });
-    } catch (e: any) {
-      if (request !== doctorRequest.current) return;
-      setDoctors([]);
-      setForm((current) => current.center_id === centerId && current.appointment_date === date ? { ...current, doctor_id: null, specialty_id: null } : current);
-      setFormError(errorMessage(e, "No fue posible consultar los médicos disponibles."));
+    return () => {
+      generation.current += 1;
+    };
+  }, [range.start, range.end, refresh]);
+  useEffect(() => {
+    if (initialPatient) setEditor("new");
+  }, [initialPatient]);
+  const visible = useMemo(
+    () => filterAppointments(items, filters),
+    [items, filters],
+  );
+  function chooseDate(next: string) {
+    setDirectDay(null);
+    setDirectDetail(null);
+    setMonthDay(null);
+    setMonthDetail(null);
+    setWeekDay(null);
+    setWeekDetail(null);
+    setWeekFromList(false);
+    setActionError("");
+    setDate(next);
+  }
+  function chooseView(next: AgendaView) {
+    setDirectDay(null);
+    setDirectDetail(null);
+    setMonthDay(null);
+    setMonthDetail(null);
+    setWeekDay(null);
+    setWeekDetail(null);
+    setWeekFromList(false);
+    setActionError("");
+    setView(next);
+  }
+  function selectAppointment(item: Appointment) {
+    setActionError("");
+    setDirectDay(item.appointment_date);
+    setDirectDetail(item);
+  }
+  async function updateStatus(
+    appointment: Appointment,
+    status: Appointment["status"],
+  ) {
+    if (mutating || loading || loadedKey !== rangeKey) return;
+    setMutating(true);
+    setActionError("");
+    // Invalidate a refresh already in flight so it cannot overwrite this mutation.
+    generation.current += 1;
+    try {
+      const { data } = await api.put<Appointment>(
+        `/appointments/${appointment.id}`,
+        asInput(appointment, status),
+      );
+      announceNotificationsChanged();
+      setItems((current) =>
+        current.map((item) => (item.id === data.id ? data : item)),
+      );
+      setDirectDetail(data);
+      setMonthDetail(data);
+      setWeekDetail(data);
+    } catch (reason) {
+      setActionError(errorMessage(reason));
     } finally {
-      if (request === doctorRequest.current) setLoadingDoctors(false);
+      setMutating(false);
     }
   }
-  function openNew(patient?: Patient | null) {
-    doctorRequest.current += 1;
-    setDoctors([]);
-    setFormError("");
-    setEditing(null);
-    setSelectedPatient(patient ?? null);
-    setPatientQuery(patient ? `${patient.first_name} ${patient.last_name}` : "");
-    setPatientBirthDate(patient?.date_of_birth ?? "");
-    const center = centers.length === 1 ? centers[0].id : null;
-    setForm({ ...empty, patient_id: patient?.id ?? 0, center_id: center });
-    setShowForm(true);
-    if (center) void loadDoctors(center, empty.appointment_date, null);
+  function handleSaved(saved: Appointment) {
+    generation.current += 1;
+    setEditor(null);
+    setActionError("");
+    announceNotificationsChanged();
+    setDate(saved.appointment_date);
+    if (view === "month") { setMonthDay(saved.appointment_date); setMonthDetail(saved); }
+    else if (view === "week") { setWeekDay(saved.appointment_date); setWeekDetail(saved); setWeekFromList(false); }
+    else { setDirectDay(saved.appointment_date); setDirectDetail(saved); }
+    setRefresh((current) => current + 1);
   }
-  async function edit(a: Appointment) { setFormError(""); setEditing(a); try { const { data } = await api.get<Patient>(`/patients/${a.patient_id}`); setSelectedPatient(data); setPatientQuery(`${data.first_name} ${data.last_name}`); setPatientBirthDate(data.date_of_birth); } catch { setSelectedPatient(null); setPatientQuery(a.patient_name); setPatientBirthDate(a.patient_date_of_birth); } setForm({ patient_id: a.patient_id, doctor_id: a.doctor_id, center_id: a.center_id, specialty_id: a.specialty_id, appointment_date: a.appointment_date, appointment_time: a.appointment_time.slice(0, 5), reason: a.reason || "", status: a.status, notes: a.notes || "" }); setShowForm(true); if (a.center_id && !a.coverage_id) void loadDoctors(a.center_id, a.appointment_date, a.doctor_id); }
-  function selectPatient(patient: PatientIdentity) { setSelectedPatient(patient); setPatientQuery(`${patient.first_name} ${patient.last_name}`); setPatientBirthDate(patient.date_of_birth); setPatientResults([]); setForm((f) => ({ ...f, patient_id: patient.id })); }
-  function clearPatient() { if (contextLocked) return; setSelectedPatient(null); setPatientQuery(""); setPatientBirthDate(""); setPatientResults([]); setForm((f) => ({ ...f, patient_id: 0 })); }
-  async function save() { if (savingAppointment) return; setFormError(""); setSavingAppointment(true); try { if (!form.patient_id) throw new Error("Seleccione un paciente."); if (!form.center_id) throw new Error("Seleccione el centro donde se realizará la cita."); if (!form.doctor_id) throw new Error("Seleccione el médico que atenderá la cita."); if (!form.specialty_id) throw new Error("Seleccione la especialidad de la cita."); if (editing) await api.put(`/appointments/${editing.id}`, form); else await api.post("/appointments", form); announceNotificationsChanged(); setShowForm(false); setSelectedPatient(null); await load(); } catch (e: any) { setFormError(errorMessage(e, "No fue posible guardar la cita.")); } finally { setSavingAppointment(false); } }
-  async function remove(id: number) { if (!confirm("¿Eliminar esta cita?")) return; try { await api.delete(`/appointments/${id}`); await load(); } catch (e: any) { setError(e?.response?.data?.detail || "No fue posible eliminar la cita."); } }
-  function openAddendumFromAppointment() {
-    if (!editing?.clinical_history_id || !canAddAddendum) return;
-    setAddendumTarget({
-      patientId: editing.patient_id,
-      patientName: editing.patient_name,
-      historyId: editing.clinical_history_id,
-    });
-    setShowForm(false);
+  async function remove(appointment: Appointment) {
+    if (
+      mutating ||
+      loading ||
+      loadedKey !== rangeKey ||
+      !appointmentRules(appointment, user).canDelete ||
+      !window.confirm("¿Eliminar esta cita?")
+    )
+      return;
+    setMutating(true);
+    setActionError("");
+    generation.current += 1;
+    try {
+      await api.delete(`/appointments/${appointment.id}`);
+      setItems((current) =>
+        current.filter((item) => item.id !== appointment.id),
+      );
+      setDirectDay(null);
+      setDirectDetail(null);
+      setMonthDetail(null);
+      setWeekDetail(null);
+      announceNotificationsChanged();
+      setRefresh((current) => current + 1);
+    } catch (reason) {
+      setActionError(errorMessage(reason));
+    } finally {
+      setMutating(false);
+    }
   }
-
-  const sortedItems = useMemo(
-    () => sortAppointments(items, sort.key, sort.direction, labels),
-    [items, sort],
+  const activeLabel =
+    view === "day" ? "Día" : view === "week" ? "Semana" : view === "month" ? "Mes" : "Médicos";
+  const panelDay = view === "month" ? monthDay : view === "week" ? weekDay : view === "doctors" ? directDay : null;
+  const panelDetail = view === "month" ? monthDetail : view === "week" ? weekDetail : view === "doctors" ? directDetail : null;
+  const panelShowBack = view === "month" || (view === "week" && weekFromList);
+  return (
+    <div className="atlas-page agenda-page">
+      <PageHeader
+        title="Agenda"
+        description="Citas con datos reales dentro de su alcance."
+        actions={
+          <div className="atlas-actions">
+            <Button variant="outline" onClick={onBack}>
+              Volver al dashboard
+            </Button>
+            <Button onClick={() => setEditor("new")}>+ Nueva cita</Button>
+          </div>
+        }
+      />
+      <div className="agenda-toolbar">
+        <div className="atlas-actions">
+          <Button
+            variant="outline"
+            onClick={() => chooseDate(isoDate(new Date()))}
+          >
+            Hoy
+          </Button>
+          <Button
+            variant="outline"
+            aria-label="Fecha anterior"
+            onClick={() => chooseDate(view === "month" ? addMonths(date, -1) : addDays(date, view === "week" ? -7 : -1))}
+          >
+            ‹
+          </Button>
+          <strong>{activeLabel}</strong>
+          <Button
+            variant="outline"
+            aria-label="Fecha siguiente"
+            onClick={() => chooseDate(view === "month" ? addMonths(date, 1) : addDays(date, view === "week" ? 7 : 1))}
+          >
+            ›
+          </Button>
+        </div>
+        <div
+          className="atlas-actions"
+          role="group"
+          aria-label="Vista de Agenda"
+        >
+          {(
+            [
+              ["day", "Día"],
+              ["week", "Semana"],
+              ["month", "Mes"],
+              ["doctors", "Médicos"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              variant={view === id ? "primary" : "outline"}
+              aria-pressed={view === id}
+              onClick={() => chooseView(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {error && (
+        <Alert tone="danger" title="Agenda no disponible">
+          {error}
+        </Alert>
+      )}
+      <div className={`agenda-layout${view === "month" ? " agenda-layout--month" : view === "week" ? " agenda-layout--week" : view === "day" ? " agenda-layout--day" : " agenda-layout--doctors"}${panelDay ? " agenda-layout--panel" : ""}`}>
+        <aside className="agenda-sidebar">
+          <AgendaMiniCalendar selectedDate={date} onSelect={chooseDate} />
+          <AgendaFiltersPanel
+            filters={filters}
+            centers={scope.centers}
+            doctors={scope.doctors}
+            onChange={(next) => setFilters(reconcileFilters(next, scope))}
+            onClear={() => setFilters(emptyFilters)}
+          />
+          <AgendaStatusLegend />
+        </aside>
+        <section aria-label="Citas del período seleccionado" aria-live="polite">
+          {loading || loadedKey !== rangeKey ? (
+            <Card>
+              <LoadingState label="Cargando citas del período seleccionado…" />
+            </Card>
+          ) : view === "day" ? (
+            <AgendaDayView
+              appointments={visible}
+              date={date}
+              onSelect={selectAppointment}
+            />
+          ) : view === "week" ? (
+            <AgendaWeekView
+              appointments={visible}
+              date={date}
+              onSelect={(item) => { setWeekDay(item.appointment_date); setWeekDetail(item); setWeekFromList(false); }}
+              onSelectDay={(day) => { setWeekDay(day); setWeekDetail(null); setWeekFromList(true); }}
+            />
+          ) : view === "month" ? (
+            <AgendaMonthView appointments={visible} date={date} selectedDay={monthDay} onSelectDay={(day) => { setMonthDay(day); setMonthDetail(null); }} onSelectAppointment={(item) => { setMonthDay(item.appointment_date); setMonthDetail(item); }} />
+          ) : (
+            <AgendaDoctorsView
+              appointments={visible}
+              onSelect={selectAppointment}
+            />
+          )}
+        </section>
+        {panelDay && <AgendaMonthPanel day={panelDay} appointments={visible.filter((item) => item.appointment_date === panelDay)} detail={panelDetail} showBack={panelShowBack} user={user} canAccessClinical={canAccessClinical} busy={mutating || loading || loadedKey !== rangeKey} error={actionError} onClose={() => { if (!mutating) { setMonthDay(null); setMonthDetail(null); setWeekDay(null); setWeekDetail(null); setWeekFromList(false); setDirectDay(null); setDirectDetail(null); } }} onBack={() => { setMonthDetail(null); setWeekDetail(null); }} onSelect={(item) => { if (view === "week") setWeekDetail(item); else if (view === "month") setMonthDetail(item); else setDirectDetail(item); }} onEdit={(item) => { setMonthDetail(null); setWeekDetail(null); setDirectDetail(null); setEditor(item); }} onAttend={onAttendAppointment} onSetStatus={(item, status) => void updateStatus(item, status)} onDelete={(item) => void remove(item)} onAddAddendum={(item) => { setMonthDetail(null); setWeekDetail(null); setDirectDetail(null); setAddendum(item); }} />}
+      </div>
+      <AppointmentDrawer
+        appointment={directDetail}
+        open={view === "day" && Boolean(directDetail)}
+        user={user}
+        canAccessClinical={canAccessClinical}
+        onClose={() => { if (!mutating) { setActionError(""); setDirectDay(null); setDirectDetail(null); } }}
+        onEdit={(item) => { setDirectDetail(null); setEditor(item); }}
+        onAttend={onAttendAppointment}
+        onSetStatus={(item, status) => void updateStatus(item, status)}
+        onDelete={(item) => void remove(item)}
+        onAddAddendum={(item) => { setDirectDetail(null); setAddendum(item); }}
+        busy={mutating || loading || loadedKey !== rangeKey}
+        error={actionError}
+      />
+      {editor !== null && (
+        <AppointmentForm
+          appointment={editor === "new" ? null : editor}
+          initialPatient={editor === "new" ? initialPatient : null}
+          date={date}
+          centers={scope.centers}
+          user={user}
+          onClose={() => setEditor(null)}
+          onSaved={handleSaved}
+        />
+      )}
+      {addendum && (
+        <ClinicalHistoryPanel
+          patientId={addendum.patient_id}
+          patientName={addendum.patient_name}
+          user={user}
+          initialAddendumHistoryId={addendum.clinical_history_id}
+          onClose={() => setAddendum(null)}
+        />
+      )}
+    </div>
   );
-
-  function toggleSort(key: AppointmentSortKey) {
-    setSort((current) => current.key === key
-      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
-      : { key, direction: "asc" });
-  }
-
-  function sortableHeader(label: string, key: AppointmentSortKey, colSpan?: number) {
-    const active = sort.key === key;
-    return <th colSpan={colSpan} aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"} className="px-4 py-3"><button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 font-semibold hover:text-teal-700">{label}<span aria-hidden="true">{active ? (sort.direction === "asc" ? "↑" : "↓") : ""}</span></button></th>;
-  }
-
-  return <section>
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button><h2 className="mt-2 text-2xl font-bold">Agenda de citas</h2><p className="mt-1 text-sm text-slate-500">Programa y administra las citas de los pacientes.</p></div><button onClick={() => openNew()} className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white">+ Nueva cita</button></div>
-    {error && <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-    <div className="mt-6 overflow-hidden rounded-xl border bg-white shadow-sm">{loading ? <p className="p-6 text-slate-500">Cargando agenda...</p> : items.length === 0 ? <p className="p-10 text-center text-slate-500">No hay citas registradas.</p> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr>{sortableHeader("Fecha / Hora", "dateTime", 2)}{sortableHeader("Paciente", "patient")}{sortableHeader("Médico", "doctor")}<th className="px-4 py-3">Especialidad</th>{sortableHeader("Centro", "center")}{sortableHeader("Estado", "status")}<th className="px-4 py-3">Motivo</th><th className="px-4 py-3 text-right">Acciones</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedItems.map((a) => <tr key={a.id}><td className="px-4 py-3">{a.appointment_date}</td><td className="px-4 py-3 font-medium">{a.appointment_time.slice(0, 5)}</td><td className="px-4 py-3 font-medium">{a.patient_name}</td><td className="px-4 py-3">{a.doctor_name}</td><td className="px-4 py-3">{a.specialty_name}</td><td className="px-4 py-3">{a.center_name ? `${a.center_name} (${a.center_city})` : "—"}</td><td className="px-4 py-3">{labels[a.status]}</td><td className="px-4 py-3">{a.reason || "—"}</td><td className="px-4 py-3 text-right">{canAccessClinical && (a.status === "scheduled" || a.status === "confirmed") && <button onClick={() => onAttendAppointment(a)} className="mr-3 rounded-md bg-teal-700 px-3 py-1.5 font-medium text-white">Atender</button>}{canAccessClinical && a.status === "completed" && <span className="mr-3 text-xs font-semibold text-slate-500">Finalizada</span>}<button onClick={() => void edit(a)} className="mr-3 font-medium text-teal-700">Editar</button>{a.status !== "completed" && !a.coverage_id && <button onClick={() => void remove(a.id)} className="font-medium text-red-700">Eliminar</button>}</td></tr>)}</tbody></table></div>}</div>
-    {showForm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"><h3 className="text-xl font-bold">{editing ? "Editar cita" : "Nueva cita"}</h3>
-      <div className="relative mt-4"><label className="block text-sm font-medium">Paciente</label>{selectedPatient ? <div className="mt-1 flex items-center justify-between rounded-lg border bg-slate-50 p-2.5"><span className="font-medium">{selectedPatient.first_name} {selectedPatient.last_name}</span>{!contextLocked && <button type="button" onClick={clearPatient} className="text-sm font-medium text-red-700">Cambiar</button>}</div> : contextLocked ? <div className="mt-1 rounded-lg border bg-slate-100 p-2.5 font-medium">{patientQuery}</div> : <><div className="mt-1 grid grid-cols-2 gap-2"><input value={patientQuery} onChange={(e) => setPatientQuery(e.target.value)} placeholder="Teléfono o correo exacto" className="w-full rounded-lg border p-2.5" autoComplete="off" /><input type="date" value={patientBirthDate} onChange={(e) => setPatientBirthDate(e.target.value)} aria-label="Fecha de nacimiento del paciente" className="w-full rounded-lg border p-2.5" /></div><p className="mt-1 text-xs text-slate-500">La búsqueda de identidad no muestra historia clínica. Para secretaria, seleccione primero centro y médico.</p>{patientQuery.trim().length >= 4 && patientBirthDate && <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-56 overflow-auto rounded-lg border bg-white shadow-lg">{searchingPatients ? <p className="p-3 text-sm text-slate-500">Buscando...</p> : patientResults.length ? patientResults.map((p) => <button type="button" key={p.id} onClick={() => selectPatient(p)} className="block w-full border-b px-3 py-2 text-left hover:bg-slate-50"><span className="font-medium">{p.first_name} {p.last_name}</span><span className="ml-2 text-xs text-slate-500">{p.date_of_birth}{p.phone_masked ? ` · ${p.phone_masked}` : ""}{p.email_masked ? ` · ${p.email_masked}` : ""}</span></button>) : <p className="p-3 text-sm text-slate-500">No se encontraron coincidencias exactas.</p>}</div>}</>}</div>
-      <label className="mt-4 block text-sm font-medium">Centro de atención<select value={form.center_id || ""} disabled={contextLocked} onChange={(e) => { const id = Number(e.target.value) || null; setFormError(""); setForm((current) => ({ ...current, center_id: id, doctor_id: null, specialty_id: null })); void loadDoctors(id, form.appointment_date, null); }} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required><option value="">Seleccione...</option>{centers.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.city}</option>)}</select></label>
-      <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm font-medium">Fecha<input type="date" value={form.appointment_date} disabled={scheduleLocked} onChange={(e) => { const date = e.target.value; setFormError(""); setForm((current) => ({ ...current, appointment_date: date })); if (!editing?.coverage_id) void loadDoctors(form.center_id, date, form.doctor_id); }} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required /></label><label className="text-sm font-medium">Hora<input type="time" value={form.appointment_time} disabled={scheduleLocked} onChange={(e) => setForm({ ...form, appointment_time: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required /></label></div>
-      <label className="mt-4 block text-sm font-medium">Médico responsable{contextLocked ? <div className="mt-1 rounded-lg border bg-slate-100 p-2.5">{editing?.doctor_name || "Médico asignado"}</div> : <select value={form.doctor_id || ""} onChange={(e) => { const doctorId = Number(e.target.value) || null; const selected = doctors.find((doctor) => doctor.id === doctorId); setForm({ ...form, doctor_id: doctorId, specialty_id: selected?.specialties.length === 1 ? selected.specialties[0].id : null }); }} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required disabled={!form.center_id || loadingDoctors}><option value="">{loadingDoctors ? "Consultando disponibilidad..." : "Seleccione..."}</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.full_name}</option>)}</select>}{contextLocked && <span className="mt-1 block text-xs text-slate-500">La reasignación solo se realiza mediante una cobertura clínica explícita.</span>}</label>
-      <label className="mt-4 block text-sm font-medium">Especialidad{specialtyLocked ? <div className="mt-1 rounded-lg border bg-slate-100 p-2.5">{editing?.specialty_name || "Especialidad registrada"}</div> : <select value={form.specialty_id || ""} onChange={(e) => setForm({ ...form, specialty_id: Number(e.target.value) || null })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" required disabled={!form.doctor_id || loadingDoctors}><option value="">Seleccione...</option>{(doctors.find((doctor) => doctor.id === form.doctor_id)?.specialties ?? []).map((specialty) => <option key={specialty.id} value={specialty.id}>{specialty.name}</option>)}</select>}</label>
-      <label className="mt-4 block text-sm font-medium">Estado<select value={form.status} disabled={completedContextLocked} onChange={(e) => setForm({ ...form, status: e.target.value as AppointmentInput["status"] })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100">{Object.entries(labels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label><label className="mt-4 block text-sm font-medium">Motivo<input value={form.reason || ""} disabled={completedContextLocked} readOnly={completedContextLocked} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" /></label><label className="mt-4 block text-sm font-medium">Notas<textarea value={form.notes || ""} disabled={completedContextLocked} readOnly={completedContextLocked} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="mt-1 w-full rounded-lg border p-2.5 disabled:bg-slate-100" /></label>{completedContextLocked && <div className="mt-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-800"><p>Esta cita está finalizada. El motivo y las notas originales son de solo lectura.</p>{canAddAddendum && <button type="button" onClick={openAddendumFromAppointment} className="mt-3 rounded-lg bg-violet-700 px-4 py-2 font-medium text-white">Agregar nota adicional</button>}</div>}{formError && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>}<div className="mt-6 flex justify-end gap-3"><button onClick={() => setShowForm(false)} disabled={savingAppointment} className="rounded-lg border px-5 py-2 disabled:opacity-60">Cancelar</button><button onClick={() => void save()} disabled={savingAppointment || completedContextLocked} className="rounded-lg bg-teal-700 px-5 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">{savingAppointment ? "Guardando..." : "Guardar"}</button></div></div></div>}
-    {addendumTarget && <ClinicalHistoryPanel patientId={addendumTarget.patientId} patientName={addendumTarget.patientName} user={user} initialAddendumHistoryId={addendumTarget.historyId} onClose={() => setAddendumTarget(null)} />}
-  </section>;
 }

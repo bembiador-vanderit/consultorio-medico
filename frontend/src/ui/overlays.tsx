@@ -10,6 +10,7 @@ type DialogProps = {
   children: ReactNode;
   footer?: ReactNode;
   closeLabel?: string;
+  closeOnBackdrop?: boolean;
 };
 
 // A shared lock also supports a modal opened from a drawer without early unlock.
@@ -23,7 +24,7 @@ function lockScroll() {
   return () => { if (--scrollLocks === 0) document.body.style.overflow = previousOverflow; };
 }
 
-function Dialog({ open, onClose, title, description, children, footer, closeLabel = "Cerrar panel", drawer = false }: DialogProps & { drawer?: boolean }) {
+function Dialog({ open, onClose, title, description, children, footer, closeLabel = "Cerrar panel", closeOnBackdrop = false, drawer = false }: DialogProps & { drawer?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -57,7 +58,10 @@ function Dialog({ open, onClose, title, description, children, footer, closeLabe
         event.preventDefault(); first.focus();
       }
     }}
-    onCancel={(event) => { event.preventDefault(); onClose(); }}>
+    onCancel={(event) => { event.preventDefault(); onClose(); }}
+    onClick={(event) => {
+      if (closeOnBackdrop && event.target === event.currentTarget) onClose();
+    }}>
     <header className="atlas-dialog-header"><div><h2 id={titleId} ref={titleRef} tabIndex={-1} className="atlas-section-title">{title}</h2>
       {description && <p id={descriptionId} className="atlas-muted">{description}</p>}</div>
       <IconButton label={closeLabel} variant="ghost" onClick={onClose}>×</IconButton>

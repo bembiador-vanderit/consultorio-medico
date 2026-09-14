@@ -1,5 +1,34 @@
 # Entrega y validación — UI V2
 
+## PR #31 — Agenda unificada y aprovechamiento del viewport
+
+Día, Semana, Mes y Médicos usan la misma semántica de color y tarjeta de cita:
+hora, paciente, motivo resumido, especialidad y estado textual. Día es una agenda
+`Hora | Cita`; Semana conserva su cuadrícula con eje de horas registradas; Mes
+mantiene celdas uniformes y `+N más`; Médicos agrupa filas compactas por profesional.
+Las listas de Semana y Mes, las citas directas de esas vistas y Médicos usan el
+panel contextual para el detalle. Día mantiene un modal con botón Cerrar, botón X,
+Escape, retorno de foco y cierre al pulsar el backdrop; un clic dentro del contenido
+no lo cierra. El shell deja que Agenda use el ancho restante después de la barra
+lateral; el calendario recupera espacio al cerrar el panel.
+
+| Validación | Resultado |
+| --- | --- |
+| Pruebas específicas de Agenda en Docker Node 22/Linux | 53 aprobadas, 0 fallidas |
+| Suite frontend completa en Docker Node 22/Linux | 94 aprobadas, 0 fallidas |
+| TypeScript `tsc -b` | Correcto |
+| Vite producción | Correcto |
+| Navegador aislado — Semana | 1920×1200, 1440×1000, 1366×900, 1280×800, 1024×900, 768×900, 375×812 y 320×700 sin overflow horizontal; panel con scroll local |
+| Interacción Día | Cierre por backdrop, botón Cerrar y Escape; clic interno no cierra, foco vuelve a la cita y no se recarga la Agenda |
+| Navegador aislado — Día y Médicos | 1920×1200 y 1280×800 sin overflow horizontal; Día usa modal y Médicos panel local |
+
+En 1920×1200 el espacio útil de Semana fue 1664 px: la cuadrícula midió 1376 px
+sin panel y 992 px con panel de 360 px; al cerrarlo volvió a 1376 px. En 1280×800
+la cuadrícula permaneció dentro de 736 px y no introdujo barra horizontal de página.
+El panel mantiene scroll local; en tablet/móvil se apila bajo el calendario.
+
+No se modificaron backend, contratos, migraciones ni datos clínicos.
+
 ## Fase 3 — Dashboards por rol
 
 Rama `frontend/ui-v2-role-dashboards`; base exacta
@@ -251,3 +280,54 @@ en [FOUNDATION.md](FOUNDATION.md#revisión-visual-de-junior). El catálogo funci
 cuenta ni backend y solo usa ejemplos ficticios. Su presencia no habilita permisos.
 
 Esperar revisión. No fusionar ni cambiar el destino a main para activar CI.
+
+## Fase 4A — Agenda profesional
+
+Rama `frontend/ui-v2-agenda-phase-4a`; base exacta
+`eda6d7bdfb593d590f5fa469f393ba3a0a6f2d4c` de `feat/complete-care-context`.
+La arquitectura, alcance real y límites están documentados en [AGENDA.md](AGENDA.md).
+
+| Validación | Resultado |
+| --- | --- |
+| Frontend Node/Vite/jsdom | 57 aprobadas, 0 fallidas: Agenda 16, App Shell 14, Dashboard 6, Login 12 y Foundation 9 |
+| TypeScript `tsc -b` y Vite producción | Correctos |
+| Backend | Sin cambios; no corresponde ejecutar pruebas backend |
+
+La fase introduce las vistas Día, Semana y Médicos, navegación por mini calendario,
+filtros sobre datos autorizados, drawer accesible, formulario existente integrado y
+acciones que reutilizan endpoints existentes. No incluye vista Mes, duración,
+intervalos, slots ni disponibilidad horaria.
+
+## PR #31 — correcciones pre-merge
+
+Validación ejecutada sobre la corrección, en una copia aislada de
+`frontend/ui-v2-agenda-phase-4a`, con Node 22 en contenedor:
+
+| Validación | Resultado |
+| --- | --- |
+| Agenda: `node --test tests/agenda.test.mjs tests/agenda-ui.test.mjs` | 42 passed / 0 failed |
+| Suite frontend: `npm test` | 83 passed / 0 failed |
+| TypeScript: `tsc -b` | PASS |
+| Producción: `npm run build` (`tsc -b && vite build`) | PASS |
+| `docker compose -p atlas-pr31-fixes config -q` | PASS, variables efímeras de validación, sin levantar backend/DB |
+| `docker compose -p atlas-pr31-fixes build frontend` | PASS; imagen aislada, sin modificar servicios existentes |
+| Edge headless, tres vistas a 320/375/768/1024/1440 px | 15 casos PASS: sin overflow de página/contenedor, estados visibles, Drawer dentro del viewport, Escape y retorno de foco |
+
+Las pruebas nuevas verifican parámetros y cantidades de GET, crear/editar,
+refresco en la misma semana, reprogramación en Médicos, respuestas/errores fuera
+de orden, payloads de Confirmar/Cancelar/no_show, restricciones de historia,
+cobertura, médico puro y multirol, errores dentro del Drawer, filtros combinados
+y reconciliados, homónimos, especialidades por cita, cinco etiquetas de estado,
+IDs y labels, DELETE y apertura/guardado de la nota adicional existente.
+El test del Shell valida la limpieza del paciente también fuera de `main`, donde
+vive el portal del formulario.
+
+Los datos del navegador fueron ficticios, con API interceptada; esa comprobación
+valida layout e interacción, no reemplaza una prueba integrada de permisos con
+backend. La disponibilidad diaria y el intervalo de cobertura continúan siendo
+validados por los endpoints existentes.
+
+El workflow existente solo escucha push y pull_request hacia `main`, además de
+workflow_dispatch. Un push de esta rama y este PR hacia
+`feat/complete-care-context` no cumple esos disparadores. No se cambia el workflow
+ni la base del PR para activar CI.

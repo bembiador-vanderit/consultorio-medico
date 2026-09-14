@@ -7,6 +7,9 @@
 .atlas-topbar-account { flex-wrap: wrap; justify-content: flex-end; }
 .atlas-topbar-account .atlas-user { min-width: 0; max-width: 24rem; }
 .atlas-topbar-account > .atlas-button { flex-shrink: 0; }
+@media (min-width: 1024px) {
+  .atlas-operational-workspace--agenda { max-width: none; height: calc(100dvh - 77px); overflow: hidden; padding: var(--atlas-space-4); }
+}
 @media (max-width: 1023px) {
   .atlas-operational-workspace { --atlas-page-space: var(--atlas-space-5); }
 }
