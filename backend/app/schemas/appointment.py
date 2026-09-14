@@ -13,7 +13,7 @@ class AppointmentBase(BaseModel):
     notes: str | None = Field(default=None, max_length=10000)
 
 class AppointmentCreate(AppointmentBase):
-    pass
+    patient_selection_token: str | None = Field(default=None, max_length=2048)
 
 class AppointmentResponse(AppointmentBase):
     id: int

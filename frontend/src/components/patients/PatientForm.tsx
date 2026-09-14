@@ -4,7 +4,7 @@ import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
 import type { Patient } from "../../types/patient";
 import type { User } from "../../types/user";
 
-type PatientIdentity = { id: number; first_name: string; last_name: string; date_of_birth: string; phone_masked: string | null; email_masked: string | null };
+type PatientIdentity = { id: number; first_name: string; last_name: string; date_of_birth: string; phone_masked: string | null; email_masked: string | null; selection_token: string };
 
 type Props = {
   patient: Patient | null;
@@ -146,7 +146,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
         <p className="mt-1 text-sm text-slate-500">Complete los datos del paciente y su cobertura médica.</p>
 
         {error && <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-        {identityMatches.length > 0 && <div className="mt-3 rounded-lg border bg-amber-50 p-3">{identityMatches.map((match) => <button type="button" key={match.id} onClick={() => onExistingSelected({ id: match.id, first_name: match.first_name, last_name: match.last_name, date_of_birth: match.date_of_birth, phone: match.phone_masked, email: null, created_at: new Date().toISOString() })} className="block w-full rounded border bg-white p-2 text-left text-sm"><span className="font-medium">Usar {match.first_name} {match.last_name}</span><span className="ml-2 text-xs text-slate-500">{match.date_of_birth}{match.phone_masked ? ` · ${match.phone_masked}` : ""}</span></button>)}</div>}
+        {identityMatches.length > 0 && <div className="mt-3 rounded-lg border bg-amber-50 p-3">{identityMatches.map((match) => <button type="button" key={match.id} onClick={() => onExistingSelected({ id: match.id, first_name: match.first_name, last_name: match.last_name, date_of_birth: match.date_of_birth, phone: match.phone_masked, email: null, created_at: new Date().toISOString(), selection_token: match.selection_token })} className="block w-full rounded border bg-white p-2 text-left text-sm"><span className="font-medium">Usar {match.first_name} {match.last_name}</span><span className="ml-2 text-xs text-slate-500">{match.date_of_birth}{match.phone_masked ? ` · ${match.phone_masked}` : ""}</span></button>)}</div>}
         {!patient && user.roles.includes("secretary") && <p className="mt-3 text-xs text-slate-500">Para buscar un paciente existente, use Nueva cita y seleccione primero el centro y el médico autorizado.</p>}
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">

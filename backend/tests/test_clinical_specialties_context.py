@@ -6,7 +6,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.api.routes.appointments import create_appointment, update_appointment
+from app.api.routes.appointments import create_appointment as create_selected_appointment, update_appointment
+from app.api.routes.patients import search_patient_identity
 from app.api.routes.clinical_catalog import (
     create_specialty,
     list_specialties,
@@ -45,7 +46,7 @@ def specialty_context():
     cardiology = Specialty(name="Cardiología", is_active=True)
     pediatrics = Specialty(name="Pediatría", is_active=True)
     internal = Specialty(name="Medicina interna", is_active=True)
-    patient = Patient(first_name="Paciente", last_name="Especialidad", date_of_birth=date(1990, 1, 1))
+    patient = Patient(first_name="Paciente", last_name="Especialidad", date_of_birth=date(1990, 1, 1), phone="8095550123")
     doctor_one = User(email="one@example.test", full_name="Doctor Uno", password_hash="hash", roles=[doctor_role], centers=[center], is_active=True)
     doctor_multi = User(email="multi@example.test", full_name="Doctora Múltiple", password_hash="hash", roles=[doctor_role], centers=[center], is_active=True)
     secretary = User(email="secretary@example.test", full_name="Secretaria", password_hash="hash", roles=[secretary_role], centers=[center], is_active=True)
@@ -60,6 +61,18 @@ def specialty_context():
     db.close()
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+def create_appointment(payload, user, db):
+    # Specialty fixtures have no prior patient relationship. Locate the known
+    # fictional identity through the real restricted flow before its first cita.
+    patient = db.get(Patient, payload.patient_id)
+    selected = search_patient_identity(
+        date_of_birth=patient.date_of_birth, phone=patient.phone,
+        center_id=payload.center_id, doctor_id=payload.doctor_id, user=user, db=db,
+    )
+    payload = payload.model_copy(update={"patient_selection_token": selected[0].selection_token})
+    return create_selected_appointment(payload, user, db)
 
 
 def appointment_payload(patient_id: int, doctor_id: int, center_id: int, specialty_id: int | None = None):

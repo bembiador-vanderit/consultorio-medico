@@ -1,10 +1,14 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+from hashlib import blake2b
+
+import jwt
 
 from fastapi import HTTPException
 from sqlalchemy import Select, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Appointment, AppointmentCoverageTransfer, ClinicalHistory, Patient, User
+from app.core.config import get_settings
 from app.services.appointment_scope import apply_appointment_scope, is_role, secretary_can_manage
 
 
@@ -134,7 +138,37 @@ def validate_identity_search_context(
     raise HTTPException(status_code=403, detail="No tiene autorización para buscar pacientes")
 
 
-def identity_matches(db: Session, *, date_of_birth: date, phone: str | None, email: str | None) -> list[Patient]:
+def issue_patient_selection_token(user: User, patient_id: int, *, center_id: int | None = None, doctor_id: int | None = None) -> str:
+    """Short-lived selection proof; never a session or clinical authorization."""
+    now = datetime.now(timezone.utc)
+    return jwt.encode({
+        "aud": "patient-selection", "user_id": user.id, "patient_id": patient_id,
+        "center_id": center_id, "doctor_id": doctor_id,
+        "iat": now, "exp": now + timedelta(minutes=30),
+    }, get_settings().secret_key, algorithm="HS256")
+
+
+def require_patient_selection(db: Session, user: User, patient_id: int, *, center_id: int | None, doctor_id: int | None, token: str | None) -> Patient:
+    if patient_in_identity_scope(db, user, patient_id):
+        return require_patient_identity_access(db, user, patient_id)
+    try:
+        proof = jwt.decode(token or "", get_settings().secret_key, algorithms=["HS256"], audience="patient-selection",
+                           options={"require": ["aud", "exp", "iat", "user_id", "patient_id"]})
+        valid = (
+            {"center_id", "doctor_id"}.issubset(proof)
+            and proof["user_id"] == user.id and proof["patient_id"] == patient_id
+            and proof["center_id"] in (None, center_id)
+            and proof["doctor_id"] in (None, doctor_id)
+        )
+    except jwt.InvalidTokenError:
+        valid = False
+    patient = db.get(Patient, patient_id) if valid else None
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    return patient
+
+
+def identity_matches(db: Session, *, date_of_birth: date, phone: str | None, email: str | None, exclude_patient_id: int | None = None) -> list[Patient]:
     normalized_phone = phone.strip() if phone else None
     normalized_email = email.strip().lower() if email else None
     if not normalized_phone and not normalized_email:
@@ -144,14 +178,27 @@ def identity_matches(db: Session, *, date_of_birth: date, phone: str | None, ema
         identifiers.append(Patient.phone == normalized_phone)
     if normalized_email:
         identifiers.append(func.lower(Patient.email) == normalized_email)
-    return list(
-        db.scalars(
-            select(Patient)
-            .where(Patient.date_of_birth == date_of_birth, or_(*identifiers))
-            .order_by(Patient.last_name, Patient.first_name)
-            .limit(10)
-        ).all()
-    )
+    query = select(Patient).where(Patient.date_of_birth == date_of_birth, or_(*identifiers))
+    if exclude_patient_id is not None:
+        query = query.where(Patient.id != exclude_patient_id)
+    return list(db.scalars(query.order_by(Patient.last_name, Patient.first_name).limit(10)).all())
+
+
+def require_available_identity(db: Session, *, date_of_birth: date, phone: str | None, email: str | None, exclude_patient_id: int | None = None) -> None:
+    phone = phone.strip() if phone else None
+    email = email.strip().lower() if email else None
+    if not phone and not email:
+        return  # Legacy identities without contact remain supported.
+    if db.get_bind().dialect.name == "postgresql":
+        # Serialize overlapping DOB + identifier checks through commit, including
+        # concurrent create/update. Sort keys to avoid inverted lock acquisition.
+        identifiers = [("phone", phone), ("email", email)]
+        keys = sorted({int.from_bytes(blake2b(f"patient:{date_of_birth}:{kind}:{value}".encode(), digest_size=8).digest(), signed=True)
+                       for kind, value in identifiers if value})
+        for key in keys:
+            db.execute(select(func.pg_advisory_xact_lock(key)))
+    if identity_matches(db, date_of_birth=date_of_birth, phone=phone, email=email, exclude_patient_id=exclude_patient_id):
+        raise HTTPException(status_code=409, detail="Ya existe un paciente con esa fecha de nacimiento e identificador")
 
 
 def mask_phone(value: str | None) -> str | None:

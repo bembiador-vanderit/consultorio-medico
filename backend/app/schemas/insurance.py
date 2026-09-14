@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class InsuranceCompanyCreate(BaseModel):
@@ -20,6 +20,14 @@ class PatientInsuranceCreate(BaseModel):
     member_number: str = Field(min_length=1, max_length=100)
     plan_name: str | None = Field(default=None, max_length=150)
     is_primary: bool = True
+
+    @field_validator("member_number")
+    @classmethod
+    def nonblank_member_number(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Debe registrar el número de afiliado")
+        return value
 
 
 class PatientInsuranceResponse(BaseModel):
