@@ -74,6 +74,25 @@ docker compose exec backend python -m pytest -q
 - Health check: <http://localhost:8000/api/v1/health>
 - Documentación OpenAPI: <http://localhost:8000/docs>
 
+El frontend admite tanto `http://localhost:5173` desde la PC del servidor como
+`http://IP_DE_LA_PC:5173` desde la red local. No es necesario sustituir localhost
+en el código: las llamadas a la API usan `/api/v1` en la dirección con la que se
+abre Atlas. Docker Compose reenvía esas llamadas al servicio backend mediante
+la configuración del frontend; conserva la autenticación y los permisos existentes.
+Cada dirección mantiene su propia sesión de navegador.
+
+Después de aplicar esta configuración a una instalación existente, recrear solo
+el frontend para cargar su variable de reenvío:
+
+```sh
+docker compose up -d --build --no-deps frontend
+```
+
+Si se ejecuta Vite fuera de Docker, el backend predeterminado del reenvío es
+`http://localhost:8000`; `API_PROXY_TARGET` permite cambiarlo. Una configuración
+explícita `VITE_API_URL` sigue disponible para una API separada. Para servir el
+bundle con otro servidor web, configurar también el reenvío de `/api/v1`.
+
 ## Configuración y seguridad
 
 `.env` es obligatorio para iniciar el stack porque contiene credenciales y secretos específicos de cada instalación. El archivo `.env.example` es únicamente una plantilla y deja vacíos los valores sensibles.

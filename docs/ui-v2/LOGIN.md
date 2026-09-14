@@ -100,6 +100,10 @@ La API predeterminada es `http://localhost:8000/api/v1`; el CORS actual permite
 Si se configura `VITE_API_URL`, debe apuntar al backend correspondiente.
 Usar una cuenta autorizada existente; esta fase no crea credenciales.
 
+En la rama actual de Pacientes fase 5, la API predeterminada usa `/api/v1` en el
+mismo origen del frontend, con reenvío configurado en Vite/Docker. Esto permite
+localhost y la IP sin sustituir direcciones en el código; ver [Pacientes](PATIENTS.md).
+
 Las capturas entregadas se tomaron de la misma entrada `/` en el servidor visual
 local `http://127.0.0.1:5184/`, sin sesión. Ese puerto no sustituye la configuración
 de API/CORS indicada arriba. Los resultados ejecutados están en [VALIDATION.md](VALIDATION.md).

@@ -1,93 +1,140 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../services/api";
 import PatientForm from "../components/patients/PatientForm";
 import PatientInsurancePanel from "../components/patients/PatientInsurancePanel";
 import ClinicalHistoryPanel from "../components/patients/ClinicalHistoryPanel";
+import { Alert, Button, Card, Drawer, EmptyState, FormField, Input, LoadingState, Modal, PageHeader, Select } from "../ui";
 import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
+import "./patients.css";
 
-type Props = {
-  onBack: () => void;
-  onPatientChanged: () => void;
-  onScheduleAppointment: (patient: Patient) => void;
-  user: User;
-};
+type Props = { onBack: () => void; onPatientChanged: () => void; onScheduleAppointment: (patient: Patient) => void; user: User };
 type PatientSortKey = "name" | "dateOfBirth" | "phone" | "email";
-type SortDirection = "asc" | "desc";
-
 const collator = new Intl.Collator("es", { numeric: true, sensitivity: "base" });
+
+export function patientAge(dateOfBirth: string, now = new Date()): number | null {
+  const birth = new Date(`${dateOfBirth}T00:00:00`);
+  if (!Number.isFinite(birth.getTime()) || birth > now) return null;
+  const birthdayPending = now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate());
+  return now.getFullYear() - birth.getFullYear() - Number(birthdayPending);
+}
+const birthLabel = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric" });
+const ageLabel = (patient: Patient) => { const age = patientAge(patient.date_of_birth); return age === null ? "Edad no disponible" : `${age} años`; };
+const fullName = (patient: Patient) => `${patient.first_name} ${patient.last_name}`;
+function Avatar({ patient }: { patient: Patient }) {
+  return <span className="patients-avatar" aria-hidden="true">{patient.first_name.trim().slice(0, 1)}{patient.last_name.trim().slice(0, 1)}</span>;
+}
+function errorMessage(reason: unknown) {
+  const detail = (reason as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  return typeof detail === "string" ? detail : "No fue posible cargar los pacientes.";
+}
 
 export default function Patients({ onBack, onPatientChanged, onScheduleAppointment, user }: Props) {
   const canAccessClinical = user.roles.includes("doctor");
   const [patients, setPatients] = useState<Patient[]>([]);
   const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<Patient | null>(null);
+  const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Patient | null>(null);
   const [insurancePatient, setInsurancePatient] = useState<Patient | null>(null);
   const [historyPatient, setHistoryPatient] = useState<Patient | null>(null);
-  const [sort, setSort] = useState<{ key: PatientSortKey; direction: SortDirection } | null>(null);
+  const [sort, setSort] = useState<{ key: PatientSortKey; direction: "asc" | "desc" } | null>(null);
+  const request = useRef(0);
+  const rowRefs = useRef(new Map<number, HTMLButtonElement>());
 
   async function loadPatients(search = "") {
-    setLoading(true); setError("");
+    const id = ++request.current;
+    setLoading(true); setError(""); setAppliedQuery(search.trim());
     try {
       const { data } = await api.get<Patient[]>("/patients", { params: { query: search.trim() || undefined, limit: 100 } });
+      if (id !== request.current) return;
       setPatients(data);
-    } catch (err: any) {
-      console.error(err); setError(err?.response?.data?.detail || "No fue posible cargar los pacientes.");
-    } finally { setLoading(false); }
+      setSelected((current) => {
+        const updated = data.find((patient) => patient.id === current?.id);
+        return updated ? { ...updated, selection_token: current?.selection_token } : null;
+      });
+    } catch (reason) {
+      if (id === request.current) { setError(errorMessage(reason)); setPatients([]); setSelected(null); }
+    } finally { if (id === request.current) setLoading(false); }
   }
-
-  useEffect(() => { void loadPatients(); }, []);
-
-  function createPatient() { setEditing(null); setShowForm(true); }
-  function editPatient(patient: Patient) { setEditing(patient); setShowForm(true); }
-  function handleSaved(savedPatient: Patient) {
-    const shouldSchedule = !editing && (user.roles.includes("doctor") || user.roles.includes("secretary"));
-    setShowForm(false);
-    onPatientChanged();
-    if (shouldSchedule) onScheduleAppointment(savedPatient);
-    else void loadPatients(query);
-  }
+  useEffect(() => { void loadPatients(); return () => { request.current++; }; }, []);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const change = () => { setDesktop(media.matches); if (media.matches) setDetailOpen(false); };
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
 
   const sortedPatients = useMemo(() => {
     if (!sort) return patients;
-    const multiplier = sort.direction === "asc" ? 1 : -1;
-    return [...patients].sort((left, right) => {
-      if (sort.key === "dateOfBirth") {
-        const comparison = Date.parse(`${left.date_of_birth}T00:00:00`) - Date.parse(`${right.date_of_birth}T00:00:00`);
-        return comparison !== 0 ? comparison * multiplier : (left.id - right.id) * multiplier;
-      }
-      const values: Record<Exclude<PatientSortKey, "dateOfBirth">, [string, string]> = {
-        name: [`${left.first_name} ${left.last_name}`, `${right.first_name} ${right.last_name}`],
-        phone: [left.phone ?? "", right.phone ?? ""],
-        email: [left.email ?? "", right.email ?? ""],
-      };
-      const [leftValue, rightValue] = values[sort.key];
-      const comparison = collator.compare(leftValue, rightValue);
-      return comparison !== 0 ? comparison * multiplier : (left.id - right.id) * multiplier;
+    const direction = sort.direction === "asc" ? 1 : -1;
+    return [...patients].sort((a, b) => {
+      const value = (patient: Patient) => sort.key === "name" ? fullName(patient) : sort.key === "dateOfBirth" ? patient.date_of_birth : patient[sort.key] ?? "";
+      return (collator.compare(value(a), value(b)) || a.id - b.id) * direction;
     });
   }, [patients, sort]);
 
-  function toggleSort(key: PatientSortKey) {
-    setSort((current) => current?.key === key
-      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
-      : { key, direction: "asc" });
+  function selectPatient(patient: Patient) { setSelected(patient); if (!desktop) setDetailOpen(true); }
+  function createPatient() { setEditing(null); setShowForm(true); }
+  function handleSaved(patient: Patient) {
+    const saved = { ...patient, selection_token: patient.selection_token ?? editing?.selection_token };
+    setShowForm(false); setSelected(saved); onPatientChanged();
+    if (!editing && (user.roles.includes("doctor") || user.roles.includes("secretary"))) onScheduleAppointment(saved);
+    else void loadPatients(appliedQuery);
+  }
+  function detail() {
+    if (!selected) return <EmptyState title="Selecciona un paciente para ver su información" description="Su ficha y acciones aparecerán aquí." />;
+    return <div className="patients-detail-content">
+      <div className="patients-detail-summary"><div className="patients-identity"><Avatar patient={selected} /><div><p className="atlas-caption">Ficha del paciente</p><h3 className="atlas-section-title">{fullName(selected)}</h3><p className="atlas-muted">{ageLabel(selected)}</p></div></div>
+      <dl className="patients-facts">
+        <div><dt>Fecha de nacimiento</dt><dd>{birthLabel(selected.date_of_birth)}</dd></div>
+        <div><dt>Teléfono</dt><dd>{selected.phone || "Sin teléfono registrado"}</dd></div>
+        <div><dt>Correo</dt><dd>{selected.email || "Sin correo registrado"}</dd></div>
+      </dl></div>
+      <div className="patients-quick-actions" aria-label="Acciones del paciente">
+        <Button onClick={() => onScheduleAppointment(selected)}>Agendar cita</Button>
+        <Button variant="outline" onClick={() => { setEditing(selected); setShowForm(true); }}>Editar</Button>
+        <Button variant="outline" onClick={() => setInsurancePatient(selected)}>Seguro</Button>
+        {canAccessClinical && <Button variant="outline" onClick={() => setHistoryPatient(selected)}>Historia clínica</Button>}
+      </div>
+    </div>;
   }
 
-  function sortableHeader(label: string, key: PatientSortKey) {
-    const active = sort?.key === key;
-    return <th aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"} className="px-4 py-3"><button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 font-semibold hover:text-teal-700">{label}<span aria-hidden="true">{active ? (sort.direction === "asc" ? "↑" : "↓") : ""}</span></button></th>;
-  }
-
-  return <section>
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button><h2 className="mt-2 text-2xl font-bold">Pacientes</h2><p className="mt-1 text-sm text-slate-500">Registro y administración de pacientes.</p></div><button onClick={createPatient} className="rounded-lg bg-teal-700 px-4 py-2 font-medium text-white hover:bg-teal-800">+ Nuevo paciente</button></div>
-    <form onSubmit={(event: FormEvent) => { event.preventDefault(); void loadPatients(query); }} className="mt-6 flex flex-col gap-3 rounded-xl border bg-white p-4 shadow-sm sm:flex-row"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre, apellido o teléfono..." className="flex-1 rounded-lg border border-slate-300 px-3 py-2" /><button type="submit" className="rounded-lg bg-slate-900 px-5 py-2 font-medium text-white">Buscar</button><button type="button" onClick={() => { setQuery(""); void loadPatients(""); }} className="rounded-lg border border-slate-300 px-5 py-2 font-medium">Limpiar</button></form>
-    {error && <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-    <div className="mt-6 overflow-hidden rounded-xl border bg-white shadow-sm">{loading ? <p className="p-6 text-slate-500">Cargando pacientes...</p> : patients.length === 0 ? <div className="p-10 text-center"><p className="font-medium">No hay pacientes registrados.</p><p className="mt-1 text-sm text-slate-500">Puedes registrar el primero con "Nuevo paciente".</p></div> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr>{sortableHeader("Paciente", "name")}{sortableHeader("Fecha nacimiento", "dateOfBirth")}{sortableHeader("Teléfono", "phone")}{sortableHeader("Correo", "email")}<th className="px-4 py-3 text-right">Acciones</th></tr></thead><tbody className="divide-y divide-slate-100">{sortedPatients.map((patient) => <tr key={patient.id} className="hover:bg-slate-50"><td className="px-4 py-3 font-medium">{patient.first_name} {patient.last_name}</td><td className="px-4 py-3">{patient.date_of_birth}</td><td className="px-4 py-3">{patient.phone || "—"}</td><td className="px-4 py-3">{patient.email || "—"}</td><td className="px-4 py-3 text-right"><div className="flex flex-wrap justify-end gap-3"><button onClick={() => onScheduleAppointment(patient)} className="font-medium text-emerald-700 hover:underline">Agendar cita</button><button onClick={() => editPatient(patient)} className="font-medium text-teal-700 hover:underline">Editar</button>{canAccessClinical && <button onClick={() => setHistoryPatient(patient)} className="font-medium text-indigo-700 hover:underline">Historia clínica</button>}<button onClick={() => setInsurancePatient(patient)} className="font-medium text-slate-700 hover:underline">Seguro</button></div></td></tr>)}</tbody></table></div>}</div>
+  return <section className="patients-workspace" aria-label="Gestión de pacientes">
+    <PageHeader title="Pacientes" description="Gestión y seguimiento de pacientes" actions={<Button onClick={createPatient}>+ Nuevo paciente</Button>} />
+    <form className="patients-search" onSubmit={(event: FormEvent) => { event.preventDefault(); void loadPatients(query); }}>
+      <FormField label="Buscar pacientes"><Input type="search" placeholder="Buscar por nombre, apellido o teléfono..." value={query} onChange={(event) => setQuery(event.target.value)} /></FormField>
+      <div className="patients-search-actions"><Button type="submit">Buscar</Button><Button variant="outline" onClick={() => { setQuery(""); void loadPatients(); }}>Limpiar</Button></div>
+    </form>
+    <div className="patients-layout">
+      <Card className="patients-master">
+        <header className="patients-list-header"><div><h2 className="atlas-card-title">Listado de pacientes</h2><p className="atlas-help">{loading ? "Consultando registros" : error ? "Consulta no disponible" : `${patients.length} registros mostrados${patients.length === 100 ? " · Límite de 100" : ""}`}</p></div>
+          <FormField label="Ordenar listado"><Select value={sort ? `${sort.key}:${sort.direction}` : "default"} onChange={(event) => {
+            const [key, direction] = event.target.value.split(":");
+            setSort(key === "default" ? null : { key: key as PatientSortKey, direction: direction as "asc" | "desc" });
+          }}><option value="default">Orden del servidor</option>{[["name", "Nombre"], ["dateOfBirth", "Nacimiento"], ["phone", "Teléfono"], ["email", "Correo"]].flatMap(([key, label]) => [<option key={`${key}:asc`} value={`${key}:asc`}>{label} ↑</option>, <option key={`${key}:desc`} value={`${key}:desc`}>{label} ↓</option>])}</Select></FormField>
+        </header>
+        <div className="patients-list-scroll" aria-busy={loading}>
+          {loading ? <LoadingState label="Cargando pacientes..." /> : error ? <div className="patients-error"><Alert tone="danger" title="No se pudo cargar el listado">{error}</Alert><Button variant="outline" onClick={() => void loadPatients(appliedQuery)}>Reintentar</Button></div> : patients.length === 0 ? <EmptyState title={appliedQuery ? "No hay resultados para esta búsqueda" : "No hay pacientes registrados"} description={appliedQuery ? "Prueba con otro nombre, apellido o teléfono." : "Registra un paciente para comenzar."} action={<Button variant="outline" onClick={appliedQuery ? () => { setQuery(""); void loadPatients(); } : createPatient}>{appliedQuery ? "Limpiar búsqueda" : "+ Nuevo paciente"}</Button>} /> : <ul className="patients-list" aria-label="Pacientes encontrados">{sortedPatients.map((patient) => <li key={patient.id}>
+            <button type="button" className="patients-row" aria-pressed={selected?.id === patient.id} aria-haspopup={!desktop ? "dialog" : undefined} onClick={() => selectPatient(patient)} ref={(element) => { if (element) rowRefs.current.set(patient.id, element); else rowRefs.current.delete(patient.id); }}>
+              <Avatar patient={patient} /><span className="patients-row-identity"><strong title={fullName(patient)}>{fullName(patient)}</strong><span>{ageLabel(patient)} · {birthLabel(patient.date_of_birth)}</span></span>
+              <span className="patients-row-contact"><span title={patient.phone || undefined}>{patient.phone || "Sin teléfono"}</span><span title={patient.email || undefined}>{patient.email || "Sin correo"}</span></span>
+              <span className="patients-row-status" aria-hidden="true">{selected?.id === patient.id ? "Seleccionado" : "Ver ficha"}</span>
+            </button>
+          </li>)}</ul>}
+        </div>
+        <footer className="patients-list-footer"><span className="atlas-help">Búsqueda en el servidor · Hasta 100 registros</span><Button variant="ghost" size="sm" onClick={onBack}>← Volver al dashboard</Button></footer>
+      </Card>
+      {desktop && <Card className="patients-detail" role="region" aria-label="Detalle del paciente"><header className="patients-detail-header"><h2 className="atlas-card-title">Información del paciente</h2>{selected && <Button size="sm" variant="ghost" onClick={() => { rowRefs.current.get(selected.id)?.focus(); setSelected(null); }}>Cerrar ficha</Button>}</header><div className="patients-detail-scroll">{detail()}</div></Card>}
+    </div>
+    {!desktop && selected && <Drawer title="Información del paciente" open={detailOpen} onClose={() => setDetailOpen(false)} closeLabel="Cerrar ficha" closeOnBackdrop>{detail()}</Drawer>}
     {showForm && <PatientForm patient={editing} user={user} onClose={() => setShowForm(false)} onSaved={handleSaved} onExistingSelected={(patient) => { setShowForm(false); onScheduleAppointment(patient); }} />}
-    {canAccessClinical && historyPatient && <ClinicalHistoryPanel patientId={historyPatient.id} patientName={`${historyPatient.first_name} ${historyPatient.last_name}`} user={user} onClose={() => setHistoryPatient(null)} />}
-    {insurancePatient && <PatientInsurancePanel patientId={insurancePatient.id} patientName={`${insurancePatient.first_name} ${insurancePatient.last_name}`} user={user} onClose={() => setInsurancePatient(null)} />}
+    {insurancePatient && <PatientInsurancePanel patientId={insurancePatient.id} patientName={fullName(insurancePatient)} user={user} onClose={() => setInsurancePatient(null)} />}
+    {canAccessClinical && historyPatient && <Modal title="Historia clínica" description={fullName(historyPatient)} open onClose={() => setHistoryPatient(null)} closeLabel="Cerrar historia clínica"><ClinicalHistoryPanel embedded patientId={historyPatient.id} patientName={fullName(historyPatient)} user={user} onClose={() => setHistoryPatient(null)} /></Modal>}
   </section>;
 }

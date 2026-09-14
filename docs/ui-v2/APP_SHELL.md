@@ -98,3 +98,7 @@ iniciar con una cuenta existente. La API predeterminada es
 `http://localhost:5173`. Después de ingresar, probar sidebar, Agenda, una sección
 permitida por el rol, campana, F5, logout y la navegación móvil. El catálogo de
 desarrollo permanece en `http://localhost:5173/__dev/ui-v2`.
+
+Actualización en Pacientes fase 5: la API predeterminada usa `/api/v1` en el mismo
+origen del frontend, reenviada por Vite/Docker. Se admite acceso por localhost o
+IP sin cambiar CORS backend; ver [Pacientes](PATIENTS.md).

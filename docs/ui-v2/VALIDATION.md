@@ -331,3 +331,48 @@ El workflow existente solo escucha push y pull_request hacia `main`, además de
 workflow_dispatch. Un push de esta rama y este PR hacia
 `feat/complete-care-context` no cumple esos disparadores. No se cambia el workflow
 ni la base del PR para activar CI.
+
+## Pacientes UI V2 — fase 5, misión 3
+
+Base exacta: `feat/complete-care-context@5012dfce894b63710745246d6d634c15b75bb078`.
+
+| Validación | Resultado |
+| --- | --- |
+| Suite frontend completa, Node 22 en Docker, ejecución secuencial | 129 passed / 0 failed / 0 skipped |
+| Patients UI nuevos | 29 casos incluidos en la suite completa |
+| patient-selection-contract | 2 casos incluidos; prueba firmada conservada y enviada a citas |
+| api-routing nuevos | 4 passed específicos y en suite completa; ruta relativa, override, reenvío de query/auth/cookies |
+| Agenda y App Shell | Incluidos en suite completa; selección en Patients antes de Agendar y navegación preservada |
+| TypeScript + Vite build | PASS, 129 módulos, ejecutado dentro de la imagen frontend |
+| Docker frontend | PASS, imagen aislada atlas-patients-v2-frontend |
+| Compose config -q | PASS, archivo de variables ficticias; sin iniciar ni migrar backend/DB |
+| Edge headless, ocho resoluciones | PASS, lista/ficha, seguro, historia y formulario; sin overflow horizontal de página o modal activo |
+| Desktop/tablet desde 640px | PASS, altura de página igual al viewport, scroll local |
+| 1920×1200 | Área master/detail de 1632px, a 16px del Sidebar; aprovecha ancho restante |
+| 1280×800 | Master/detail de 992px; acciones visibles incluso con identidad/contacto extensos |
+| Acceso localhost / IP local de la PC | PASS desde la misma PC en preview, llamadas al origen elegido |
+| Selección / Seguro | Cero requests al seleccionar; una consulta de seguro al paciente elegido por apertura; sin N+1 |
+| Cierres/foco | Escape y cierres accesibles; Seguro retorna foco a su botón, Drawer retorna a la fila |
+| Backend y reglas de autorización | Sin diff respecto a la base; CORS permanece intacto |
+
+Resoluciones: 1920×1200, 1440×1000, 1366×900, 1280×800, 1024×900,
+768×900, 375×812 y 320×700. En móvil se permite desplazamiento vertical
+natural de la lista; detalles/formularios tienen scroll interno y cierre disponible.
+
+Las regresiones cubren render, loading/empty/error/no resultados, búsqueda/limpiar,
+respuestas fuera de orden, selección/ficha/edad, roles simples y múltiples,
+Historia solo por doctor, Seguro bajo demanda, alta/edición/agendar, prueba de
+selección, 409 y campos conservados, omisión de seguro tras error de lectura,
+false explícito, actualización explícita, guardando, labels/IDs, cierre/foco y
+ordenamiento local sin requests adicionales.
+
+Las capturas usan fixtures ficticios y API interceptada; la comprobación HTTP de
+reenvío usa un backend ficticio en loopback y verifica Authorization y cookies.
+No representa una certificación de permisos ni de conectividad/firewall desde
+otro dispositivo. No se alteraron servicios operativos ni datos clínicos.
+
+El bundle usa /api/v1 en el mismo origen; Vite dev/preview y la configuración del
+frontend Docker reenvían al backend. Un servidor estático diferente debe configurar
+ese reenvío. VITE_API_URL explícito mantiene el modo de API separada.
+
+Diseño, roles y deuda futura: [PATIENTS.md](PATIENTS.md).

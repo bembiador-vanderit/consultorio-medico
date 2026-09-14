@@ -78,6 +78,7 @@ test("patient scheduling opens Agenda with that patient; navigation to Agenda cl
   data.set("/patients", [{ id: 9, first_name: "Paciente", last_name: "Ficticio", date_of_birth: "1980-01-01" }]);
   await mount(["doctor"]);
   await click(button("Pacientes", navigation()));
+  await click(host.querySelector(".patients-row"));
   await click(button("Agendar cita", host.querySelector("main")));
   assert.equal(navigation().querySelector('[aria-current="page"]').textContent, "Agenda");
   assert.match(document.body.textContent, /Paciente Ficticio/);

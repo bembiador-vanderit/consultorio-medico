@@ -6,7 +6,7 @@ import type { LaboratoryOrder, StudyOrder } from "../../types/clinicalOrder";
 import type { ClinicalAddendum, ClinicalHistory, ClinicalHistoryInput, RequestedTest } from "../../types/clinicalHistory";
 import type { User } from "../../types/user";
 
-type Props = { patientId: number; patientName: string; user: User; onClose: () => void; initialAddendumHistoryId?: number | null };
+type Props = { patientId: number; patientName: string; user: User; onClose: () => void; initialAddendumHistoryId?: number | null; embedded?: boolean };
 type Diagnosis = { id: number; description: string; icd10_code: string | null; is_primary: boolean };
 type Prescription = {
   id: number;
@@ -124,7 +124,7 @@ function vitalSignItems(vitalSigns: VitalSigns | null | undefined) {
   return items;
 }
 
-export default function ClinicalHistoryPanel({ patientId, patientName, user, onClose, initialAddendumHistoryId }: Props) {
+export default function ClinicalHistoryPanel({ patientId, patientName, user, onClose, initialAddendumHistoryId, embedded = false }: Props) {
   const [records, setRecords] = useState<ClinicalHistory[]>([]);
   const [index, setIndex] = useState(0);
   const [form, setForm] = useState<ClinicalHistoryInput>(emptyHistory);
@@ -415,12 +415,12 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
     .slice(0, 6);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="max-h-[94vh] w-full max-w-7xl overflow-y-auto rounded-2xl bg-white shadow-xl">
-        <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4">
+    <div className={embedded ? "patient-history-embedded" : "fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"}>
+      <div className={embedded ? "min-w-0" : "max-h-[94vh] w-full max-w-7xl overflow-y-auto rounded-2xl bg-white shadow-xl"}>
+        {!embedded && <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4">
           <div><h3 className="text-xl font-bold">Historia clínica</h3><p className="text-sm text-slate-500">{patientName}</p></div>
           <button onClick={onClose} className="text-2xl text-slate-500" aria-label="Cerrar">×</button>
-        </div>
+        </div>}
 
         {loading ? <p className="p-6 text-slate-500">Cargando historia clínica...</p> : (
           <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_360px]">
