@@ -187,3 +187,28 @@ test("sorting stays local to fetched results and retains previous sortable field
   for (const key of ["dateOfBirth", "phone", "email"]) await value(field("Ordenar listado"), `${key}:asc`);
   assert.equal(mainRequests().length, 1);
 });
+
+
+test("long patient identity remains complete in semantic detail and contact", async () => {
+  records = [{ ...a, first_name: "Ana María de los Ángeles", last_name: "Ficticia de Apellido Extenso", email: "correo.extremadamente.largo.para.verificar.el.layout@example.test" }];
+  await mount(); await select(); const detail = host.querySelector(".patients-detail");
+  const heading = detail.querySelector(".patients-identity h3");
+  assert.equal(heading.textContent, `${records[0].first_name} ${records[0].last_name}`);
+  assert.equal(heading.title, heading.textContent);
+  assert.match(detail.querySelector('[aria-label="Información personal"]').textContent, /Fecha de nacimiento/);
+  assert.equal([...detail.querySelectorAll('[aria-label="Contacto"] dd')].at(-1).textContent, records[0].email);
+  assert.equal(requests.length, 1);
+});
+
+test("mobile patient actions preserve clinical guard and accessible heading focus", async () => {
+  setDesktop(false); await mount(); await select(); const drawer = panel();
+  const title = drawer.querySelector(".atlas-dialog-header h2");
+  assert.equal(title.textContent, "Información del paciente");
+  assert.equal(title.tabIndex, -1); assert.equal(document.activeElement, title);
+  assert.deepEqual([...drawer.querySelectorAll(".patients-quick-actions button")].map(node => node.textContent), ["Agendar cita", "Historia clínica", "Editar", "Seguro"]);
+  await click(drawer.querySelector('[aria-label="Cerrar ficha"]'));
+  await act(async () => root.unmount()); root = createRoot(host);
+  await mount(["secretary"]); await select();
+  assert.equal(button("Historia clínica", panel()), undefined);
+  assert.deepEqual([...panel().querySelectorAll(".patients-quick-actions button")].map(node => node.textContent), ["Agendar cita", "Editar", "Seguro"]);
+});

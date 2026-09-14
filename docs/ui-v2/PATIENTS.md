@@ -4,14 +4,14 @@ Base: `feat/complete-care-context` en `5012dfce894b63710745246d6d634c15b75bb078`
 
 ## Workspace master/detail
 
-Patients conserva su integración con App y la navegación por estado. PageHeader, Button, Card, FormField, Input, Select, Alert, EmptyState, LoadingState, Modal y Drawer pertenecen a la fundación vigente. El CSS de composición usa exclusivamente los tokens Atlas; no incorpora otra paleta ni una biblioteca de iconos.
+Patients conserva su integración con App y la navegación por estado. PageHeader, Button, Card, FormField, Input, Select, Alert, EmptyState, LoadingState, Modal y Drawer pertenecen a la fundación vigente. El CSS de composición usa tokens Atlas y un acento azul para Agendar cita; incorpora tokens tonales violeta para Seguro y conserva la biblioteca de iconos existente.
 
 La lista compacta sustituye la tabla de acciones. Cada registro es un botón con iniciales locales, nombre, edad calculada, nacimiento, teléfono y correo. El estado seleccionado usa texto, color, borde y aria-pressed. Enter/Espacio funcionan como botones nativos; el foco es visible. La ficha permite scroll local del resumen cuando hay datos extensos, conservando visibles las acciones.
 
-Desktop mantiene lista y ficha lado a lado. La lista domina aproximadamente el 71% del área; la ficha ocupa el resto, con un mínimo útil de 17rem. Al no seleccionar un paciente se muestra un estado vacío contextual. Nombre/contacto extensos se delimitan en las filas. En la ficha desktop, nombre a dos líneas con title completo y contacto con ajuste de línea; en móvil, nombre completo. Las acciones se concentran debajo de los datos, sin navegar a otra página de ficha.
+Desktop mantiene lista y ficha lado a lado. La lista domina aproximadamente el 62% del área; la ficha ocupa aproximadamente 38%, con tracks minmax(0,1.65fr) / minmax(18rem,1fr). Al no seleccionar un paciente se muestra un estado vacío contextual. Nombre/contacto extensos se delimitan en las filas. En la ficha desktop, nombre de hasta tres líneas con title completo y contacto con ajuste de línea; en móvil, nombre completo. Las acciones se concentran debajo de los datos, sin navegar a otra página de ficha.
 
 La corrección visual del mismo PR #33 incorpora cabeceras tonales, iconos de
-acción y acentos Sky/Amber/Mint usando tokens vigentes. El Shell de 224px y
+acción y acentos azul/Sage/violeta usando tokens vigentes. El Shell de 224px y
 Topbar compacta dejan más espacio útil; tablet reserva la barra inferior en su
 altura disponible y la lista móvil conserva su margen final. Búsqueda, selección,
 alta/edición, seguro y prueba de selección mantienen sus contratos y tests.
@@ -82,3 +82,14 @@ FUTURE: server-side pagination, sorting server-side y revisión de escalabilidad
 La prueba de selección conserva su expiración/alcance de PR #32. No se introduce renovación automática, MPI, merge de pacientes, nuevos campos demográficos ni datos simulados en producción.
 
 La revisión visual usa datos ficticios y API interceptada en navegador; valida composición/interacción y cantidad de requests del frontend, sin certificar permisos contra una base operativa. Los tests de contrato y la autorización backend existente siguen siendo necesarios.
+
+## Polish final — misión 3C, PR #33
+
+La identidad prioriza avatar y nombre completo con caption discreto, edad y
+nacimiento desktop. Información personal y Contacto se agrupan; teléfono y
+correo aprovechan todo el ancho, con overflow-wrap:anywhere. Desktop usa dos
+filas de acciones; móvil conserva Agendar cita e Historia clínica a todo el
+ancho y Editar/Seguro en dos columnas, con targets de 44px y guard médico intacto.
+Agendar cita es azul, Historia sage, Seguro violeta suave y Editar outline.
+El encabezado estático del Drawer recibe foco sin dibujar un borde alrededor
+del título; los controles interactivos conservan su indicador de foco.

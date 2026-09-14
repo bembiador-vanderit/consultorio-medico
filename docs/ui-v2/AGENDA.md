@@ -4,7 +4,7 @@
 
 El marco desktop usa altura flex disponible después de la Topbar compacta,
 sin el cálculo fijo de 77px; conserva la cuadrícula semanal, eje horario, estados
-azul/verde/gris/coral/ámbar y tarjetas delimitadas. No cambia endpoints ni reglas.
+azul/verde/teal/coral/slate y tarjetas delimitadas. No cambia endpoints ni reglas.
 
 Por debajo de 1024px, Calendario y filtros revela/oculta el mismo panel sin
 requests ni controles duplicados; inicia cerrado para priorizar citas. Cambiar
@@ -137,3 +137,22 @@ proporcional y agenda avanzada sobre esas capacidades.
   las mediciones lo justifican.
 
 Los límites de 4A y las funcionalidades reservadas para 4B/4C no cambian.
+
+## Identidad global de estados — misión 3C, PR #33
+
+Appointment conserva exactamente cinco estados. Una única hoja
+components/agenda/appointment-status.css define fondo, borde y texto para
+AppointmentStatusBadge, tarjetas de Día/Semana/Mes/Médicos y leyenda; Dashboard
+reutiliza el mismo badge. Este mapping sustituye la dirección anterior:
+
+| Backend | Texto | Identidad |
+| --- | --- | --- |
+| scheduled | Programada | Azul |
+| confirmed | Confirmada | Verde |
+| completed | Completada | Teal/turquesa |
+| cancelled | Cancelada | Coral/rojo |
+| no_show | No asistió | Slate fuerte |
+
+El color siempre acompaña el texto. Contraste texto/fondo >=4.5:1 en los cinco
+estados. No se añaden estados, duraciones, horarios finales ni disponibilidad.
+La estructura y lógica de carga de Agenda permanecen sin cambios.

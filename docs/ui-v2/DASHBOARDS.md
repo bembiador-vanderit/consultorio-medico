@@ -114,3 +114,13 @@ Con el backend configurado conforme a `README.md`, iniciar sesión con Médico,
 Secretaría, Administrador y una cuenta Médico + Administrador. Revisar acciones,
 estado de agenda vacía, notificaciones, Drawer móvil y la restauración de sesión.
 El catálogo de desarrollo continúa en `/__dev/ui-v2`.
+
+## Escalado desktop — misión 3C, PR #33
+
+Desde 1280px, clamp limita la escala entre desktop compacto y 1920px: acciones
+76–100px, iconos 40–52px, separación 16–28px, métricas más legibles y filas del
+resumen con padding 12–16px. Fondos tonales y acentos refuerzan la identidad
+Atlas. Agenda de hoy y Notificaciones se alinean; el scroll de notificaciones
+conserva una altura máxima fluida. No se fuerzan grandes alturas vacías.
+Dashboard móvil, fuentes, métricas, roles y navegación inferior se conservan.
+Los cinco estados de Agenda de hoy comparten la paleta global de Agenda.

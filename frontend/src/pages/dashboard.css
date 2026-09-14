@@ -51,6 +51,25 @@
 .dashboard-notification-list p { color:var(--atlas-text-muted); }
 .dashboard-notification-list .atlas-button { padding-inline:0; }
 @media (max-width:1199px) { .dashboard-actions-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+/* Scale only desktop, with bounded growth rather than stretching empty cards. */
+@media (min-width:1280px) {
+  .dashboard-workspace { gap:clamp(1rem,calc(1.875vw - .5rem),1.75rem); }
+  .dashboard-welcome h2 { font-size:clamp(1.5rem,calc(1.25vw + .5rem),2rem); }
+  .dashboard-action { min-height:clamp(76px,calc(3.75vw + 28px),100px); padding:clamp(.75rem,calc(1.5625vw - .5rem),1.375rem); border-left-width:4px; background:linear-gradient(110deg,var(--dashboard-tonal),var(--atlas-surface) 65%); }
+  .dashboard-icon { width:clamp(40px,calc(1.875vw + 16px),52px); height:clamp(40px,calc(1.875vw + 16px),52px); }
+  .dashboard-icon svg { width:clamp(24px,1.67vw,32px); height:clamp(24px,1.67vw,32px); }
+  .dashboard-action strong,.dashboard-metric-label { font-size:clamp(.875rem,calc(.3125vw + .625rem),1rem); }
+  .dashboard-metric { padding:clamp(1rem,calc(.9375vw + .25rem),1.375rem); }
+  .dashboard-metric-value { font-size:clamp(1.75rem,calc(1.25vw + .75rem),2.25rem); }
+  .dashboard-summary-grid { gap:clamp(1rem,1.25vw,1.5rem); align-items:stretch; }
+  .dashboard-card-heading { padding-block:clamp(.75rem,calc(.625vw + .25rem),1rem); border-top:3px solid var(--atlas-primary); }
+  .dashboard-notifications .dashboard-card-heading { border-top-color:var(--atlas-amber); }
+  .dashboard-card-heading .atlas-card-title { font-size:clamp(1.0625rem,1vw,1.2rem); }
+  .dashboard-appointments>li,.dashboard-notification-list>li { padding-block:clamp(.75rem,calc(.625vw + .25rem),1rem); }
+  .dashboard-appointments strong,.dashboard-notification-list strong,.dashboard-notification-list p { font-size:clamp(.875rem,.8334vw,1rem); }
+  .dashboard-appointments div>span { font-size:clamp(.75rem,.73vw,.875rem); }
+  .dashboard-notification-list { max-height:clamp(21rem,35vh,29rem); }
+}
 @media (max-width:639px) {
   .dashboard-workspace { gap:var(--atlas-space-3); }
   .dashboard-welcome h2 { font-size:1.25rem; }

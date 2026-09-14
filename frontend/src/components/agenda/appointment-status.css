@@ -1,0 +1,7 @@
+/* One appointment identity across badges, Day, Week, Month, Doctors and legend. */
+.appointment-status--scheduled,.agenda-appointment-card--scheduled,.agenda-week-appointment-card--scheduled,.agenda-status-legend-item--scheduled { --agenda-event-edge:#1684E8; --agenda-event-bg:#E4F1FF; --agenda-event-text:#164468; }
+.appointment-status--confirmed,.agenda-appointment-card--confirmed,.agenda-week-appointment-card--confirmed,.agenda-status-legend-item--confirmed { --agenda-event-edge:#20A83A; --agenda-event-bg:#E1F6E6; --agenda-event-text:#1C5B2B; }
+.appointment-status--completed,.agenda-appointment-card--completed,.agenda-week-appointment-card--completed,.agenda-status-legend-item--completed { --agenda-event-edge:#008C95; --agenda-event-bg:#D7F3F1; --agenda-event-text:#075B61; }
+.appointment-status--cancelled,.agenda-appointment-card--cancelled,.agenda-week-appointment-card--cancelled,.agenda-status-legend-item--cancelled { --agenda-event-edge:#EE4E69; --agenda-event-bg:#FCE8EC; --agenda-event-text:#803442; }
+.appointment-status--no_show,.agenda-appointment-card--no_show,.agenda-week-appointment-card--no_show,.agenda-status-legend-item--no_show { --agenda-event-edge:#475569; --agenda-event-bg:#DCE2EA; --agenda-event-text:#263445; }
+.atlas-badge[class*="appointment-status--"] { background:var(--agenda-event-bg); color:var(--agenda-event-text); border:1px solid var(--agenda-event-edge); }

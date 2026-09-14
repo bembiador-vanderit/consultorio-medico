@@ -411,3 +411,29 @@ operativa. La comprobación visual no certifica permisos contra una base real.
 
 Documentación de presentación vigente: [Dashboard](DASHBOARDS.md),
 [App Shell](APP_SHELL.md), [Pacientes](PATIENTS.md) y [Agenda](AGENDA.md).
+
+
+## PR #33 — misión 3C, polish final
+
+- Frontend completo en Node 22/Docker: **149 passed, 0 failed, 0 skipped**;
+  conserva los 142 casos previos y agrega siete. La versión final también
+  reutiliza el badge global en Reportes sin alterar filtros, exportaciones o API.
+- TypeScript + Vite: **PASS**, 130 módulos. Docker frontend build: **PASS**.
+  Compose config con variables ficticias: **PASS**.
+- Edge headless con API interceptada: **PASS** en 1920×1200, 1440×1000,
+  1366×900, 1280×800, 1024×900, 768×900, 375×812 y 320×700.
+  Cero overflow horizontal de página/dialog activo. Estados reales visibles en
+  Semana 1280; ancho de ficha 34–40% y correo inicialmente visible desde 1280;
+  título móvil sin borde/outline y acciones visibles; navegación inferior,
+  Más/retorno de foco, Modal de Día y Drawer de Mes conservados.
+- Adicional: especialidad de nombre extenso en Dashboard en 1920, 1280, 375 y
+  320px: **PASS**, sin overflow horizontal. Nombres/correos/motivos extensos,
+  badges, formularios, Drawer y barra inferior se comprobaron en la matriz.
+- Palette global única: Programada azul, Confirmada verde, Completada teal,
+  Cancelada coral, No asistió slate fuerte; contraste texto/fondo >=4.5:1.
+- Capturas nuevas fuera de Git: Dashboard 1920/320, Pacientes 1280/320,
+  Semana 1280 con los cinco estados, Día 375 y leyenda específica de estados,
+  además de las otras resoluciones y Reportes 1280.
+- No modifica backend, API proxy/routing, Docker proxy, permisos, seguridad,
+  patient selection proof, insurance omission semantics ni reglas de citas.
+  Instalación operativa sin reconstrucción/reinicio; datos de QA ficticios.

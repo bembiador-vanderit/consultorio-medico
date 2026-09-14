@@ -192,8 +192,9 @@ test("workspace de Agenda no conserva un max-width global restrictivo", async ()
  assert.match(css, /\.agenda-page \{ max-width:none/);
  assert.match(css, /agenda-layout--panel/);
  assert.match(css, /agenda-week-grid \{ --agenda-week-hours: 1; display:grid/);
- assert.match(css, /agenda-week-appointment-card--scheduled/);
- assert.match(css, /agenda-week-appointment-card--no_show/);
+ const statusCss = await readFile(new URL("../src/components/agenda/appointment-status.css", import.meta.url), "utf8");
+ assert.match(statusCss, /agenda-week-appointment-card--scheduled/);
+ assert.match(statusCss, /agenda-week-appointment-card--no_show/);
  assert.match(css, /grid-template-rows:auto repeat\(6,minmax\(5\.5rem,1fr\)\)/);
  assert.match(css, /agenda-month-panel-scroll\{min-height:0;overflow-y:auto/);
 });

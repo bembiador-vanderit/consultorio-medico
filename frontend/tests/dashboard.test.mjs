@@ -205,3 +205,13 @@ test("roles médico y secretaría comparten acciones sin duplicación", async ()
   assert.match(main().textContent, /Jornada clínica/);
   assert.match(main().textContent, /Operación de agenda/);
 });
+
+
+test("Dashboard shares the five appointment identities with Agenda", async () => {
+  const statuses = ["scheduled", "confirmed", "completed", "cancelled", "no_show"];
+  data.set("/appointments", statuses.map((status,index)=>({id:index+1,patient_name:"Paciente ficticio",appointment_time:`${8+index}:00:00`,status})));
+  await mount(["doctor"]);
+  const badges = [...main().querySelectorAll(".dashboard-appointments .atlas-badge")];
+  assert.equal(badges.length, 5);
+  for (const status of statuses) assert.ok(badges.some(node=>node.classList.contains(`appointment-status--${status}`)), status);
+});
