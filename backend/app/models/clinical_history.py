@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -9,6 +9,7 @@ from app.db import Base
 class ClinicalHistory(Base):
     __tablename__ = "clinical_histories"
     __table_args__ = (
+        UniqueConstraint("appointment_id", name="uq_clinical_histories_appointment_id"),
         CheckConstraint(
             "status IN ('in_progress', 'completed')",
             name="ck_clinical_histories_status",
@@ -31,6 +32,7 @@ class ClinicalHistory(Base):
     )
     consultation_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), default="in_progress", nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True

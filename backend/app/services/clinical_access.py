@@ -141,6 +141,7 @@ def _deny(
     reason: str,
     status_code: int,
     detail: str,
+    context: dict | None = None,
 ) -> None:
     add_clinical_audit(
         db,
@@ -149,8 +150,8 @@ def _deny(
         resource_type=resource_type,
         resource_id=resource_id,
         history_id=history_id,
-        outcome="denied",
-        context={"reason": reason},
+        outcome="conflict" if status_code == 409 else "denied",
+        context={"reason": reason, **(context or {})},
     )
     db.commit()
     raise HTTPException(status_code=status_code, detail=detail)
@@ -207,6 +208,19 @@ def require_history_access(
             resource_id=resource_id, reason="delegated_access_is_read_only", status_code=403,
             detail="El acceso a episodios por cobertura es de solo lectura",
         )
+    if write and isinstance(db, Session):
+        # Serialize every normal clinical write on the narrowest shared row.
+        # populate_existing is required because the authorization pass loaded
+        # the same entity before the SELECT FOR UPDATE acquired its lock.
+        locked_history = db.scalar(
+            select(ClinicalHistory)
+            .where(ClinicalHistory.id == history_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if locked_history is None:
+            raise HTTPException(status_code=404, detail="Registro de historia clínica no encontrado")
+        history = locked_history
     if write and history.status == "completed":
         _deny(
             db,
@@ -218,6 +232,7 @@ def require_history_access(
             reason="consultation_completed",
             status_code=409,
             detail="La consulta finalizada es de solo lectura",
+            context={"appointment_id": history.appointment_id, "current_revision": history.revision},
         )
     if write and history.appointment_id is not None:
         appointment = db.get(Appointment, history.appointment_id)
@@ -232,6 +247,7 @@ def require_history_access(
                 reason="appointment_not_attendable",
                 status_code=409,
                 detail="La cita vinculada no permite continuar la atención",
+                context={"appointment_id": history.appointment_id, "current_revision": history.revision},
             )
     if audit_read:
         add_clinical_audit(

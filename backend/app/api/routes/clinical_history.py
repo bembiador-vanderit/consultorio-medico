@@ -4,8 +4,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
@@ -48,6 +48,11 @@ router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
 access = require_permission("clinical:access")
 audit_access = require_permission("users:manage")
 ATTENDABLE_APPOINTMENT_STATUSES = {"scheduled", "confirmed"}
+DUPLICATE_APPOINTMENT_DETAIL = "Ya existe una consulta para esta cita."
+STALE_REVISION_DETAIL = (
+    "La consulta fue modificada en otra sesión o pestaña. "
+    "Recarga la información antes de continuar."
+)
 
 
 class ConsultationContextResponse(BaseModel):
@@ -138,7 +143,7 @@ def _ensure_appointment_available(
     if db.scalar(query) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="La cita ya tiene una consulta médica registrada",
+            detail=DUPLICATE_APPOINTMENT_DETAIL,
         )
 
 
@@ -239,12 +244,63 @@ def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, use
 
     data = payload.model_dump()
     context = _resolve_consultation_context(data.get("appointment_id"), patient_id, db, user)
-    _ensure_appointment_available(context["appointment_id"], db)
+    try:
+        _ensure_appointment_available(context["appointment_id"], db)
+    except HTTPException as error:
+        if error.status_code != status.HTTP_409_CONFLICT:
+            raise
+        existing = db.scalar(
+            select(ClinicalHistory).where(ClinicalHistory.appointment_id == context["appointment_id"])
+        )
+        if existing is not None:
+            add_clinical_audit(
+                db,
+                user,
+                action="history.create",
+                resource_type="clinical_history",
+                resource_id=existing.id,
+                history_id=existing.id,
+                outcome="conflict",
+                context={
+                    "appointment_id": context["appointment_id"],
+                    "reason": "appointment_already_has_history",
+                    "current_revision": existing.revision,
+                },
+            )
+            db.commit()
+        raise
     data.update(context)
 
     history = ClinicalHistory(patient_id=patient_id, **data)
     db.add(history)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(ClinicalHistory).where(ClinicalHistory.appointment_id == context["appointment_id"])
+        )
+        if existing is None:
+            raise
+        add_clinical_audit(
+            db,
+            user,
+            action="history.create",
+            resource_type="clinical_history",
+            resource_id=existing.id,
+            history_id=existing.id,
+            outcome="conflict",
+            context={
+                "appointment_id": context["appointment_id"],
+                "reason": "appointment_already_has_history",
+                "current_revision": existing.revision,
+            },
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=DUPLICATE_APPOINTMENT_DETAIL,
+        )
     add_clinical_audit(
         db, user, action="history.create", resource_type="clinical_history",
         resource_id=history.id, history_id=history.id,
@@ -258,12 +314,55 @@ def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, use
 @router.put("/{history_id}", response_model=ClinicalHistoryResponse)
 def update_clinical_history(history_id: int, payload: ClinicalHistoryUpdate, user: User = Depends(access), db: Session = Depends(get_db)):
     history = require_history_access(db, user, history_id, action="history.update", write=True)
-    data = payload.model_dump()
-    for field, value in data.items():
-        setattr(history, field, value)
+    if history.revision != payload.expected_revision:
+        add_clinical_audit(
+            db, user, action="history.update", resource_type="clinical_history",
+            resource_id=history.id, history_id=history.id, outcome="conflict",
+            context={
+                "appointment_id": history.appointment_id,
+                "reason": "stale_revision",
+                "expected_revision": payload.expected_revision,
+                "current_revision": history.revision,
+            },
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=STALE_REVISION_DETAIL)
+
+    data = payload.model_dump(exclude={"expected_revision"})
+    result = db.execute(
+        update(ClinicalHistory)
+        .where(
+            ClinicalHistory.id == history.id,
+            ClinicalHistory.revision == payload.expected_revision,
+            ClinicalHistory.status == "in_progress",
+        )
+        .values(**data, revision=ClinicalHistory.revision + 1, updated_at=datetime.utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        current = require_history_access(db, user, history_id, action="history.update")
+        add_clinical_audit(
+            db, user, action="history.update", resource_type="clinical_history",
+            resource_id=current.id, history_id=current.id, outcome="conflict",
+            context={
+                "appointment_id": current.appointment_id,
+                "reason": "conditional_update_rejected",
+                "expected_revision": payload.expected_revision,
+                "current_revision": current.revision,
+            },
+        )
+        db.commit()
+        detail = "La consulta finalizada es de solo lectura" if current.status == "completed" else STALE_REVISION_DETAIL
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
     add_clinical_audit(
         db, user, action="history.update", resource_type="clinical_history",
         resource_id=history.id, history_id=history.id,
+        context={
+            "appointment_id": history.appointment_id,
+            "expected_revision": payload.expected_revision,
+            "new_revision": payload.expected_revision + 1,
+        },
     )
     db.commit()
     db.refresh(history)
@@ -289,14 +388,47 @@ def complete_clinical_history(history_id: int, user: User = Depends(access), db:
         raise HTTPException(status_code=409, detail="El contexto de la consulta no coincide con la cita")
 
     now = datetime.utcnow()
-    history.status = "completed"
-    history.completed_at = now
-    history.completed_by_id = user.id
+    completing_revision = history.revision
+    result = db.execute(
+        update(ClinicalHistory)
+        .where(
+            ClinicalHistory.id == history.id,
+            ClinicalHistory.revision == completing_revision,
+            ClinicalHistory.status == "in_progress",
+        )
+        .values(
+            status="completed",
+            completed_at=now,
+            completed_by_id=user.id,
+            revision=ClinicalHistory.revision + 1,
+            updated_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        current = require_history_access(db, user, history_id, action="history.complete")
+        add_clinical_audit(
+            db, user, action="history.complete", resource_type="clinical_history",
+            resource_id=current.id, history_id=current.id, outcome="conflict",
+            context={
+                "appointment_id": current.appointment_id,
+                "reason": "conditional_complete_rejected",
+                "expected_revision": completing_revision,
+                "current_revision": current.revision,
+            },
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="La consulta ya no puede finalizarse")
     appointment.status = "completed"
     add_clinical_audit(
         db, user, action="history.complete", resource_type="clinical_history",
         resource_id=history.id, history_id=history.id,
-        context={"appointment_id": appointment.id},
+        context={
+            "appointment_id": appointment.id,
+            "expected_revision": completing_revision,
+            "new_revision": completing_revision + 1,
+        },
     )
     try:
         db.commit()

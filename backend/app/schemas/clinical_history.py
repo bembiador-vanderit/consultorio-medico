@@ -30,6 +30,7 @@ class ClinicalHistoryCreate(ClinicalHistoryBase):
 
 class ClinicalHistoryUpdate(ClinicalHistoryBase):
     """Editable clinical content; the original appointment context is immutable."""
+    expected_revision: int = Field(ge=1)
     model_config = {"extra": "forbid"}
 
 
@@ -44,6 +45,7 @@ class ClinicalHistoryResponse(ClinicalHistoryBase):
     doctor_name: str | None = None
     center_name: str | None = None
     status: Literal["in_progress", "completed"]
+    revision: int
     completed_at: datetime | None = None
     completed_by_id: int | None = None
     created_at: datetime

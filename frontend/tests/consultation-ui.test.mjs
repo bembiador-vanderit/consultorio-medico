@@ -110,13 +110,15 @@ async function responseAdapter(config) {
     return ok(config, currentHistory);
   }
   if (config.url === `/clinical-history/${currentHistory?.id}` && config.method === "put") {
-    currentHistory = { ...currentHistory, ...payload(config), updated_at: "2026-09-16T10:01:00" };
+    const { expected_revision, ...changes } = payload(config);
+    currentHistory = { ...currentHistory, ...changes, revision: expected_revision + 1, updated_at: "2026-09-16T10:01:00" };
     return ok(config, currentHistory);
   }
   if (config.url === `/clinical-history/${currentHistory?.id}/complete` && config.method === "post") {
     currentHistory = {
       ...currentHistory,
       status: "completed",
+      revision: currentHistory.revision + 1,
       completed_at: "2026-09-16T10:05:00",
       completed_by_id: activeDoctor.id,
     };
@@ -343,6 +345,36 @@ test("signos vitales preservan el payload actual y muestran el error del API", a
   await change(control("Frecuencia cardíaca"), "10");
   await click(button("Guardar signos vitales"));
   assert.match(host.textContent, /Rango rechazado/);
+});
+
+test("actualización envía expected_revision y adopta la revisión devuelta", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(control("Motivo de consulta"), "Versión actualizada");
+  await click(button("Actualizar consulta"));
+  const firstUpdate = calls.find((item) => item.method === "put" && item.url === "/clinical-history/42");
+  assert.equal(payload(firstUpdate).expected_revision, 1);
+  assert.equal(currentHistory.revision, 2);
+
+  await change(control("Motivo de consulta"), "Segunda versión");
+  await click(button("Actualizar consulta"));
+  const updates = calls.filter((item) => item.method === "put" && item.url === "/clinical-history/42");
+  assert.equal(payload(updates.at(-1)).expected_revision, 2);
+  assert.equal(currentHistory.revision, 3);
+});
+
+test("409 por revisión obsoleta conserva cambios locales y muestra el conflicto", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(control("Motivo de consulta"), "Cambio local pendiente");
+  const detail = "La consulta fue modificada en otra sesión o pestaña. Recarga la información antes de continuar.";
+  intercept = (config) => config.url === "/clinical-history/42" && config.method === "put" ? failure(detail, 409) : undefined;
+  await click(button("Actualizar consulta"));
+  assert.match(host.textContent, /modificada en otra sesión o pestaña/);
+  assert.equal(control("Motivo de consulta").value, "Cambio local pendiente");
+  assert.equal(currentHistory.revision, 1);
 });
 
 test("diagnósticos conservan creación principal/CIE-10 y eliminación", async () => {
