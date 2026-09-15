@@ -53,7 +53,7 @@ La Historia previa actual no incorpora handlers de Escape ni backdrop en `Consul
 - Carrera update-vs-complete: pendiente 6B2.
 - Bootstrap fragmentado: pendiente 6B3.
 - Cancelación de requests/respuestas tardías: pendiente 6B3. La UI actual no dispone de cancelación ni generación de request; no se corrigió silenciosamente en esta fase.
-- `ConsultationWorkspace`: pendiente 6B4.
+- `ConsultationWorkspace`: introducido en 6B4 como límite estructural; la extracción de formularios individuales queda pendiente de fases posteriores.
 - Plantillas y versionado por especialidad: pendiente 6C.
 
 ## Límites explícitos

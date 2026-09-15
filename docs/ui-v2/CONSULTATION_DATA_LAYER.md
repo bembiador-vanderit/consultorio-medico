@@ -30,4 +30,4 @@ Las pruebas focused cubren el cliente clínico (revisión, `expected_revision`, 
 
 La caché vive únicamente durante la sesión JavaScript y no hace invalidación por tiempo; es adecuada para catálogos de lectura, no para datos clínicos. Esta fase no agrega autosave, estado dirty global, reintentos automáticos ni un endpoint nuevo de bootstrap. El servidor sigue resolviendo la concurrencia clínica, el cierre y las reglas post-cierre.
 
-Phase 6B4 podrá ubicar el estado dirty dentro del workspace. Esta fase no agrega autosave, módulos visuales ni un endpoint de bootstrap.
+Phase 6B4 introduce el límite de `ConsultationWorkspace`, sin agregar autosave, estado dirty global, módulos visuales nuevos ni un endpoint de bootstrap.
