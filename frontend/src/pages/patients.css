@@ -44,6 +44,13 @@
 .patients-personal h4,.patients-contact h4 { font-size:var(--atlas-type-secondary); color:var(--atlas-action); }
 .patients-contact .patients-facts { gap:var(--atlas-space-3); }
 .patients-identity-age { font-size:var(--atlas-type-secondary); }
+@media (max-width:1023px) {
+  .atlas-dialog--drawer .patients-quick-actions { width:100%; min-width:0; margin-inline:0; align-self:stretch; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .atlas-dialog--drawer .patients-quick-actions>.atlas-button { width:100%; min-width:0; margin:0; justify-self:stretch; box-sizing:border-box; }
+  .atlas-dialog--drawer .patients-action--schedule,.atlas-dialog--drawer .patients-action--history { grid-column:1/-1; }
+  .atlas-dialog--drawer .patients-action--edit { grid-column:1; }
+  .atlas-dialog--drawer .patients-action--insurance { grid-column:2; }
+}
 @media (max-width:639px) {
   .atlas-dialog--drawer:has(.patients-detail-content) .atlas-dialog-header { padding:var(--atlas-space-4); gap:var(--atlas-space-2); align-items:center; }
   .atlas-dialog--drawer:has(.patients-detail-content) .atlas-dialog-header h2 { font-size:1.0625rem; }

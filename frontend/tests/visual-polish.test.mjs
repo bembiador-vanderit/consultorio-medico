@@ -42,6 +42,13 @@ test("mobile heading stays unboxed while patient actions retain 44px and clinica
   assert.match(css, /patients-action--schedule,.patients-quick-actions>\.patients-action--history\s*\{\s*grid-column:1\/-1/);
   assert.match(css, /patients-action--insurance\s*\{[^}]*--atlas-violet-surface/);
   assert.match(css, /patients-action--history\s*\{[^}]*--atlas-success/);
+  assert.match(css, /\.atlas-dialog--drawer \.patients-quick-actions\s*\{[^}]*width:100%;[^}]*margin-inline:0;[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.atlas-dialog--drawer \.patients-quick-actions>\.atlas-button\s*\{[^}]*width:100%;[^}]*min-width:0;[^}]*margin:0;[^}]*justify-self:stretch/);
+  assert.match(css, /\.atlas-dialog--drawer \.patients-action--edit\s*\{\s*grid-column:1/);
+  assert.match(css, /\.atlas-dialog--drawer \.patients-action--insurance\s*\{\s*grid-column:2/);
+  const agenda = await read("index.css");
+  assert.match(agenda, /\.agenda-event-status\s*\{[^}]*font-size:clamp\(\.8125rem,\.85vw,\.9rem\);[^}]*font-weight:700;[^}]*line-height:1\.2/);
+  assert.match(agenda, /grid-template-rows:repeat\(3,minmax\(0,1fr\)\) auto/);
 });
 
 test("desktop dashboard scales fluidly without changing compact mobile navigation", async () => {

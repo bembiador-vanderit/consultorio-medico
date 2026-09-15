@@ -437,3 +437,21 @@ Documentación de presentación vigente: [Dashboard](DASHBOARDS.md),
 - No modifica backend, API proxy/routing, Docker proxy, permisos, seguridad,
   patient selection proof, insurance omission semantics ni reglas de citas.
   Instalación operativa sin reconstrucción/reinicio; datos de QA ficticios.
+
+## PR #33 — misión 3D, ajustes finales
+
+- Frontend completo: **149 passed, 0 failed, 0 skipped**. Se actualiza el
+  contrato visual existente para ancho/márgenes/columnas y tipografía; no se
+  elimina ninguna prueba. TypeScript + Vite, Docker frontend y Compose: **PASS**.
+- Chrome con perfil temporal aislado y API interceptada: Pacientes 320×700 y
+  375×812; Agenda Día/Semana 1280×800 a 100%, 75% y 50%, y 1920×1080 a 100%:
+  **PASS**. Zoom nativo del navegador, verificado mediante getDefaultZoom,
+  devicePixelRatio y viewport CSS (2560×1600 a 50% para captura física 1280×800).
+- Geometría comprobada con bounding boxes: primarias a ancho completo,
+  secundarias en la misma fila/anchos iguales/gap 8px, cero márgenes accidentales,
+  cuatro acciones visibles y alturas >=44px en los dos móviles.
+- Etiquetas de Día/Semana: 13–14.4px CSS, peso 700; sin recorte horizontal ni
+  vertical en los casos probados. Tarjetas semanales <=76px, sin aumentar altura.
+  Cero overflow horizontal de página/dialog activo.
+- Capturas nuevas exclusivamente de Pacientes y Agenda, fuera de Git. No se
+  modifica Dashboard, navegación móvil, mapping/paleta, API, backend ni permisos.

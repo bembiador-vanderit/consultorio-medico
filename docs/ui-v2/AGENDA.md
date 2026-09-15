@@ -156,3 +156,12 @@ reutiliza el mismo badge. Este mapping sustituye la dirección anterior:
 El color siempre acompaña el texto. Contraste texto/fondo >=4.5:1 en los cinco
 estados. No se añaden estados, duraciones, horarios finales ni disponibilidad.
 La estructura y lógica de carga de Agenda permanecen sin cambios.
+
+## Tipografía de etiquetas — misión 3D, PR #33
+
+Las etiquetas de estado de las tarjetas usan clamp(.8125rem,.85vw,.9rem),
+font-weight:700 y line-height:1.2. La tarjeta semanal reserva una fila interna
+auto para el estado, conservando altura y columnas: no crece para acomodarlo.
+Día/Semana/Mes/Médicos, paneles, filtros, eje horario y reglas no se rediseñan.
+Mapping azul/verde/teal/coral/slate y leyenda sin cambios. 100% sigue siendo la
+referencia; Chrome 75%/50% se valida como robustez adicional.

@@ -93,3 +93,11 @@ ancho y Editar/Seguro en dos columnas, con targets de 44px y guard médico intac
 Agendar cita es azul, Historia sage, Seguro violeta suave y Editar outline.
 El encabezado estático del Drawer recibe foco sin dibujar un borde alrededor
 del título; los controles interactivos conservan su indicador de foco.
+
+## Geometría móvil — misión 3D, PR #33
+
+La cuadrícula de acciones del Drawer ocupa el 100% disponible, con botones
+width:100%, min-width:0, margin:0 y justify-self:stretch. Agendar cita e Historia
+clínica abarcan ambas columnas; Editar y Seguro usan columnas explícitas,
+mitades iguales descontando el gap de 8px. Mantiene orden, iconos, colores,
+guard clínico y targets de 44px; no cambia la composición desktop.
