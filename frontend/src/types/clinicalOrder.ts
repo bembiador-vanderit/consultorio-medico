@@ -30,15 +30,7 @@ export type LaboratoryOrder = {
   items: LaboratoryOrderItem[];
 };
 
-export type MedicalStudy = {
-  id: number;
-  specialty_id: number;
-  anatomical_region_id: number | null;
-  name: string;
-  category: string;
-  is_active: boolean;
-  recommended_specialty_ids: number[];
-};
+export type { MedicalStudy } from "./clinical";
 
 export type StudyOrderItem = {
   id: number;

@@ -391,7 +391,7 @@ export function AppointmentForm({
             >
               <option value="">Seleccione…</option>
               {rules.specialtyLocked && appointment && (
-                <option value={appointment.specialty_id}>
+                <option value={appointment.specialty_id ?? ""}>
                   {appointment.specialty_name}
                 </option>
               )}
