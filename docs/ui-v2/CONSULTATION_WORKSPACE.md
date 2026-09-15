@@ -10,8 +10,9 @@ Consultation
     ├── ConsultationHeader
     │   └── identidad de cita y vuelta a Agenda
     ├── estado de la consulta
-    ├── formulario de historia clínica
-    ├── signos vitales, diagnósticos, recetas y solicitudes
+    ├── AnamnesisModule
+    ├── VitalSignsModule
+    ├── diagnósticos, recetas y solicitudes
     ├── ClinicalOrdersSection existente
     ├── contexto de atención e historial previo
     └── modal de historial previo
@@ -21,7 +22,7 @@ Consultation
 
 ## Límites de propiedad
 
-El workspace posee el contexto de la cita, historia activa, estado de carga y error de nivel episodio, ciclo de vida de consulta y coordinación entre secciones. Los formularios y editores de anamnesis, vitales, diagnósticos, recetas y solicitudes siguen locales al workspace porque extraerlos ahora requeriría mover handlers y estados acoplados sin beneficio funcional. Los estados transitorios de guardar, finalizar, PDF y modal también permanecen locales al workspace.
+El workspace posee el contexto de la cita, historia activa, estado de carga y error de nivel episodio, ciclo de vida de consulta y coordinación entre secciones. `AnamnesisModule` posee su formulario local; se reinicializa solo cuando cambia el episodio, la historia activa o su revisión canónica. Un 409 no cambia esa revisión y, por ello, conserva las ediciones locales. `VitalSignsModule` posee su formulario y mutación; comunica exclusivamente el objeto canónico devuelto al workspace. Diagnósticos, recetas y solicitudes siguen locales al workspace.
 
 No hay estado dirty global, autosave, almacenamiento persistente de episodio ni librería de estado global.
 
@@ -29,7 +30,7 @@ No hay estado dirty global, autosave, almacenamiento persistente de episodio ni 
 
 El workspace reutiliza `useConsultationBootstrap` y `clinicalApi`; no agrega una segunda carga inicial. Se preservan AbortController, guard de generación, protección A → B → respuesta tardía de A, cancelación en unmount y la caché no PHI de catálogos.
 
-La actualización de historia conserva `revision` y envía `expected_revision`. Un 409 muestra el detalle del servidor, no reintenta, no recarga ni descarta cambios locales. La finalización, solo lectura y reglas post-cierre siguen siendo decisión del backend.
+La actualización de historia conserva `revision` y envía `expected_revision`. Un 409 muestra el detalle del servidor, no reintenta, no recarga ni descarta cambios locales. La mutación de vitales conserva endpoint, payload nullable y upsert, y adopta la respuesta canónica del servidor. La finalización, solo lectura y reglas post-cierre siguen siendo decisión del backend.
 
 ## Privacidad y seguridad
 
@@ -41,7 +42,7 @@ Las pruebas de caracterización de `Consultation` siguen cubriendo flujos nuevos
 
 ## Diferido
 
-Phase 6B5 puede extraer módulos de formulario cuando cada uno tenga un contrato de props y pruebas propias. Phase 6B6 puede introducir un host de módulos, navegación clínica real y límites de dirty/conflicto, sin crear autosave, plantillas de especialidad ni UI de resolución de conflictos en esta fase.
+Phase 6B5 extrae anamnesis y signos vitales. Phase 6B6 puede extraer Diagnósticos y Recetas con contratos y pruebas propias. Las solicitudes, órdenes, host de módulos, navegación clínica y límites de dirty/conflicto pertenecen a fases posteriores deliberadas.
 
 ## Limitaciones conocidas
 
