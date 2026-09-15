@@ -288,7 +288,10 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
       delete (historyPayload as any).requested_tests;
       let saved: ClinicalHistory;
       if (current) {
-        const { data } = await api.put<ClinicalHistory>(`/clinical-history/${current.id}`, historyPayload);
+        const { data } = await api.put<ClinicalHistory>(`/clinical-history/${current.id}`, {
+          ...historyPayload,
+          expected_revision: current.revision,
+        });
         saved = data;
       } else return;
       const savedTests = await syncTests(saved.id);

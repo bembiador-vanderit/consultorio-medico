@@ -43,6 +43,7 @@ export type ClinicalHistory = ClinicalHistoryContent & {
   doctor_name: string | null;
   center_name: string | null;
   status: ClinicalHistoryStatus;
+  revision: number;
   completed_at: string | null;
   completed_by_id: number | null;
   requested_tests: RequestedTest[];
@@ -52,7 +53,7 @@ export type ClinicalHistory = ClinicalHistoryContent & {
 
 export type ClinicalHistoryInput = Omit<
   ClinicalHistory,
-  "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "specialty_id" | "specialty_name" | "doctor_name" | "center_name" | "status" | "completed_at" | "completed_by_id" | "created_at" | "updated_at" | "requested_tests"
+  "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "specialty_id" | "specialty_name" | "doctor_name" | "center_name" | "status" | "revision" | "completed_at" | "completed_by_id" | "created_at" | "updated_at" | "requested_tests"
 > & {
   appointment_id?: number | null;
   requested_tests?: string;
