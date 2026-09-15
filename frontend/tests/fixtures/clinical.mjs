@@ -55,6 +55,7 @@ export function clinicalHistory(overrides = {}) {
     doctor_name: "Dra. Prueba",
     center_name: "Centro de prueba",
     status: "in_progress",
+    revision: 1,
     completed_at: null,
     completed_by_id: null,
     consultation_date: "2026-09-16",

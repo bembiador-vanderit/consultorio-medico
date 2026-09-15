@@ -174,7 +174,7 @@ def test_doctor_cannot_read_or_modify_another_doctors_history(clinical_app):
     ).status_code == 403
     response = client.put(
         f"/api/v1/clinical-history/{history_b.id}",
-        json={"consultation_date": "2026-09-03", "reason_for_visit": "Ataque"},
+        json={"consultation_date": "2026-09-03", "reason_for_visit": "Ataque", "expected_revision": history_b.revision},
     )
     assert response.status_code == 403
     clinical_app["db"].refresh(history_b)
@@ -545,7 +545,7 @@ def test_completion_updates_consultation_and_appointment_atomically_and_locks_wr
 
     assert client.put(
         f"/api/v1/clinical-history/{history.id}",
-        json={"consultation_date": "2026-09-03", "clinical_notes": "Cambio tardío"},
+        json={"consultation_date": "2026-09-03", "clinical_notes": "Cambio tardío", "expected_revision": history.revision},
     ).status_code == 409
     assert client.post(
         f"/api/v1/clinical-history/{history.id}/diagnoses",
@@ -860,7 +860,7 @@ def test_explicit_coverage_grants_only_patient_specific_read_access_and_revocati
     assert unrelated_list.status_code == 404
     assert client.put(
         f"/api/v1/clinical-history/{history_a.id}",
-        json={"consultation_date": now.date().isoformat(), "clinical_notes": "No permitido"},
+        json={"consultation_date": now.date().isoformat(), "clinical_notes": "No permitido", "expected_revision": history_a.revision},
     ).status_code == 403
 
     created = client.post(

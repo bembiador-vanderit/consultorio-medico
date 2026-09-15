@@ -9,7 +9,7 @@ from app.api.routes.clinical_history import (
     _resolve_consultation_context,
 )
 from app.models import Appointment, Role, User
-from app.schemas.clinical_history import ClinicalHistoryCreate
+from app.schemas.clinical_history import ClinicalHistoryCreate, ClinicalHistoryUpdate
 from app.services.appointment_scope import ensure_appointment_access
 
 
@@ -63,6 +63,17 @@ def test_consultation_requires_an_appointment():
         ClinicalHistoryCreate.model_validate({"consultation_date": "2026-09-10"})
 
 
+def test_update_requires_expected_revision_and_rejects_client_revision():
+    with pytest.raises(ValueError):
+        ClinicalHistoryUpdate.model_validate({"consultation_date": "2026-09-10"})
+    with pytest.raises(ValueError):
+        ClinicalHistoryUpdate.model_validate({
+            "consultation_date": "2026-09-10",
+            "expected_revision": 1,
+            "revision": 99,
+        })
+
+
 def test_appointment_must_belong_to_patient():
     appointment = Appointment(
         id=42,
@@ -86,7 +97,7 @@ def test_appointment_cannot_create_more_than_one_consultation():
         _ensure_appointment_available(42, db)
 
     assert error.value.status_code == 409
-    assert error.value.detail == "La cita ya tiene una consulta médica registrada"
+    assert error.value.detail == "Ya existe una consulta para esta cita."
 
 
 def test_existing_consultation_can_keep_its_appointment():
