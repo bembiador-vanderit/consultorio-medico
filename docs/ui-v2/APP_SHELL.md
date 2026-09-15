@@ -1,5 +1,36 @@
 # App Shell operativo — UI V2 fase 2
 
+## Corrección visual vigente — PR #33
+
+La actualización de fase 5 mantiene una sola navegación por estado y los mismos
+guards. Sidebar Navy de 224px, marca de corazón/pulso SVG y margen de 16px al
+workspace de Dashboard, Pacientes y Agenda. No se crean imágenes raster ni una
+biblioteca de iconos paralela.
+
+Topbar: 64px en desktop/tablet y 56px en móvil. Buscar paciente es un botón real
+que abre Pacientes; no finge búsqueda global por campos sin soporte. Nombre y
+roles aparecen compactos en desktop. En móvil, la cuenta muestra solo iniciales;
+su disclosure permite consultar nombre, roles, especialidades reales y Cerrar
+sesión. Escape cierra la cuenta y restaura foco. El slot de notificaciones
+mantiene lógica/endpoints y usa un icono SVG accesible con contador real.
+Centro solo se presenta cuando se proporciona un contexto real; no se infiere
+uno a partir del perfil o la agenda.
+
+Por debajo de 1024px, navegación inferior: Inicio, Agenda, Pacientes y Más.
+Los destinos proceden del resolver vigente. Más abre el mismo Drawer de
+navegación que Abrir navegación, con destinos según rol; refleja el estado activo
+de vistas secundarias. Consulta conserva Agenda activa. Drawer cierra al elegir,
+con Escape o al volver a desktop; retorna foco al trigger correspondiente.
+
+La barra reserva 64px más safe-area al final del cuerpo. Dialog nativo coloca
+los módulos operativos por encima de la barra e impide interacción de fondo.
+Pacientes y Agenda desktop calculan la altura con flex y la Topbar real, sin
+restar una altura fija de 77px. No se añade polling ni carga de datos por navegar
+o abrir menús, además de las cargas propias existentes de cada vista.
+
+Los apartados siguientes conservan el contexto histórico de fase 2; esta sección
+prevalece para la presentación actual del Shell.
+
 Base: `feat/complete-care-context` en
 `553af16c1ffab4c216defb0733035cb3f75c225c`. Esta fase conecta el App Shell
 aprobado de UI V2 con la aplicación autenticada real. No rediseña los cuerpos
@@ -98,3 +129,7 @@ iniciar con una cuenta existente. La API predeterminada es
 `http://localhost:5173`. Después de ingresar, probar sidebar, Agenda, una sección
 permitida por el rol, campana, F5, logout y la navegación móvil. El catálogo de
 desarrollo permanece en `http://localhost:5173/__dev/ui-v2`.
+
+Actualización en Pacientes fase 5: la API predeterminada usa `/api/v1` en el mismo
+origen del frontend, reenviada por Vite/Docker. Se admite acceso por localhost o
+IP sin cambiar CORS backend; ver [Pacientes](PATIENTS.md).

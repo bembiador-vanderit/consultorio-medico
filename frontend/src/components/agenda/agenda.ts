@@ -114,9 +114,9 @@ export const appointmentStatusTone: Record<
 > = {
   scheduled: "info",
   confirmed: "success",
-  completed: "neutral",
+  completed: "info",
   cancelled: "danger",
-  no_show: "warning",
+  no_show: "neutral",
 };
 export const weekDayLabels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 

@@ -53,8 +53,8 @@ test("PatientForm preserves the server proof when choosing a restricted existing
   await setValue(control("Apellido"), "Ficticio");
   await setValue(control("Fecha de nacimiento"), identity.date_of_birth);
   await setValue(control("Teléfono"), "8095550001");
-  await act(async () => host.querySelector("form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
-  const result = [...host.querySelectorAll("button")].find((item) => item.textContent.includes("Usar Paciente Ficticio"));
+  await act(async () => document.querySelector("dialog form").dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+  const result = [...document.querySelectorAll("button")].find((item) => item.textContent.includes("Usar Paciente Ficticio"));
   assert.ok(result);
   await act(async () => result.click());
   assert.equal(selected.selection_token, identity.selection_token);

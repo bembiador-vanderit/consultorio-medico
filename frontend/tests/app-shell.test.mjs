@@ -13,7 +13,7 @@ const originalAdapter = api.defaults.adapter;
 const host = document.getElementById("root");
 let root, requests, data;
 const baseLabels = ["Dashboard", "Agenda", "Reportes de citas", "Pacientes"];
-const headings = { Dashboard: "Bienvenido, Personal de prueba", Agenda: "Agenda", "Reportes de citas": "Reportes de citas", Pacientes: "Pacientes", Seguimientos: "Seguimiento de pacientes", "Mi disponibilidad": "Mi disponibilidad", "Cobertura clínica": "Cobertura clínica", "Usuarios y roles": "Usuarios y roles", "Localidades y centros": "Localidades y centros" };
+const headings = { Dashboard: "Hola, Personal de prueba", Agenda: "Agenda", "Reportes de citas": "Reportes de citas", Pacientes: "Pacientes", Seguimientos: "Seguimiento de pacientes", "Mi disponibilidad": "Mi disponibilidad", "Cobertura clínica": "Cobertura clínica", "Usuarios y roles": "Usuarios y roles", "Localidades y centros": "Localidades y centros" };
 const listEndpoints = ["/patients", "/appointments", "/centers/mine", "/follow-ups", "/doctor-availability", "/clinical-coverages", "/users", "/centers", "/localities/all", "/clinical-catalog/specialties", "/appointments/doctors"];
 
 beforeEach(() => {
@@ -71,13 +71,14 @@ test("existing page back callback updates the single active view", async () => {
   await click(button("Pacientes", navigation()));
   await click(button("← Volver al dashboard", host.querySelector("main")));
   assert.equal(navigation().querySelector('[aria-current="page"]').textContent, "Dashboard");
-  assert.match(host.querySelector("main").textContent, /Bienvenido, Personal de prueba/);
+  assert.match(host.querySelector("main").textContent, /Hola, Personal de prueba/);
 });
 
 test("patient scheduling opens Agenda with that patient; navigation to Agenda clears the selection", async () => {
   data.set("/patients", [{ id: 9, first_name: "Paciente", last_name: "Ficticio", date_of_birth: "1980-01-01" }]);
   await mount(["doctor"]);
   await click(button("Pacientes", navigation()));
+  await click(host.querySelector(".patients-row"));
   await click(button("Agendar cita", host.querySelector("main")));
   assert.equal(navigation().querySelector('[aria-current="page"]').textContent, "Agenda");
   assert.match(document.body.textContent, /Paciente Ficticio/);
@@ -132,4 +133,42 @@ test("shell logout uses the existing API and returns approved Login without shel
   assert.equal(api.defaults.headers.common.Authorization, undefined);
   assert.equal(host.querySelector(".atlas-shell"), null);
   assert.equal(host.querySelector("h1").textContent, "Bienvenido a Atlas");
+});
+
+test("bottom navigation uses the single view and Más reflects secondary destinations", async () => {
+  await mount(["doctor"]);
+  await act(async () => setDesktop(false));
+  const nav = host.querySelector('[aria-label="Navegación móvil"]');
+  assert.equal(button("Inicio", nav).getAttribute("aria-current"), "page");
+  await click(button("Pacientes", nav));
+  assert.equal(button("Pacientes", nav).getAttribute("aria-current"), "page");
+  assert.equal(host.querySelector("main h1").textContent, "Pacientes");
+  const more = nav.querySelector('[aria-label="Más opciones"]');
+  more.focus();
+  await click(more);
+  const drawer = document.querySelector("dialog[open]");
+  await click(button("Seguimientos", drawer));
+  assert.equal(drawer.open, false);
+  assert.equal(document.activeElement, more);
+  assert.equal(more.getAttribute("aria-current"), "page");
+  assert.equal(nav.querySelectorAll('[aria-current="page"]').length, 1);
+  await click(button("Inicio", nav));
+  assert.match(host.querySelector("main h2").textContent, /Hola, Personal de prueba/);
+});
+
+test("account disclosure closes with Escape and retains accessible logout", async () => {
+  await mount(["admin"]);
+  const menu = host.querySelector(".atlas-account-menu");
+  const trigger = menu.querySelector("summary");
+  assert.equal(trigger.getAttribute("aria-label"), "Cuenta de Personal de prueba");
+  await click(trigger);
+  assert.equal(menu.open, true);
+  await act(async () => menu.dispatchEvent(new dom.window.KeyboardEvent("keydown", {key:"Escape",bubbles:true})));
+  assert.equal(menu.open, false);
+  assert.equal(document.activeElement, trigger);
+  const before = requests.length;
+  await click(trigger);
+  assert.equal(requests.length, before);
+  await click(button("Cerrar sesión", menu));
+  assert.equal(host.querySelector(".atlas-shell"), null);
 });

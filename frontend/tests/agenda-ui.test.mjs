@@ -2,7 +2,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 import { createBrowser } from "./browser.mjs";
-const { dom } = createBrowser();
+const { dom, setDesktop } = createBrowser();
 const { createElement: h, act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const server = await createServer({
@@ -75,6 +75,7 @@ function fail(detail) {
   throw { response: { data: { detail } } };
 }
 beforeEach(() => {
+  setDesktop(true);
   globalThis.Date = class extends NativeDate {
     constructor(...args) {
       super(...(args.length ? args : ["2026-09-14T12:00:00"]));
@@ -353,7 +354,7 @@ test("reprogramación Médicos mantiene fecha/rango/calendario y transición a D
   assert.equal(host.querySelectorAll(".agenda-appointment-card").length, 1);
   await click(closePanel());
   await click(button("Día", host));
-  assert.match(host.querySelector("#agenda-day-heading").textContent, /martes/);
+  assert.match(host.querySelector(".agenda-day h3").textContent, /martes/);
   assert.equal(host.querySelectorAll(".agenda-appointment-card").length, 1);
 });
 test("crear cita para otra fecha refresca lista y abre el panel contextual", async () => {
@@ -785,4 +786,61 @@ test("las tarjetas comparten color y texto de estado en las cuatro vistas", asyn
   await click(button("Médicos", host));
   for (const status of statuses)
     assert.ok(host.querySelector(`.agenda-appointment-card--doctor.agenda-appointment-card--${status}`));
+});
+
+test("Semana móvil renderiza una sola lista legible y vuelve a cuadrícula al ampliar", async () => {
+  items = [{...fixture}, {...fixture,id:9,appointment_date:"2026-09-15",status:"confirmed"}];
+  await mount();
+  await act(async () => setDesktop(false));
+  await click(button("Semana", host));
+  assert.equal(host.querySelector(".agenda-week-grid"), null);
+  assert.equal(host.querySelectorAll(".agenda-week-mobile .agenda-appointment-card").length, 2);
+  assert.deepEqual([...host.querySelectorAll(".agenda-week-mobile .agenda-event-status")].map((item) => item.textContent), ["Programada", "Confirmada"]);
+  const headings = [...host.querySelectorAll(".agenda-week-mobile .agenda-day h3")];
+  assert.equal(new Set(headings.map((item) => item.id)).size, 2);
+  const before = gets().length;
+  await act(async () => setDesktop(true));
+  assert.ok(host.querySelector(".agenda-week-grid"));
+  assert.equal(host.querySelector(".agenda-week-mobile"), null);
+  assert.equal(gets().length, before);
+});
+
+test("calendario/filtros móvil se despliegan y conservan filtro al cerrar detalle Día", async () => {
+  await mount();
+  await act(async () => setDesktop(false));
+  const toggle = host.querySelector(".agenda-mobile-filter-toggle");
+  const sidebar = host.querySelector(".agenda-sidebar");
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(toggle.getAttribute("aria-controls"), sidebar.id);
+  await click(toggle);
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.ok(!sidebar.classList.contains("agenda-sidebar--collapsed"));
+  const filters = sidebar.querySelectorAll("select");
+  await change(filters[3], "scheduled");
+  const before = gets().length;
+  await click(toggle);
+  const trigger = host.querySelector(".agenda-appointment-card--day");
+  trigger.focus();await click(trigger);await click(button("Cerrar",dialog()));
+  assert.equal(filters[3].value,"scheduled");
+  assert.equal(gets().length,before);
+  assert.equal(document.activeElement,trigger);
+});
+
+test("Mes móvil usa el mismo Drawer para lista/detalle, volver, Escape y contexto", async () => {
+  await mount();await act(async () => setDesktop(false));await click(button("Mes",host));
+  const trigger = [...host.querySelectorAll(".agenda-month-day")].find((item) => item.querySelector(".agenda-month-date").textContent === "14" && !item.classList.contains("agenda-month-day--outside"));
+  trigger.focus();await click(trigger);
+  const drawer = dialog();assert.ok(drawer.classList.contains("atlas-dialog--drawer"));
+  const before = gets().length;
+  await click(drawer.querySelector(".agenda-day-list-item"));
+  assert.equal(dialog(),drawer);
+  assert.match(drawer.querySelector(".atlas-dialog-header").textContent,/Detalle de la cita/);
+  await click(button("← Citas del día",drawer));
+  assert.equal(dialog(),drawer);
+  assert.match(drawer.querySelector(".atlas-dialog-header").textContent,/Citas del día/);
+  await act(async () => drawer.dispatchEvent(new dom.window.Event("cancel",{cancelable:true})));
+  assert.equal(dialog(),null);
+  assert.equal(document.activeElement,trigger);
+  assert.equal(gets().length,before);
+  assert.equal(host.querySelector('[aria-pressed="true"]').textContent,"Mes");
 });

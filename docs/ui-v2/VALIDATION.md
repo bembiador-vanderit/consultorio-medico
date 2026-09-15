@@ -331,3 +331,127 @@ El workflow existente solo escucha push y pull_request hacia `main`, además de
 workflow_dispatch. Un push de esta rama y este PR hacia
 `feat/complete-care-context` no cumple esos disparadores. No se cambia el workflow
 ni la base del PR para activar CI.
+
+## Pacientes UI V2 — fase 5, misión 3
+
+Base exacta: `feat/complete-care-context@5012dfce894b63710745246d6d634c15b75bb078`.
+
+| Validación | Resultado |
+| --- | --- |
+| Suite frontend completa, Node 22 en Docker, ejecución secuencial | 129 passed / 0 failed / 0 skipped |
+| Patients UI nuevos | 29 casos incluidos en la suite completa |
+| patient-selection-contract | 2 casos incluidos; prueba firmada conservada y enviada a citas |
+| api-routing nuevos | 4 passed específicos y en suite completa; ruta relativa, override, reenvío de query/auth/cookies |
+| Agenda y App Shell | Incluidos en suite completa; selección en Patients antes de Agendar y navegación preservada |
+| TypeScript + Vite build | PASS, 129 módulos, ejecutado dentro de la imagen frontend |
+| Docker frontend | PASS, imagen aislada atlas-patients-v2-frontend |
+| Compose config -q | PASS, archivo de variables ficticias; sin iniciar ni migrar backend/DB |
+| Edge headless, ocho resoluciones | PASS, lista/ficha, seguro, historia y formulario; sin overflow horizontal de página o modal activo |
+| Desktop/tablet desde 640px | PASS, altura de página igual al viewport, scroll local |
+| 1920×1200 | Área master/detail de 1632px, a 16px del Sidebar; aprovecha ancho restante |
+| 1280×800 | Master/detail de 992px; acciones visibles incluso con identidad/contacto extensos |
+| Acceso localhost / IP local de la PC | PASS desde la misma PC en preview, llamadas al origen elegido |
+| Selección / Seguro | Cero requests al seleccionar; una consulta de seguro al paciente elegido por apertura; sin N+1 |
+| Cierres/foco | Escape y cierres accesibles; Seguro retorna foco a su botón, Drawer retorna a la fila |
+| Backend y reglas de autorización | Sin diff respecto a la base; CORS permanece intacto |
+
+Resoluciones: 1920×1200, 1440×1000, 1366×900, 1280×800, 1024×900,
+768×900, 375×812 y 320×700. En móvil se permite desplazamiento vertical
+natural de la lista; detalles/formularios tienen scroll interno y cierre disponible.
+
+Las regresiones cubren render, loading/empty/error/no resultados, búsqueda/limpiar,
+respuestas fuera de orden, selección/ficha/edad, roles simples y múltiples,
+Historia solo por doctor, Seguro bajo demanda, alta/edición/agendar, prueba de
+selección, 409 y campos conservados, omisión de seguro tras error de lectura,
+false explícito, actualización explícita, guardando, labels/IDs, cierre/foco y
+ordenamiento local sin requests adicionales.
+
+Las capturas usan fixtures ficticios y API interceptada; la comprobación HTTP de
+reenvío usa un backend ficticio en loopback y verifica Authorization y cookies.
+No representa una certificación de permisos ni de conectividad/firewall desde
+otro dispositivo. No se alteraron servicios operativos ni datos clínicos.
+
+El bundle usa /api/v1 en el mismo origen; Vite dev/preview y la configuración del
+frontend Docker reenvían al backend. Un servidor estático diferente debe configurar
+ese reenvío. VITE_API_URL explícito mantiene el modo de API separada.
+
+Diseño, roles y deuda futura: [PATIENTS.md](PATIENTS.md).
+
+## Corrección visual conjunta — mismo PR #33
+
+Dashboard, Pacientes, Agenda y App Shell revisados contra la composición Atlas
+aprobada. No se añade una paleta, backend, permiso ni endpoint paralelo.
+
+| Validación | Resultado |
+| --- | --- |
+| Frontend completo, Node 22 Docker, secuencial | 142 passed / 0 failed / 0 skipped |
+| Dashboard | 14 casos: roles, prioridades, multi-role, especialidades, fuentes reales, vacíos/errores, acciones, Nueva cita, expansión móvil y ausencia de cargas extra |
+| Shell | Navegación inferior, Inicio activo, Más según rol, vista única, cuenta/Escape/logout, foco y transición desktop |
+| Agenda | Modal de Día y contexto preservados; Semana móvil sin duplicar citas, filtros desplegables, mismo Drawer Mes para lista/detalle/volver/Escape/foco |
+| Pacientes/contrato/API | 29 casos Patients, 2 selection-contract y 4 routing, incluidos en suite completa |
+| TypeScript + Vite | PASS, 130 módulos; CSS 90.22 kB y JS 421.47 kB antes de gzip |
+| Docker build / Compose config -q | PASS, imagen preview aislada y variables ficticias |
+| Edge headless, cuatro módulos × ocho tamaños | PASS, sin overflow horizontal de página o módulo activo |
+| Topbar / bottom navigation | 64px desktop/tablet, 56px móvil; barra inferior visible y margen final reservado |
+| Dashboard 320px | Cuatro accesos principales 2×2, métricas en dos columnas y resumen visible en viewport inicial |
+| Agenda desktop | Semana completa visible con eje horario y tarjetas delimitadas; sin scroll horizontal ni vertical de página como mecanismo normal |
+| Pacientes desktop/tablet | Altura de página igual al viewport, scroll local y cuatro acciones de médico visibles |
+| Requests | Una carga principal Patients, cero al seleccionar; seguro bajo demanda; abrir cuenta/expandir accesos/filtros/cerrar modal no añade recargas |
+| Datos/autorización/backend | Contratos y guards conservados, backend sin diff; pruebas UI con fixtures ficticios |
+
+Tamaños: 1920×1200, 1440×1000, 1366×900, 1280×800, 1024×900,
+768×900, 375×812 y 320×700. En móvil, listas principales permiten scroll
+vertical natural; modales/Drawers usan scroll interno. El panel de lista/detalle
+de Agenda queda en el mismo Drawer; Día sigue siendo Modal.
+
+Se verificaron también los Dashboard de Secretaría y Admin a 375px. Las fuentes
+de notificaciones de campana y Dashboard conservan sus dos cargas independientes
+previas; no se añade polling ni N+1. No se reconstruyó ni reinició la instalación
+operativa. La comprobación visual no certifica permisos contra una base real.
+
+Documentación de presentación vigente: [Dashboard](DASHBOARDS.md),
+[App Shell](APP_SHELL.md), [Pacientes](PATIENTS.md) y [Agenda](AGENDA.md).
+
+
+## PR #33 — misión 3C, polish final
+
+- Frontend completo en Node 22/Docker: **149 passed, 0 failed, 0 skipped**;
+  conserva los 142 casos previos y agrega siete. La versión final también
+  reutiliza el badge global en Reportes sin alterar filtros, exportaciones o API.
+- TypeScript + Vite: **PASS**, 130 módulos. Docker frontend build: **PASS**.
+  Compose config con variables ficticias: **PASS**.
+- Edge headless con API interceptada: **PASS** en 1920×1200, 1440×1000,
+  1366×900, 1280×800, 1024×900, 768×900, 375×812 y 320×700.
+  Cero overflow horizontal de página/dialog activo. Estados reales visibles en
+  Semana 1280; ancho de ficha 34–40% y correo inicialmente visible desde 1280;
+  título móvil sin borde/outline y acciones visibles; navegación inferior,
+  Más/retorno de foco, Modal de Día y Drawer de Mes conservados.
+- Adicional: especialidad de nombre extenso en Dashboard en 1920, 1280, 375 y
+  320px: **PASS**, sin overflow horizontal. Nombres/correos/motivos extensos,
+  badges, formularios, Drawer y barra inferior se comprobaron en la matriz.
+- Palette global única: Programada azul, Confirmada verde, Completada teal,
+  Cancelada coral, No asistió slate fuerte; contraste texto/fondo >=4.5:1.
+- Capturas nuevas fuera de Git: Dashboard 1920/320, Pacientes 1280/320,
+  Semana 1280 con los cinco estados, Día 375 y leyenda específica de estados,
+  además de las otras resoluciones y Reportes 1280.
+- No modifica backend, API proxy/routing, Docker proxy, permisos, seguridad,
+  patient selection proof, insurance omission semantics ni reglas de citas.
+  Instalación operativa sin reconstrucción/reinicio; datos de QA ficticios.
+
+## PR #33 — misión 3D, ajustes finales
+
+- Frontend completo: **149 passed, 0 failed, 0 skipped**. Se actualiza el
+  contrato visual existente para ancho/márgenes/columnas y tipografía; no se
+  elimina ninguna prueba. TypeScript + Vite, Docker frontend y Compose: **PASS**.
+- Chrome con perfil temporal aislado y API interceptada: Pacientes 320×700 y
+  375×812; Agenda Día/Semana 1280×800 a 100%, 75% y 50%, y 1920×1080 a 100%:
+  **PASS**. Zoom nativo del navegador, verificado mediante getDefaultZoom,
+  devicePixelRatio y viewport CSS (2560×1600 a 50% para captura física 1280×800).
+- Geometría comprobada con bounding boxes: primarias a ancho completo,
+  secundarias en la misma fila/anchos iguales/gap 8px, cero márgenes accidentales,
+  cuatro acciones visibles y alturas >=44px en los dos móviles.
+- Etiquetas de Día/Semana: 13–14.4px CSS, peso 700; sin recorte horizontal ni
+  vertical en los casos probados. Tarjetas semanales <=76px, sin aumentar altura.
+  Cero overflow horizontal de página/dialog activo.
+- Capturas nuevas exclusivamente de Pacientes y Agenda, fuera de Git. No se
+  modifica Dashboard, navegación móvil, mapping/paleta, API, backend ni permisos.

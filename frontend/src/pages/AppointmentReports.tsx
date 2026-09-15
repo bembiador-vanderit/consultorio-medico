@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
 import type { Appointment } from "../types/appointment";
+import { AppointmentStatusBadge } from "../components/agenda/AppointmentStatusBadge";
+import { appointmentStatusLabels } from "../components/agenda/agenda";
 import { sortAppointments, type AppointmentSortKey, type SortDirection } from "../utils/appointmentSort";
 
 type Props = { onBack: () => void };
-const statuses: Record<string, string> = { scheduled: "Programada", confirmed: "Confirmada", completed: "Completada", cancelled: "Cancelada", no_show: "No asistió" };
+const statuses: Record<string, string> = appointmentStatusLabels;
 
 type ReportFilters = { from: string; to: string; status: string; search: string; doctorId: string; centerId: string };
 type ReportDoctor = { id: number; full_name: string; center_ids: number[] };
@@ -172,7 +174,7 @@ export default function AppointmentReports({ onBack }: Props) {
 
     <div className="mt-6 rounded-xl border bg-white shadow-sm print:mt-0 print:border-0 print:shadow-none">
       <div className="hidden border-b pb-4 print:block"><h1 className="text-2xl font-bold">Reporte de citas</h1><p className="text-sm text-slate-600">Periodo: {formatDate(filters.from)} - {formatDate(filters.to)}</p><p className="text-sm text-slate-600">Total de citas: {filtered.length}</p></div>
-      {loading ? <p className="p-6 text-slate-500">Cargando reporte...</p> : error ? <p className="p-6 text-red-700">{error}</p> : filtered.length === 0 ? <p className="p-10 text-center text-slate-500">No hay citas para los filtros seleccionados.</p> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 print:bg-white"><tr>{sortableHeader("Fecha / Hora", "dateTime", 2)}{sortableHeader("Paciente", "patient")}{sortableHeader("Médico", "doctor")}{sortableHeader("Centro", "center")}{sortableHeader("Estado", "status")}<th className="px-4 py-3">Motivo</th></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((a) => <tr key={a.id}><td className="px-4 py-3">{formatDate(a.appointment_date)}</td><td className="px-4 py-3">{a.appointment_time.slice(0, 5)}</td><td className="px-4 py-3 font-medium">{a.patient_name}</td><td className="px-4 py-3">{a.doctor_name}</td><td className="px-4 py-3">{a.center_name ? `${a.center_name} (${a.center_city})` : "—"}</td><td className="px-4 py-3">{statuses[a.status] || a.status}</td><td className="px-4 py-3">{a.reason || "—"}</td></tr>)}</tbody></table></div>}
+      {loading ? <p className="p-6 text-slate-500">Cargando reporte...</p> : error ? <p className="p-6 text-red-700">{error}</p> : filtered.length === 0 ? <p className="p-10 text-center text-slate-500">No hay citas para los filtros seleccionados.</p> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 print:bg-white"><tr>{sortableHeader("Fecha / Hora", "dateTime", 2)}{sortableHeader("Paciente", "patient")}{sortableHeader("Médico", "doctor")}{sortableHeader("Centro", "center")}{sortableHeader("Estado", "status")}<th className="px-4 py-3">Motivo</th></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((a) => <tr key={a.id}><td className="px-4 py-3">{formatDate(a.appointment_date)}</td><td className="px-4 py-3">{a.appointment_time.slice(0, 5)}</td><td className="px-4 py-3 font-medium">{a.patient_name}</td><td className="px-4 py-3">{a.doctor_name}</td><td className="px-4 py-3">{a.center_name ? `${a.center_name} (${a.center_city})` : "—"}</td><td className="px-4 py-3"><AppointmentStatusBadge status={a.status} /></td><td className="px-4 py-3">{a.reason || "—"}</td></tr>)}</tbody></table></div>}
     </div>
   </section>;
 }

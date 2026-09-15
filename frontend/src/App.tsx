@@ -27,6 +27,7 @@ function App() {
   const [patientsVersion, setPatientsVersion] = useState(0);
   const [selectedAppointmentPatient, setSelectedAppointmentPatient] = useState<Patient | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [createAppointment, setCreateAppointment] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -59,17 +60,19 @@ function App() {
   const canAccessClinical = isDoctor;
 
   function navigate(nextView: AppView) {
+    setCreateAppointment(false);
     // Agenda from navigation starts without the patient preselected by Patients.
     if (nextView === "appointments") setSelectedAppointmentPatient(null);
     setView(nextView);
   }
 
-  return <AtlasAppShell user={user} pageTitle="Espacio de trabajo"
+  const titles: Record<AppView, string> = { dashboard: "Inicio", patients: "Pacientes", appointments: "Agenda", reports: "Reportes de citas", "care-context": "Localidades y centros", availability: "Mi disponibilidad", users: "Usuarios y roles", "follow-ups": "Seguimientos", consultation: "Consulta", "clinical-coverages": "Cobertura clínica" };
+  return <AtlasAppShell user={user} pageTitle={titles[view]}
     activeView={view === "consultation" ? "appointments" : view}
     onNavigate={navigate} onSignOut={() => void signOut()}
     notifications={<NotificationBell onOpenNotifications={() => setView("dashboard")} />}>
-    <div className={`atlas-operational-workspace${view === "appointments" ? " atlas-operational-workspace--agenda" : ""}`}>
-      {view === "patients" ? <Patients user={user} onBack={() => setView("dashboard")} onPatientChanged={() => setPatientsVersion((value) => value + 1)} onScheduleAppointment={schedulePatient} /> : view === "appointments" ? <Appointments user={user} onBack={() => setView("dashboard")} initialPatient={selectedAppointmentPatient} canAccessClinical={canAccessClinical} onAttendAppointment={attendAppointment} /> : view === "consultation" && selectedAppointment && canAccessClinical ? <Consultation appointment={selectedAppointment} onBack={() => setView("appointments")} /> : view === "clinical-coverages" && (isDoctor || isSecretary) ? <ClinicalCoverages user={user} onBack={() => setView("dashboard")} /> : view === "reports" ? <AppointmentReports onBack={() => setView("dashboard")} /> : view === "care-context" ? <CareContext onBack={() => setView("dashboard")} /> : view === "availability" ? <DoctorAvailability onBack={() => setView("dashboard")} /> : view === "users" ? <Users currentUser={user} onCurrentUserChanged={setUser} onBack={() => setView("dashboard")} /> : view === "follow-ups" && isDoctor ? <FollowUps user={user} onBack={() => setView("dashboard")} /> : <Dashboard user={user} patientsVersion={patientsVersion} onNavigate={navigate} />}
+    <div className={`atlas-operational-workspace${view === "appointments" ? " atlas-operational-workspace--agenda" : view === "patients" ? " atlas-operational-workspace--patients" : view === "dashboard" ? " atlas-operational-workspace--dashboard" : ""}`}>
+      {view === "patients" ? <Patients user={user} onBack={() => setView("dashboard")} onPatientChanged={() => setPatientsVersion((value) => value + 1)} onScheduleAppointment={schedulePatient} /> : view === "appointments" ? <Appointments user={user} onBack={() => setView("dashboard")} initialPatient={selectedAppointmentPatient} initialCreate={createAppointment} canAccessClinical={canAccessClinical} onAttendAppointment={attendAppointment} /> : view === "consultation" && selectedAppointment && canAccessClinical ? <Consultation appointment={selectedAppointment} onBack={() => setView("appointments")} /> : view === "clinical-coverages" && (isDoctor || isSecretary) ? <ClinicalCoverages user={user} onBack={() => setView("dashboard")} /> : view === "reports" ? <AppointmentReports onBack={() => setView("dashboard")} /> : view === "care-context" ? <CareContext onBack={() => setView("dashboard")} /> : view === "availability" ? <DoctorAvailability onBack={() => setView("dashboard")} /> : view === "users" ? <Users currentUser={user} onCurrentUserChanged={setUser} onBack={() => setView("dashboard")} /> : view === "follow-ups" && isDoctor ? <FollowUps user={user} onBack={() => setView("dashboard")} /> : <Dashboard user={user} patientsVersion={patientsVersion} onNavigate={navigate} onNewAppointment={() => { setSelectedAppointmentPatient(null); setCreateAppointment(true); setView("appointments"); }} />}
     </div>
   </AtlasAppShell>;
 }

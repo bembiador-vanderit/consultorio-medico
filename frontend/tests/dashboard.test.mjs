@@ -11,10 +11,11 @@ const { default: App } = await server.ssrLoadModule("/src/App.tsx");
 const { api, setAccessToken } = await server.ssrLoadModule("/src/services/api.ts");
 const originalAdapter = api.defaults.adapter;
 const host = document.getElementById("root");
-let root, data, failAppointments, holdAppointments;
+let root, data, failAppointments, holdAppointments, requests;
 
 beforeEach(() => {
   root = createRoot(host);
+  requests = [];
   setDesktop(true);
   failAppointments = false;
   holdAppointments = false;
@@ -28,6 +29,7 @@ beforeEach(() => {
   ]);
   setAccessToken(null);
   api.defaults.adapter = async (config) => {
+    requests.push({url: config.url, params: config.params});
     if (config.url === "/appointments" && holdAppointments) return new Promise(() => {});
     if (config.url === "/appointments" && failAppointments) throw new Error("Agenda no disponible");
     if (!data.has(config.url)) throw new Error(`Unexpected endpoint ${config.url}`);
@@ -55,9 +57,9 @@ function actionLabels() { return [...main().querySelectorAll("[data-dashboard-ac
 test("médico ve jornada, especialidades múltiples y acciones clínicas reales", async () => {
   await mount(["doctor"], ["Cardiología", "Medicina Interna"]);
   assert.match(main().textContent, /Jornada clínica/);
-  assert.match(main().textContent, /Cardiología · Medicina Interna/);
+  assert.deepEqual([...main().querySelectorAll(".dashboard-specialties .atlas-badge")].map((item) => item.textContent), ["Cardiología", "Medicina Interna"]);
   assert.match(main().textContent, /Seguimientos pendientes/);
-  assert.deepEqual(actionLabels(), ["Ver agenda", "Pacientes", "Reportes de citas", "Ver seguimientos", "Mi disponibilidad", "Cobertura clínica"]);
+  assert.deepEqual(actionLabels(), ["Nueva cita", "Pacientes", "Ver agenda", "Reportes de citas", "Ver seguimientos", "Mi disponibilidad", "Cobertura clínica"]);
   assert.doesNotMatch(main().textContent, /Usuarios activos/);
 });
 
@@ -116,4 +118,100 @@ test("acción rápida usa la navegación real dentro del App Shell", async () =>
   assert.equal(host.querySelector('.atlas-sidebar [aria-current="page"]').textContent, "Agenda");
   assert.equal(main().querySelector("h1").textContent, "Agenda");
   assert.ok(host.querySelector(".atlas-shell"));
+});
+
+test("Nueva cita abre el formulario operativo y cerrar conserva Agenda Día", async () => {
+  await mount(["secretary"]);
+  await clickAction("new-appointment", main());
+  const modal = [...document.querySelectorAll("dialog")].find((item) => item.open);
+  assert.ok(modal);
+  assert.match(modal.textContent, /Nueva cita/);
+  assert.ok(modal.querySelector(".agenda-form"));
+  const before = requests.length;
+  await act(async () => modal.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(modal.open, false);
+  assert.equal(main().querySelector("h1").textContent, "Agenda");
+  assert.equal(main().querySelector('[aria-pressed="true"]').textContent, "Día");
+  assert.equal(requests.length, before);
+});
+
+test("admin prioriza destinos administrativos y no añade flujos ficticios", async () => {
+  await mount(["admin"]);
+  assert.deepEqual(actionLabels().slice(0, 2), ["Usuarios y roles", "Centros de atención"]);
+  assert.ok(!actionLabels().includes("Iniciar consulta"));
+  assert.doesNotMatch(main().textContent, /Laboratorio|Nueva receta|Ingresos|WhatsApp|En espera/);
+  assert.equal(requests.filter((item) => item.url === "/follow-ups").length, 0);
+});
+
+test("secretaría no solicita fuentes clínicas y conserva todas las métricas reales", async () => {
+  await mount(["secretary"]);
+  assert.equal(requests.filter((item) => item.url === "/follow-ups").length, 0);
+  assert.equal(requests.filter((item) => item.url === "/users" || item.url === "/centers").length, 0);
+  const metrics = [...main().querySelectorAll(".dashboard-metric")];
+  assert.deepEqual(metrics.map((item) => item.querySelector(".dashboard-metric-value").textContent), ["1", "12", "1"]);
+  assert.ok(metrics.every((item) => item.querySelector("svg")));
+});
+
+test("médico sin especialidades y sin notificaciones usa vacíos pequeños y honestos", async () => {
+  data.set("/follow-ups/notifications", []);
+  await mount(["doctor"]);
+  assert.match(main().querySelector(".dashboard-specialties").textContent, /pendientes de configurar/);
+  assert.match(main().querySelector(".dashboard-notifications").textContent, /No hay notificaciones pendientes/);
+  assert.equal(main().querySelectorAll(".dashboard-specialties .atlas-card").length, 0);
+});
+
+test("dashboard móvil marca Inicio y permite revelar accesos sin nuevas consultas", async () => {
+  await mount(["doctor"]);
+  await act(async () => setDesktop(false));
+  const nav = host.querySelector('[aria-label="Navegación móvil"]');
+  assert.deepEqual([...nav.querySelectorAll("button")].map((item) => item.textContent), ["Inicio", "Agenda", "Pacientes", "•••Más"]);
+  assert.equal(nav.querySelector('[aria-current="page"]').textContent, "Inicio");
+  const toggle = main().querySelector(".dashboard-more-actions");
+  const before = requests.length;
+  await act(async () => toggle.click());
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.equal(main().querySelector(".dashboard-actions-grid").id, toggle.getAttribute("aria-controls"));
+  await act(async () => toggle.click());
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(requests.length, before);
+});
+
+test("más accesos y controles del shell no repiten fuentes ni consultan cada cita", async () => {
+  await mount(["doctor", "admin"]);
+  for (const path of ["/patients/count", "/appointments", "/follow-ups", "/users", "/centers"]) assert.equal(requests.filter((item) => item.url === path).length, 1, path);
+  // Bell and Dashboard retain their existing independent notification loads.
+  assert.equal(requests.filter((item) => item.url === "/follow-ups/notifications").length, 2);
+  assert.equal(requests.filter((item) => item.url.startsWith("/clinical-history") || item.url.startsWith("/insurance/")).length, 0);
+  const before = requests.length;
+  await act(async () => host.querySelector('.atlas-account-menu summary').click());
+  await act(async () => main().querySelector('.dashboard-more-actions').click());
+  assert.equal(requests.length, before);
+});
+
+test("agenda resumen ordena horas reales, limita cinco y conserva estado textual", async () => {
+  data.set("/appointments", Array.from({length: 6}, (_, index) => ({id:index+1,patient_name:`Paciente ficticio ${index}`,doctor_name:"Médico ficticio",appointment_time:`${String(14-index).padStart(2,"0")}:30:00`,status:"scheduled"})));
+  await mount(["doctor"]);
+  const rows = main().querySelectorAll(".dashboard-appointments li");
+  assert.equal(rows.length, 5);
+  assert.equal(rows[0].querySelector("time").textContent, "09:30");
+  assert.ok([...rows].every((item) => item.textContent.includes("Programada")));
+  assert.match(main().textContent, /Mostrando 5 de 6 citas/);
+});
+
+test("roles médico y secretaría comparten acciones sin duplicación", async () => {
+  await mount(["doctor", "secretary"]);
+  const ids = [...main().querySelectorAll("[data-dashboard-action]")].map((item) => item.dataset.dashboardAction);
+  assert.equal(ids.length, new Set(ids).size);
+  assert.match(main().textContent, /Jornada clínica/);
+  assert.match(main().textContent, /Operación de agenda/);
+});
+
+
+test("Dashboard shares the five appointment identities with Agenda", async () => {
+  const statuses = ["scheduled", "confirmed", "completed", "cancelled", "no_show"];
+  data.set("/appointments", statuses.map((status,index)=>({id:index+1,patient_name:"Paciente ficticio",appointment_time:`${8+index}:00:00`,status})));
+  await mount(["doctor"]);
+  const badges = [...main().querySelectorAll(".dashboard-appointments .atlas-badge")];
+  assert.equal(badges.length, 5);
+  for (const status of statuses) assert.ok(badges.some(node=>node.classList.contains(`appointment-status--${status}`)), status);
 });

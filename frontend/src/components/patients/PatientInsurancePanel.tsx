@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Alert, Button, Card, Checkbox, EmptyState, FormField, FormSection, Input, LoadingState, Modal, Select, StatusBadge } from "../../ui";
+import "../../pages/patients.css";
 import { api } from "../../services/api";
 import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
 import type { User } from "../../types/user";
@@ -103,75 +105,34 @@ export default function PatientInsurancePanel({ patientId, patientName, user, on
 
   const activeItems = items.filter((item) => item.is_active);
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 p-4">
-      <div className="mx-auto mt-8 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Ficha del paciente</p>
-            <h3 className="mt-1 text-2xl font-bold">Seguro médico</h3>
-            <p className="mt-1 text-sm text-slate-500">{patientName}</p>
-          </div>
-          <button onClick={onClose} className="rounded-lg border px-3 py-2 text-sm">Cerrar</button>
-        </div>
-
-        {error && <div className="mt-5 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-
-        <div className="mt-6 rounded-xl border bg-slate-50 p-4">
-          <h4 className="font-semibold">Registrar seguro del paciente</h4>
-          {companies.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">No hay compañías de seguros registradas. Un administrador debe crear la primera ARS.</p>
-          ) : (
-            <form onSubmit={addInsurance} className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-medium">Compañía / ARS *
-                <select required value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2">
-                  {companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}
-                </select>
-              </label>
-              <label className="text-sm font-medium">Número de afiliado *
-                <input required maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-              </label>
-              <label className="text-sm font-medium">Plan
-                <input maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-              </label>
-              <label className="flex items-center gap-2 pt-6 text-sm font-medium">
-                <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} /> Seguro principal
-              </label>
-              <div className="sm:col-span-2 flex justify-end">
-                <button disabled={saving} className="rounded-lg bg-teal-700 px-5 py-2 font-medium text-white disabled:opacity-60">{saving ? "Guardando..." : "Agregar seguro"}</button>
-              </div>
-            </form>
-          )}
-        </div>
-
-        {canManageCompanies && (
-          <form onSubmit={createCompany} className="mt-4 rounded-xl border p-4">
-            <h4 className="font-semibold">Administrar compañías de seguros</h4>
-            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px_auto]">
-              <input required minLength={2} maxLength={150} value={newCompany} onChange={(e) => setNewCompany(e.target.value)} placeholder="Nombre de la ARS" className="rounded-lg border border-slate-300 p-2" />
-              <input maxLength={50} value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código opcional" className="rounded-lg border border-slate-300 p-2" />
-              <button disabled={saving} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">Nueva ARS</button>
-            </div>
-          </form>
-        )}
-
-        <div className="mt-6">
-          <h4 className="font-semibold">Seguros registrados</h4>
-          {loading ? <p className="mt-3 text-sm text-slate-500">Cargando...</p> : items.length === 0 ? (
-            <p className="mt-3 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">Paciente sin Seguro.</p>
-          ) : (
-            <div className="mt-3 overflow-hidden rounded-xl border">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">ARS</th><th className="px-4 py-3">Afiliado</th><th className="px-4 py-3">Plan</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3 text-right">Acción</th></tr></thead>
-                <tbody className="divide-y divide-slate-100">
-                  {items.map((item) => <tr key={item.id}><td className="px-4 py-3 font-medium">{item.insurance_company_name}{item.is_primary && item.is_active && <span className="ml-2 rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-700">Principal</span>}</td><td className="px-4 py-3">{item.member_number}</td><td className="px-4 py-3">{item.plan_name || "—"}</td><td className="px-4 py-3">{item.is_active ? "Activo" : "Inactivo"}</td><td className="px-4 py-3 text-right">{item.is_active ? <button disabled={saving} onClick={() => void deactivateInsurance(item)} className="font-medium text-red-700 hover:underline disabled:opacity-50">Desactivar</button> : <span className="text-slate-400">Historial</span>}</td></tr>)}
-                </tbody>
-              </table>
-              {activeItems.length === 0 && <p className="border-t bg-slate-50 p-4 text-center text-sm font-medium text-slate-600">Paciente sin Seguro activo.</p>}
-            </div>
-          )}
-        </div>
-      </div>
+  return <Modal title="Seguro médico" description={patientName} open onClose={() => { if (!saving) onClose(); }} closeLabel="Cerrar seguro médico">
+    <div className="patient-form">
+      {error && <Alert tone="danger" title="No se pudo completar la operación">{error}</Alert>}
+      {loading ? <LoadingState label="Cargando seguros..." /> : <>
+        <section aria-label="Seguros registrados">
+          <h2 className="atlas-card-title">Seguros registrados</h2>
+          {items.length === 0 ? <EmptyState title="Paciente sin Seguro" description="No hay afiliaciones registradas." /> : <ul className="patient-insurance-list">{items.map((item) => <li key={item.id}><Card compact>
+            <header><h3 className="atlas-card-title">{item.insurance_company_name}</h3><StatusBadge tone={item.is_active ? "success" : "neutral"}>{item.is_active ? item.is_primary ? "Activo · Principal" : "Activo" : "Inactivo"}</StatusBadge></header>
+            <dl className="patients-facts"><div><dt>Número de afiliado</dt><dd>{item.member_number}</dd></div><div><dt>Plan</dt><dd>{item.plan_name || "Sin plan registrado"}</dd></div></dl>
+            {item.is_active ? <Button variant="outline" disabled={saving} onClick={() => void deactivateInsurance(item)}>Desactivar</Button> : <p className="atlas-help">Registro conservado en el historial</p>}
+          </Card></li>)}</ul>}
+          {items.length > 0 && activeItems.length === 0 && <p className="atlas-help">Paciente sin Seguro activo.</p>}
+        </section>
+        {companies.length === 0 ? <Alert title="No hay compañías de seguros registradas">Un administrador debe crear la primera ARS.</Alert> : <form onSubmit={addInsurance} className="patient-form">
+          <FormSection title="Registrar seguro del paciente">
+            <FormField label="Compañía / ARS" required><Select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}</Select></FormField>
+            <FormField label="Número de afiliado" required><Input maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} /></FormField>
+            <FormField label="Plan"><Input maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} /></FormField>
+            <Checkbox label="Seguro principal" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} />
+          </FormSection><Button type="submit" loading={saving} loadingLabel="Guardando...">Agregar seguro</Button>
+        </form>}
+        {canManageCompanies && <form onSubmit={createCompany} className="patient-form">
+          <FormSection title="Administrar compañías de seguros">
+            <FormField label="Nombre de la ARS" required><Input minLength={2} maxLength={150} value={newCompany} onChange={(e) => setNewCompany(e.target.value)} /></FormField>
+            <FormField label="Código opcional"><Input maxLength={50} value={newCode} onChange={(e) => setNewCode(e.target.value)} /></FormField>
+          </FormSection><Button type="submit" variant="outline" disabled={saving}>Nueva ARS</Button>
+        </form>}
+      </>}
     </div>
-  );
+  </Modal>;
 }

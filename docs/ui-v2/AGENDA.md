@@ -1,5 +1,26 @@
 # Agenda profesional — UI V2 Fase 4A
 
+## Corrección visual móvil vigente — PR #33
+
+El marco desktop usa altura flex disponible después de la Topbar compacta,
+sin el cálculo fijo de 77px; conserva la cuadrícula semanal, eje horario, estados
+azul/verde/teal/coral/slate y tarjetas delimitadas. No cambia endpoints ni reglas.
+
+Por debajo de 1024px, Calendario y filtros revela/oculta el mismo panel sin
+requests ni controles duplicados; inicia cerrado para priorizar citas. Cambiar
+fecha lo vuelve a cerrar, conservando filtros. Por debajo de 640px, Semana usa
+una única lista de citas reales agrupada por día, con hora, paciente, motivo,
+especialidad y estado legibles. Desde 640px vuelve a la cuadrícula sin nuevas
+consultas. No crea duración, hora final, disponibilidad ni slots.
+
+En tablet/móvil, los paneles de Semana, Mes y Médicos reutilizan el contenido
+existente dentro del Drawer Foundation. Lista/detalle/← Citas del día cambian en
+el mismo Drawer, con scroll interno, cierre, backdrop, Escape y retorno de foco.
+La vista Día mantiene su Modal emergente y no se migra al panel lateral.
+En móvil, encabezado y tarjetas se compactan; Inicio en la barra inferior ofrece
+el retorno al Dashboard, sin repetir ese botón en el encabezado. El final de la
+lista permanece alcanzable por encima de la barra inferior.
+
 Base: `feat/complete-care-context` en `eda6d7bdfb593d590f5fa469f393ba3a0a6f2d4c`.
 
 ## Alcance
@@ -116,3 +137,31 @@ proporcional y agenda avanzada sobre esas capacidades.
   las mediciones lo justifican.
 
 Los límites de 4A y las funcionalidades reservadas para 4B/4C no cambian.
+
+## Identidad global de estados — misión 3C, PR #33
+
+Appointment conserva exactamente cinco estados. Una única hoja
+components/agenda/appointment-status.css define fondo, borde y texto para
+AppointmentStatusBadge, tarjetas de Día/Semana/Mes/Médicos y leyenda; Dashboard
+reutiliza el mismo badge. Este mapping sustituye la dirección anterior:
+
+| Backend | Texto | Identidad |
+| --- | --- | --- |
+| scheduled | Programada | Azul |
+| confirmed | Confirmada | Verde |
+| completed | Completada | Teal/turquesa |
+| cancelled | Cancelada | Coral/rojo |
+| no_show | No asistió | Slate fuerte |
+
+El color siempre acompaña el texto. Contraste texto/fondo >=4.5:1 en los cinco
+estados. No se añaden estados, duraciones, horarios finales ni disponibilidad.
+La estructura y lógica de carga de Agenda permanecen sin cambios.
+
+## Tipografía de etiquetas — misión 3D, PR #33
+
+Las etiquetas de estado de las tarjetas usan clamp(.8125rem,.85vw,.9rem),
+font-weight:700 y line-height:1.2. La tarjeta semanal reserva una fila interna
+auto para el estado, conservando altura y columnas: no crece para acomodarlo.
+Día/Semana/Mes/Médicos, paneles, filtros, eje horario y reglas no se rediseñan.
+Mapping azul/verde/teal/coral/slate y leyenda sin cambios. 100% sigue siendo la
+referencia; Chrome 75%/50% se valida como robustez adicional.
