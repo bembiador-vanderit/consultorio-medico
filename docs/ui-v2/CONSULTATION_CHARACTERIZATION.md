@@ -59,3 +59,7 @@ La Historia previa actual no incorpora handlers de Escape ni backdrop en `Consul
 ## Límites explícitos
 
 No hay autosave, locks, ETag, `If-Match`, cambios de endpoints, migraciones, módulos de Cardiología/Pediatría, registry de especialidad, reapertura de consulta ni cambios visuales en Phase 6B1.
+
+## Contrato posterior de 6B2
+
+Phase 6B2 añade `revision` a `ClinicalHistory`. Cada actualización explícita envía `expected_revision`; una respuesta exitosa reemplaza la revisión local y un `409` conserva los cambios locales sin reintento ni recarga automática. La garantía de unicidad por cita y la serialización transaccional se documentan en [`docs/clinical/CONSULTATION_CONCURRENCY.md`](../clinical/CONSULTATION_CONCURRENCY.md).
