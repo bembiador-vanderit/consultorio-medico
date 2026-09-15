@@ -1,6 +1,6 @@
 export type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "no_show";
 export type Appointment = {
-  id: number; patient_id: number; doctor_id: number; center_id: number | null; specialty_id: number;
+  id: number; patient_id: number; doctor_id: number; center_id: number | null; specialty_id: number | null;
   appointment_date: string; appointment_time: string;
   reason: string | null; status: AppointmentStatus; notes: string | null;
   patient_name: string; patient_date_of_birth: string; doctor_name: string; center_name: string | null; center_city: string | null;
