@@ -265,11 +265,11 @@ test("consulta nueva conserva el contexto de la cita y bloquea módulos sin hist
   assert.equal(button("Guardar consulta").disabled, false);
   assert.equal(control("Medicamento *").disabled, true);
   assert.match(host.textContent, /Guarda primero la consulta para crear órdenes estructuradas/);
-  assert.deepEqual(urls(), [
+  assert.deepEqual([...urls()].sort(), [
     "get /auth/me",
     "get /clinical-history/appointments/81/context",
     "get /clinical-catalog/studies",
-  ]);
+  ].sort());
   await click(button("← Volver a la agenda"));
   assert.equal(backCount, 1);
 });
@@ -290,11 +290,11 @@ test("primer guardado envía solo contenido clínico y appointment_id al servido
   assert.equal("center_id" in body, false);
   assert.equal("specialty_id" in body, false);
   assert.equal("patient_id" in body, false);
-  assert.ok(urls().includes("get /clinical-history/61/vital-signs"));
+  assert.ok(!urls().includes("get /clinical-history/61/vital-signs"));
   assert.ok(urls().includes("get /clinical-history/61/laboratory-orders"));
 });
 
-test("consulta existente caracteriza el bootstrap clínico actual de once GET", async () => {
+test("consulta existente reutiliza el catálogo seguro y carga diez GET", async () => {
   currentAppointment = clone(appointmentConfirmed);
   currentHistory = clinicalHistory({ appointment_id: 82, status: "in_progress" });
   contextHistories = [currentHistory];
@@ -303,7 +303,7 @@ test("consulta existente caracteriza el bootstrap clínico actual de once GET", 
   prescriptions = [clone(prescriptionFixture)];
   requestedTests = [clone(requestedTestFixture)];
   await mount(currentAppointment);
-  assert.equal(calls.filter((item) => item.method === "get").length, 11);
+  assert.equal(calls.filter((item) => item.method === "get").length, 10);
   assert.match(host.textContent, /Diagnóstico ficticio/);
   assert.match(host.textContent, /Medicamento ficticio/);
   assert.match(host.textContent, /Estudio ficticio/);
@@ -311,7 +311,6 @@ test("consulta existente caracteriza el bootstrap clínico actual de once GET", 
   for (const expected of [
     "/auth/me",
     "/clinical-history/appointments/82/context",
-    "/clinical-catalog/studies",
     "/clinical-history/42/prescriptions",
     "/clinical-history/42/diagnoses",
     "/clinical-history/42/requested-tests",
