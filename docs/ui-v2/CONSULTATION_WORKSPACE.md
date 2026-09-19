@@ -1,49 +1,71 @@
-# ConsultationWorkspace — Phase 6B4
+# ConsultationWorkspace — Phase 6B6
 
 ## Arquitectura
 
-`Consultation.tsx` es el adaptador de página: recibe `appointment` y `onBack`, y delega todo el episodio a `ConsultationWorkspace`.
+`Consultation.tsx` recibe `appointment` y `onBack` y delega el episodio al workspace.
 
 ```text
 Consultation
 └── ConsultationWorkspace
     ├── ConsultationHeader
-    │   └── identidad de cita y vuelta a Agenda
-    ├── estado de la consulta
     ├── AnamnesisModule
     ├── VitalSignsModule
-    ├── diagnósticos, recetas y solicitudes
-    ├── ClinicalOrdersSection existente
+    ├── DiagnosesModule
+    ├── PrescriptionsModule
+    ├── ClinicalOrdersSection
+    ├── requested tests (Estudios y análisis)
     ├── contexto de atención e historial previo
     └── modal de historial previo
 ```
 
-`ConsultationHeader` es presentación sin estado: recibe la cita, especialidad ya resuelta y acción de vuelta. El workspace conserva el DOM, orden de secciones, etiquetas y condiciones de visibilidad de la pantalla anterior. No incorpora navegación visual ni módulos vacíos: la estructura existente ya tiene una responsabilidad clínica concreta y el siguiente corte puede extraerla sin devolver coordinación al adaptador de página.
+Se conserva el orden real de la pantalla, incluidos los estudios solicitados después de las órdenes estructuradas. No cambian etiquetas, campos, clases, botones ni condiciones de solo lectura.
 
 ## Límites de propiedad
 
-El workspace posee el contexto de la cita, historia activa, estado de carga y error de nivel episodio, ciclo de vida de consulta y coordinación entre secciones. `AnamnesisModule` posee su formulario local; se reinicializa solo cuando cambia el episodio, la historia activa o su revisión canónica. Un 409 no cambia esa revisión y, por ello, conserva las ediciones locales. `VitalSignsModule` posee su formulario y mutación; comunica exclusivamente el objeto canónico devuelto al workspace. Diagnósticos, recetas y solicitudes siguen locales al workspace.
+- **Workspace:** contexto activo, `ClinicalHistory` canónica, listas canónicas de diagnósticos y recetas, bootstrap, guardado y finalización de historia, errores de episodio, coordinación, documentos y contexto histórico.
+- **AnamnesisModule:** formulario local; el workspace guarda con `expected_revision` y adopta la revisión del servidor.
+- **VitalSignsModule:** formulario y mutación de signos vitales, con resultado canónico comunicado al workspace.
+- **DiagnosesModule:** descripción, CIE-10, indicador principal y estado local de guardado; creación y eliminación por `clinicalApi`. Recibe `episodeId`, `historyId`, lista canónica, `completed`, callback funcional `onChange` y `onError`.
+- **PrescriptionsModule:** los ocho campos de receta, ID en edición, cancelación y estado local de guardado; creación, actualización y eliminación por `clinicalApi`. Recibe el mismo contexto explícito, lista canónica y callbacks, más acción/estado de descarga PDF del workspace.
 
-No hay estado dirty global, autosave, almacenamiento persistente de episodio ni librería de estado global.
+Los módulos no duplican las listas en estado local. Entregan al workspace actualizaciones funcionales basadas en las respuestas canónicas para conservar otras mutaciones de la misma lista. Los errores siguen en el aviso de episodio existente: crear/guardar limpia el aviso al iniciar, eliminar no lo limpia, y los fallos muestran el detalle normalizado del servidor. No se introduce un segundo canal de errores ni se ocultan errores de episodio.
 
-## Datos y mutaciones
+## Contrato preservado, caracterizado antes de extraer
 
-El workspace reutiliza `useConsultationBootstrap` y `clinicalApi`; no agrega una segunda carga inicial. Se preservan AbortController, guard de generación, protección A → B → respuesta tardía de A, cancelación en unmount y la caché no PHI de catálogos.
+**Diagnósticos:** descripción obligatoria con `trim`, CIE-10 con `trim` o `null`, e `is_primary`. La selección inicial es verdadera si la lista del bootstrap carece de principal. POST `/clinical-history/{historyId}/diagnoses` devuelve el diagnóstico canónico: si la solicitud era principal se inserta primero y se desmarcan los anteriores; si no, se añade al final. Tras éxito se vacían ambos textos y se desmarca principal. DELETE `/clinical-history/{historyId}/diagnoses/{id}` quita solo el elemento, sin promover otro principal. La UI actual no ofrece edición de diagnósticos, aunque el backend tenga otros métodos.
 
-La actualización de historia conserva `revision` y envía `expected_revision`. Un 409 muestra el detalle del servidor, no reintenta, no recarga ni descarta cambios locales. La mutación de vitales conserva endpoint, payload nullable y upsert, y adopta la respuesta canónica del servidor. La finalización, solo lectura y reglas post-cierre siguen siendo decisión del backend.
+**Recetas:** `medication`, `presentation`, `dose`, `route`, `frequency`, `duration`, `quantity`, `instructions`. Medicamento obligatorio con `trim`; los seis textos opcionales se envían con `trim` o `null`. Cantidad vacía pasa a `null`; cualquier valor no vacío usa `Number`, incluido cero, sin validación nueva del frontend. POST `/clinical-history/{historyId}/prescriptions` añade la respuesta canónica; PUT a `/{id}` reemplaza por el ID devuelto. Editar copia los ocho campos; cancelar vacía el formulario sin petición. El éxito vacía formulario e ID. DELETE quita el elemento sin cancelar una edición ya abierta, conservando ese comportamiento previo. Los errores conservan formulario/lista y no simulan éxito.
+
+Ambos requieren historia guardada y consulta abierta para mutar. La carga inicial pertenece al bootstrap, sin GET inicial de módulo ni cascadas nuevas. `completed` oculta controles de mutación y conserva datos legibles. El backend sigue imponiendo autoridad de paciente, médico, historia y especialidad, validación y restricciones de ciclo de vida.
+
+## PDF de receta
+
+El workspace mantiene la petición, estado de descarga, historia activa, errores y descarga del documento completo del episodio. El módulo presenta el botón en su posición original y delega la acción. Se conserva GET `/clinical-history/{historyId}/prescriptions/pdf`, respuesta blob, autenticación del cliente existente, nombre `receta-{historyId}.pdf`, click del enlace y liberación de URL. No cambian contenido ni impresión. La descarga sigue disponible con recetas después del cierre.
+
+## Sincronización de episodio y concurrencia
+
+`useConsultationBootstrap` sigue siendo el único propietario de la carga inicial desde el workspace. Conserva AbortController, guard de generación, protección A → B → respuesta tardía de A y cancelación al desmontar. La caché de catálogos no PHI queda intacta.
+
+Cada módulo delimita su editor mediante una clave de cita e historia. Un cambio de esa identidad desmonta el editor anterior, vacía su formulario y carga la lista que entrega el workspace para el nuevo episodio. Nuevas identidades de arrays, callbacks o revisiones de la misma historia no destruyen ediciones. El guard de actividad de cada editor impide que una respuesta o error pendiente de un editor desmontado modifique la lista o aviso del episodio nuevo. No se cancela ni reintenta una escritura HTTP ya enviada; el servidor puede haberla aplicado a su episodio original.
+
+`ClinicalHistory.revision`, `expected_revision`, finalización y errores 409 permanecen iguales. Estos recursos hijos no usan revisión en su payload actual y no se inventa una. No hay recarga automática, reintentos automáticos, autosave, dirty global ni resolución nueva de conflictos. Los otros handlers del workspace quedan fuera de esta extracción.
 
 ## Privacidad y seguridad
 
-Los datos del episodio viven en el árbol del workspace. No se añade PHI a localStorage, sessionStorage, IndexedDB, consola ni stores globales. La visibilidad del frontend no reemplaza las decisiones de autorización del backend.
+Datos clínicos solo en memoria del árbol React. Sin localStorage, sessionStorage, IndexedDB, stores persistentes/globales, logs, analítica ni cachés de diagnósticos/recetas. La UI no sustituye autorización del backend. Pruebas con fixtures ficticios; sin cambios de backend, migraciones, endpoints ni CI.
 
 ## Validación
 
-Las pruebas de caracterización de `Consultation` siguen cubriendo flujos nuevos, existentes, completados y mutaciones. `consultation-workspace.test.mjs` comprueba el adaptador de página, el render directo del workspace con bootstrap y la ausencia de persistencia en browser storage. Las pruebas 6B3 de cliente clínico y carreras siguen siendo la red de seguridad del contrato de datos.
+`consultation-diagnoses-prescriptions.test.mjs` cubre render canónico, contratos HTTP completos, principal/CIE-10, CRUD de recetas, cancelación, null/cantidad, errores 409, ausencia de GET de módulo, rerender, cambio de cita/historia, respuestas tardías de creación/edición/eliminación, unmount y solo lectura con PDF. Las pruebas existentes de workspace, caracterización, API y bootstrap siguen siendo obligatorias, incluida su comprobación del número de GET iniciales.
 
-## Diferido
+## Roadmap
 
-Phase 6B5 extrae anamnesis y signos vitales. Phase 6B6 puede extraer Diagnósticos y Recetas con contratos y pruebas propias. Las solicitudes, órdenes, host de módulos, navegación clínica y límites de dirty/conflicto pertenecen a fases posteriores deliberadas.
-
-## Limitaciones conocidas
-
-El workspace aún contiene los formularios y handlers del episodio para preservar exactamente el comportamiento caracterizado. Las órdenes estructuradas conservan su componente existente. No hay cambios de backend, migraciones ni nuevos endpoints.
+- 6B5 = Anamnesis + Vital Signs — DONE
+- 6B6 = Diagnoses + Prescriptions — CURRENT
+- 6B7 = Requested tests / structured orders UX boundary
+- 6B8 = historical/post-close unification
+- 6B9 = performance/accessibility/dirty/conflict/responsive
+- 6C1 = specialty/template registry ADR/versioned model
+- 6C2 = Cardiology pilot generic
+- 6C3 = Pediatrics
+- 6D = devices/results Holter/MAPA
