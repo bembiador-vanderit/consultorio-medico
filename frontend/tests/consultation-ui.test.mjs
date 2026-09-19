@@ -268,7 +268,6 @@ test("consulta nueva conserva el contexto de la cita y bloquea módulos sin hist
   assert.deepEqual([...urls()].sort(), [
     "get /auth/me",
     "get /clinical-history/appointments/81/context",
-    "get /clinical-catalog/studies",
   ].sort());
   await click(button("← Volver a la agenda"));
   assert.equal(backCount, 1);
@@ -294,7 +293,7 @@ test("primer guardado envía solo contenido clínico y appointment_id al servido
   assert.ok(urls().includes("get /clinical-history/61/laboratory-orders"));
 });
 
-test("consulta existente reutiliza el catálogo seguro y carga diez GET", async () => {
+test("consulta existente carga solo los recursos activos de la consulta", async () => {
   currentAppointment = clone(appointmentConfirmed);
   currentHistory = clinicalHistory({ appointment_id: 82, status: "in_progress" });
   contextHistories = [currentHistory];
@@ -304,6 +303,7 @@ test("consulta existente reutiliza el catálogo seguro y carga diez GET", async 
   requestedTests = [clone(requestedTestFixture)];
   await mount(currentAppointment);
   assert.equal(calls.filter((item) => item.method === "get").length, 10);
+  assert.equal(calls.filter((item) => item.method === "get" && item.url === "/clinical-catalog/studies").length, 1);
   assert.match(host.textContent, /Diagnóstico ficticio/);
   assert.match(host.textContent, /Medicamento ficticio/);
   assert.match(host.textContent, /Estudio ficticio/);
@@ -415,23 +415,24 @@ test("receta conserva CRUD y PDF sobre la historia activa", async () => {
   }
 });
 
-test("requested tests legado y ClinicalOrdersSection mantienen endpoints separados", async () => {
+test("nuevas órdenes usan ClinicalOrdersSection y no exponen creación RequestedTest", async () => {
   currentHistory = clone(clinicalHistoryInProgress);
   contextHistories = [currentHistory];
   await mount();
-  await change(host.querySelector('input[placeholder^="Ej. Hemograma"]'), "Prueba libre ficticia");
-  await click(button("Agregar estudio"));
-  const requested = calls.find((item) => item.method === "post" && item.url === "/clinical-history/42/requested-tests");
-  assert.deepEqual(payload(requested), { test_name: "Prueba libre ficticia" });
-
+  assert.equal(host.querySelector('input[placeholder^="Ej. Hemograma"]'), null);
+  assert.equal(button("Agregar estudio"), undefined);
+  await click(button("+ Nueva orden"));
+  await click([...host.querySelectorAll("button")].find((item) => item.textContent.trim().startsWith("Laboratorio")));
+  await click(host.querySelector('button[aria-expanded="false"]'));
   const laboratoryChoice = [...host.querySelectorAll("label")].find((item) => item.textContent.includes("Hemograma ficticio"));
   await click(laboratoryChoice.querySelector('input[type="checkbox"]'));
   await click(button("Guardar orden"));
   const order = calls.find((item) => item.method === "post" && item.url === "/clinical-history/42/laboratory-orders");
   assert.deepEqual(payload(order), { items: [{ laboratory_test_id: 31 }], notes: null });
+  assert.equal(calls.some((item) => item.method === "post" && item.url === "/clinical-history/42/requested-tests"), false);
 });
 
-test("RequestedTest legado sigue visible, solo lectura al completar y conserva su PDF", async () => {
+test("RequestedTest legado sigue visible como historial y conserva PDF", async () => {
   currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
   currentHistory = clone(clinicalHistoryCompleted);
   contextHistories = [currentHistory];
@@ -442,6 +443,7 @@ test("RequestedTest legado sigue visible, solo lectura al completar y conserva s
   URL.revokeObjectURL = () => {};
   try {
     await mount(currentAppointment);
+    assert.match(host.textContent, /Solicitudes heredadas/);
     assert.match(host.textContent, /Estudio ficticio/);
     assert.equal(button("Agregar estudio"), undefined);
     await click(button("Descargar orden PDF"));
@@ -450,6 +452,13 @@ test("RequestedTest legado sigue visible, solo lectura al completar y conserva s
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
   }
+});
+
+test("el panel RequestedTest heredado no se muestra cuando no hay registros", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  assert.doesNotMatch(host.textContent, /Solicitudes heredadas/);
 });
 
 test("finalizar consulta confirma una vez, bloquea edición y conserva lectura", async () => {

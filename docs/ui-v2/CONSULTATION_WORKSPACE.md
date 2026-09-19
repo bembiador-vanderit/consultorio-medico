@@ -1,4 +1,4 @@
-# ConsultationWorkspace — Phase 6B7A
+# ConsultationWorkspace — Phase 6B7B
 
 ## Arquitectura
 
@@ -22,12 +22,12 @@ Se conserva el orden real de la pantalla, incluidos los estudios solicitados des
 
 ## Límites de propiedad
 
-- **Workspace:** contexto activo, `ClinicalHistory` canónica, listas canónicas de diagnósticos, recetas y `RequestedTest`, bootstrap, guardado y finalización de historia, errores de episodio, coordinación, documentos y contexto histórico.
+- **Workspace:** contexto activo, `ClinicalHistory` canónica, listas canónicas de diagnósticos, recetas y `RequestedTest`, bootstrap, guardado y finalización de historia, errores de episodio, coordinación, documentos y contexto histórico. `RequestedTest` se presenta solo como compatibilidad/historial y PDF cuando existen registros.
 - **AnamnesisModule:** formulario local; el workspace guarda con `expected_revision` y adopta la revisión del servidor.
 - **VitalSignsModule:** formulario y mutación de signos vitales, con resultado canónico comunicado al workspace.
 - **DiagnosesModule:** descripción, CIE-10, indicador principal y estado local de guardado; creación y eliminación por `clinicalApi`. Recibe `episodeId`, `historyId`, lista canónica, `completed`, callback funcional `onChange` y `onError`.
 - **PrescriptionsModule:** los ocho campos de receta, ID en edición, cancelación y estado local de guardado; creación, actualización y eliminación por `clinicalApi`. Recibe el mismo contexto explícito, lista canónica y callbacks, más acción/estado de descarga PDF del workspace.
-- **ClinicalOrdersSection:** listas, catálogos, formularios y mutaciones de `LaboratoryOrder` y `StudyOrder`; conserva su carga local por episodio. Se reinicia y protege publicaciones tardías por `historyId`/`specialtyId`. `RequestedTest` no forma parte de este componente.
+- **ClinicalOrdersSection:** listas, catálogos, resumen compacto, chooser y editores progresivos de `LaboratoryOrder` y `StudyOrder`; conserva su carga local por episodio. Se reinicia y protege publicaciones tardías por `historyId`/`specialtyId`. `RequestedTest` no forma parte de este componente ni de la creación de órdenes nuevas.
 
 Los módulos no duplican las listas en estado local. Entregan al workspace actualizaciones funcionales basadas en las respuestas canónicas para conservar otras mutaciones de la misma lista. Los errores siguen en el aviso de episodio existente: crear/guardar limpia el aviso al iniciar, eliminar no lo limpia, y los fallos muestran el detalle normalizado del servidor. No se introduce un segundo canal de errores ni se ocultan errores de episodio.
 
@@ -61,7 +61,7 @@ Datos clínicos solo en memoria del árbol React. Sin localStorage, sessionStora
 
 ## Órdenes clínicas
 
-Las solicitudes libres `RequestedTest` y las órdenes estructuradas son recursos distintos y permanecen compatibles. `RequestedTest` sigue cargándose desde el bootstrap del workspace y conservando PDF/solo lectura. Las órdenes estructuradas conservan `ClinicalOrdersSection`, sus catálogos y los únicos flujos append-only post-cierre autorizados para el médico responsable. La caracterización completa está en [CLINICAL_ORDERS_BOUNDARY.md](CLINICAL_ORDERS_BOUNDARY.md).
+Las solicitudes libres `RequestedTest` y las órdenes estructuradas son recursos distintos y permanecen compatibles. `RequestedTest` sigue cargándose desde el bootstrap del workspace y conservando PDF/solo lectura cuando hay registros, sin creador nuevo en la consulta normal. Las órdenes estructuradas son el flujo preferido y usan `ClinicalOrdersSection` con resumen compacto, chooser y catálogos bajo demanda. Se conservan los únicos flujos append-only post-cierre autorizados para el médico responsable. La caracterización completa está en [CLINICAL_ORDERS_BOUNDARY.md](CLINICAL_ORDERS_BOUNDARY.md).
 
 ## Roadmap
 

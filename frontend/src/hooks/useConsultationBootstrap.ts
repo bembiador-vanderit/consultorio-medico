@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { clinicalApi, clinicalErrorMessage, isReadAborted } from "../services/clinicalApi";
-import type { ClinicalHistory, ConsultationContext, Diagnosis, MedicalStudy, Prescription, RequestedTest, VitalSigns } from "../types/clinical";
+import type { ClinicalHistory, ConsultationContext, Diagnosis, Prescription, RequestedTest, VitalSigns } from "../types/clinical";
 
 export type ConsultationBootstrap = {
   context: ConsultationContext | null;
@@ -10,7 +10,6 @@ export type ConsultationBootstrap = {
   prescriptions: Prescription[];
   requestedTests: RequestedTest[];
   vitalSigns: VitalSigns | null;
-  studyCatalog: MedicalStudy[];
   loading: boolean;
   error: string;
 };
@@ -22,7 +21,6 @@ const emptyBootstrap: ConsultationBootstrap = {
   prescriptions: [],
   requestedTests: [],
   vitalSigns: null,
-  studyCatalog: [],
   loading: true,
   error: "",
 };
@@ -43,20 +41,17 @@ export function useConsultationBootstrap(appointmentId: number) {
         const context = await clinicalApi.getConsultationContext(appointmentId, { signal: controller.signal });
         if (!isCurrent()) return;
         const history = context.previous_consultations.find((item) => item.appointment_id === context.appointment_id) || null;
-        const catalog = clinicalApi.getStudyCatalog(context.specialty_id).catch(() => []);
         if (!history) {
-          const studyCatalog = await catalog;
-          if (isCurrent()) setState({ ...emptyBootstrap, context, studyCatalog, loading: false });
+          if (isCurrent()) setState({ ...emptyBootstrap, context, loading: false });
           return;
         }
-        const [studyCatalog, diagnoses, prescriptions, requestedTests, vitalSigns] = await Promise.all([
-          catalog,
+        const [diagnoses, prescriptions, requestedTests, vitalSigns] = await Promise.all([
           clinicalApi.getDiagnoses(history.id, { signal: controller.signal }),
           clinicalApi.getPrescriptions(history.id, { signal: controller.signal }),
           clinicalApi.getRequestedTests(history.id, { signal: controller.signal }),
           clinicalApi.getVitalSigns(history.id, { signal: controller.signal }),
         ]);
-        if (isCurrent()) setState({ context, history, diagnoses, prescriptions, requestedTests, vitalSigns, studyCatalog, loading: false, error: "" });
+        if (isCurrent()) setState({ context, history, diagnoses, prescriptions, requestedTests, vitalSigns, loading: false, error: "" });
       } catch (error: unknown) {
         if (!isCurrent() || isReadAborted(error)) return;
         setState({ ...emptyBootstrap, loading: false, error: clinicalErrorMessage(error, "No fue posible cargar el contexto de la consulta.") });
