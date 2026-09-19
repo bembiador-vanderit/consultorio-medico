@@ -431,6 +431,27 @@ test("requested tests legado y ClinicalOrdersSection mantienen endpoints separad
   assert.deepEqual(payload(order), { items: [{ laboratory_test_id: 31 }], notes: null });
 });
 
+test("RequestedTest legado sigue visible, solo lectura al completar y conserva su PDF", async () => {
+  currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
+  currentHistory = clone(clinicalHistoryCompleted);
+  contextHistories = [currentHistory];
+  requestedTests = [clone(requestedTestFixture)];
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = () => "blob:fixture";
+  URL.revokeObjectURL = () => {};
+  try {
+    await mount(currentAppointment);
+    assert.match(host.textContent, /Estudio ficticio/);
+    assert.equal(button("Agregar estudio"), undefined);
+    await click(button("Descargar orden PDF"));
+    assert.ok(calls.some((item) => item.method === "get" && item.url === "/clinical-history/42/requested-tests/pdf"));
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
 test("finalizar consulta confirma una vez, bloquea edición y conserva lectura", async () => {
   currentHistory = clone(clinicalHistoryInProgress);
   contextHistories = [currentHistory];

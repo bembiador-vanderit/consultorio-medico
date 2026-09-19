@@ -1,4 +1,4 @@
-# ConsultationWorkspace — Phase 6B6
+# ConsultationWorkspace — Phase 6B7A
 
 ## Arquitectura
 
@@ -12,8 +12,8 @@ Consultation
     ├── VitalSignsModule
     ├── DiagnosesModule
     ├── PrescriptionsModule
-    ├── ClinicalOrdersSection
-    ├── requested tests (Estudios y análisis)
+    ├── ClinicalOrdersSection (structured LaboratoryOrder / StudyOrder)
+    ├── requested tests legacy (Estudios y análisis)
     ├── contexto de atención e historial previo
     └── modal de historial previo
 ```
@@ -22,11 +22,12 @@ Se conserva el orden real de la pantalla, incluidos los estudios solicitados des
 
 ## Límites de propiedad
 
-- **Workspace:** contexto activo, `ClinicalHistory` canónica, listas canónicas de diagnósticos y recetas, bootstrap, guardado y finalización de historia, errores de episodio, coordinación, documentos y contexto histórico.
+- **Workspace:** contexto activo, `ClinicalHistory` canónica, listas canónicas de diagnósticos, recetas y `RequestedTest`, bootstrap, guardado y finalización de historia, errores de episodio, coordinación, documentos y contexto histórico.
 - **AnamnesisModule:** formulario local; el workspace guarda con `expected_revision` y adopta la revisión del servidor.
 - **VitalSignsModule:** formulario y mutación de signos vitales, con resultado canónico comunicado al workspace.
 - **DiagnosesModule:** descripción, CIE-10, indicador principal y estado local de guardado; creación y eliminación por `clinicalApi`. Recibe `episodeId`, `historyId`, lista canónica, `completed`, callback funcional `onChange` y `onError`.
 - **PrescriptionsModule:** los ocho campos de receta, ID en edición, cancelación y estado local de guardado; creación, actualización y eliminación por `clinicalApi`. Recibe el mismo contexto explícito, lista canónica y callbacks, más acción/estado de descarga PDF del workspace.
+- **ClinicalOrdersSection:** listas, catálogos, formularios y mutaciones de `LaboratoryOrder` y `StudyOrder`; conserva su carga local por episodio. Se reinicia y protege publicaciones tardías por `historyId`/`specialtyId`. `RequestedTest` no forma parte de este componente.
 
 Los módulos no duplican las listas en estado local. Entregan al workspace actualizaciones funcionales basadas en las respuestas canónicas para conservar otras mutaciones de la misma lista. Los errores siguen en el aviso de episodio existente: crear/guardar limpia el aviso al iniciar, eliminar no lo limpia, y los fallos muestran el detalle normalizado del servidor. No se introduce un segundo canal de errores ni se ocultan errores de episodio.
 
@@ -58,14 +59,18 @@ Datos clínicos solo en memoria del árbol React. Sin localStorage, sessionStora
 
 `consultation-diagnoses-prescriptions.test.mjs` cubre render canónico, contratos HTTP completos, principal/CIE-10, CRUD de recetas, cancelación, null/cantidad, errores 409, ausencia de GET de módulo, rerender, cambio de cita/historia, respuestas tardías de creación/edición/eliminación, unmount y solo lectura con PDF. Las pruebas existentes de workspace, caracterización, API y bootstrap siguen siendo obligatorias, incluida su comprobación del número de GET iniciales.
 
+## Órdenes clínicas
+
+Las solicitudes libres `RequestedTest` y las órdenes estructuradas son recursos distintos y permanecen compatibles. `RequestedTest` sigue cargándose desde el bootstrap del workspace y conservando PDF/solo lectura. Las órdenes estructuradas conservan `ClinicalOrdersSection`, sus catálogos y los únicos flujos append-only post-cierre autorizados para el médico responsable. La caracterización completa está en [CLINICAL_ORDERS_BOUNDARY.md](CLINICAL_ORDERS_BOUNDARY.md).
+
 ## Roadmap
 
-- 6B5 = Anamnesis + Vital Signs — DONE
-- 6B6 = Diagnoses + Prescriptions — CURRENT
-- 6B7 = Requested tests / structured orders UX boundary
-- 6B8 = historical/post-close unification
-- 6B9 = performance/accessibility/dirty/conflict/responsive
-- 6C1 = specialty/template registry ADR/versioned model
-- 6C2 = Cardiology pilot generic
-- 6C3 = Pediatrics
-- 6D = devices/results Holter/MAPA
+- 6B5 Anamnesis + Vital Signs — DONE
+- 6B6 Diagnoses + Prescriptions — DONE
+- 6B7 Requested tests / structured orders UX boundary — CURRENT
+- 6B8 historical/post-close unification
+- 6B9 performance/accessibility/dirty/conflict/responsive
+- 6C1 registry/versioned model
+- 6C2 Cardiology pilot generic
+- 6C3 Pediatrics
+- 6D devices/results Holter/MAPA

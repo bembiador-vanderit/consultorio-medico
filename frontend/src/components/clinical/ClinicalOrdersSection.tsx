@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../../services/api";
 import type { LaboratoryOrder, LaboratoryTest, MedicalStudy, StudyOrder } from "../../types/clinicalOrder";
@@ -46,8 +46,11 @@ export default function ClinicalOrdersSection({ historyId, specialtyId, complete
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [additionalKind, setAdditionalKind] = useState<"laboratory" | "study" | null>(null);
+  const generationRef = useRef(0);
 
-  async function load() {
+  const isCurrent = (generation: number) => generation === generationRef.current;
+
+  async function load(generation = generationRef.current) {
     try {
       const [testResponse, studyResponse, laboratoryResponse, ordersResponse] = await Promise.all([
         api.get<LaboratoryTest[]>("/laboratory-tests"),
@@ -55,16 +58,24 @@ export default function ClinicalOrdersSection({ historyId, specialtyId, complete
         api.get<LaboratoryOrder[]>(`/clinical-history/${historyId}/laboratory-orders`),
         api.get<StudyOrder[]>(`/clinical-history/${historyId}/study-orders`),
       ]);
+      if (!isCurrent(generation)) return;
       setTests(testResponse.data);
       setStudies(studyResponse.data);
       setLaboratoryOrders(laboratoryResponse.data);
       setStudyOrders(ordersResponse.data);
     } catch (reason: any) {
-      setError(reason?.response?.data?.detail || "No fue posible cargar las órdenes clínicas.");
+      if (isCurrent(generation)) setError(reason?.response?.data?.detail || "No fue posible cargar las órdenes clínicas.");
     }
   }
 
-  useEffect(() => { void load(); }, [historyId, specialtyId]);
+  useEffect(() => {
+    const generation = ++generationRef.current;
+    setTestQuery(""); setStudyQuery(""); setSelectedTests([]); setSelectedStudies([]); setStudyDetails({});
+    setLaboratoryNotes(""); setStudyNotes(""); setEditingLaboratoryId(null); setEditingStudyId(null);
+    setBusy(""); setError(""); setMessage(""); setAdditionalKind(null);
+    void load(generation);
+    return () => { if (generationRef.current === generation) generationRef.current += 1; };
+  }, [historyId, specialtyId]);
 
   const groupedTests = useMemo(() => {
     const query = testQuery.trim().toLocaleLowerCase();
@@ -94,19 +105,23 @@ export default function ClinicalOrdersSection({ historyId, specialtyId, complete
 
   async function saveLaboratoryOrder() {
     if (!selectedTests.length) return setError("Seleccione al menos una prueba de laboratorio.");
+    const generation = generationRef.current;
     setBusy("laboratory-save"); setError(""); setMessage("");
     const payload = { items: selectedTests.map((laboratory_test_id) => ({ laboratory_test_id })), notes: laboratoryNotes.trim() || null };
     try {
       if (editingLaboratoryId) await api.put(`/clinical-history/${historyId}/laboratory-orders/${editingLaboratoryId}`, payload);
       else await api.post(`/clinical-history/${historyId}/laboratory-orders${completed ? "/additional" : ""}`, payload);
+      if (!isCurrent(generation)) return;
       setSelectedTests([]); setLaboratoryNotes(""); setEditingLaboratoryId(null);
       setAdditionalKind(null);
-      await load();
+      await load(generation);
+      if (!isCurrent(generation)) return;
       await onOrdersChanged?.();
+      if (!isCurrent(generation)) return;
       setMessage("Orden de laboratorio guardada correctamente.");
     } catch (reason: any) {
-      setError(reason?.response?.data?.detail || "No fue posible guardar la orden de laboratorio.");
-    } finally { setBusy(""); }
+      if (isCurrent(generation)) setError(reason?.response?.data?.detail || "No fue posible guardar la orden de laboratorio.");
+    } finally { if (isCurrent(generation)) setBusy(""); }
   }
 
   function editLaboratoryOrder(order: LaboratoryOrder) {
@@ -117,6 +132,7 @@ export default function ClinicalOrdersSection({ historyId, specialtyId, complete
 
   async function saveStudyOrder() {
     if (!selectedStudies.length) return setError("Seleccione al menos un estudio o procedimiento.");
+    const generation = generationRef.current;
     setBusy("study-save"); setError(""); setMessage("");
     const payload = {
       items: selectedStudies.map((medical_study_id) => ({
@@ -130,14 +146,17 @@ export default function ClinicalOrdersSection({ historyId, specialtyId, complete
     try {
       if (editingStudyId) await api.put(`/clinical-history/${historyId}/study-orders/${editingStudyId}`, payload);
       else await api.post(`/clinical-history/${historyId}/study-orders${completed ? "/additional" : ""}`, payload);
+      if (!isCurrent(generation)) return;
       setSelectedStudies([]); setStudyDetails({}); setStudyNotes(""); setEditingStudyId(null);
       setAdditionalKind(null);
-      await load();
+      await load(generation);
+      if (!isCurrent(generation)) return;
       await onOrdersChanged?.();
+      if (!isCurrent(generation)) return;
       setMessage("Orden de estudios guardada correctamente.");
     } catch (reason: any) {
-      setError(reason?.response?.data?.detail || "No fue posible guardar la orden de estudios.");
-    } finally { setBusy(""); }
+      if (isCurrent(generation)) setError(reason?.response?.data?.detail || "No fue posible guardar la orden de estudios.");
+    } finally { if (isCurrent(generation)) setBusy(""); }
   }
 
   function editStudyOrder(order: StudyOrder) {
@@ -150,13 +169,15 @@ export default function ClinicalOrdersSection({ historyId, specialtyId, complete
   }
 
   async function download(kind: "laboratory" | "study", id: number) {
+    const generation = generationRef.current;
     setBusy(`${kind}-pdf-${id}`); setError("");
     try {
       const response = await api.get<Blob>(`/${kind === "laboratory" ? "laboratory-orders" : "study-orders"}/${id}/pdf`, { responseType: "blob" });
+      if (!isCurrent(generation)) return;
       downloadBlob(response.data, `${kind === "laboratory" ? "orden-laboratorio" : "orden-estudios"}-${id}.pdf`);
     } catch (reason: any) {
-      setError(reason?.response?.data?.detail || "No fue posible generar el documento.");
-    } finally { setBusy(""); }
+      if (isCurrent(generation)) setError(reason?.response?.data?.detail || "No fue posible generar el documento.");
+    } finally { if (isCurrent(generation)) setBusy(""); }
   }
 
   const showLaboratoryForm = !completed || (allowAdditional && additionalKind === "laboratory");
