@@ -9,6 +9,9 @@ class Appointment(Base):
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id", ondelete="CASCADE"), index=True)
     doctor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
     center_id: Mapped[int | None] = mapped_column(ForeignKey("care_centers.id", ondelete="RESTRICT"), nullable=True, index=True)
+    # Nullable in metadata so isolated legacy fixtures can still be loaded; migration 0024
+    # enforces NOT NULL in PostgreSQL and all API writes resolve a valid specialty.
+    specialty_id: Mapped[int | None] = mapped_column(ForeignKey("specialties.id", ondelete="RESTRICT"), nullable=True, index=True)
     appointment_date: Mapped[date] = mapped_column(Date, index=True)
     appointment_time: Mapped[time] = mapped_column(Time)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -19,3 +22,6 @@ class Appointment(Base):
     patient = relationship("Patient")
     doctor = relationship("User")
     center = relationship("CareCenter")
+    specialty = relationship("Specialty")
+    clinical_history = relationship("ClinicalHistory", uselist=False, foreign_keys="ClinicalHistory.appointment_id")
+    coverage_transfer = relationship("AppointmentCoverageTransfer", back_populates="appointment", uselist=False)

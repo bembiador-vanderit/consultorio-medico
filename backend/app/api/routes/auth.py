@@ -19,7 +19,15 @@ REFRESH_DAYS = 7
 
 
 def serialize(user: User) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email, full_name=user.full_name, is_active=user.is_active, roles=[r.code for r in user.roles])
+    profile = user.doctor_profile
+    specialties = sorted(user.specialties, key=lambda item: (item.name.lower(), item.id))
+    return UserResponse(
+        id=user.id, email=user.email, full_name=user.full_name, is_active=user.is_active,
+        roles=[r.code for r in user.roles],
+        primary_specialty_id=profile.specialty_id if profile else None,
+        specialty_ids=[specialty.id for specialty in specialties],
+        specialty_names=[specialty.name for specialty in specialties],
+    )
 
 
 def create_refresh_token(subject: str) -> str:

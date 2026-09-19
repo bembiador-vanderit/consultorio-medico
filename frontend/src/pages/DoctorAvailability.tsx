@@ -1,0 +1,16 @@
+import { useEffect, useState } from "react";
+import { api } from "../services/api";
+
+type Center={id:number;name:string;city:string};
+type Rule={id:number;doctor_id:number;center_id:number|null;availability_date:string;is_available:boolean};
+
+export default function DoctorAvailability({onBack}:{onBack:()=>void}){
+ const [centers,setCenters]=useState<Center[]>([]);const [rules,setRules]=useState<Rule[]>([]);const [date,setDate]=useState(new Date().toISOString().slice(0,10));const [centerId,setCenterId]=useState("");const [available,setAvailable]=useState(false);const [error,setError]=useState("");
+ async function load(){try{const [c,r]=await Promise.all([api.get<Center[]>("/centers/mine"),api.get<Rule[]>("/doctor-availability")]);setCenters(c.data);setRules(r.data)}catch(e:any){setError(e?.response?.data?.detail||"No fue posible cargar la disponibilidad.")}}
+ useEffect(()=>{void load()},[]);
+ async function save(){try{await api.post("/doctor-availability",{availability_date:date,center_id:centerId?Number(centerId):null,is_available:available});await load()}catch(e:any){setError(e?.response?.data?.detail||"No fue posible guardar la disponibilidad.")}}
+ return <section><button onClick={onBack} className="text-sm font-medium text-teal-700 hover:underline">← Volver al dashboard</button><h2 className="mt-2 text-2xl font-bold">Mi disponibilidad</h2><p className="mt-1 text-sm text-slate-500">Marque fechas en las que estará disponible o no disponible. Puede aplicar la regla a todos sus centros o a uno específico.</p>{error&&<div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+ <div className="mt-6 rounded-xl border bg-white p-5 shadow-sm"><div className="grid gap-3 md:grid-cols-3"><label className="text-sm font-medium">Fecha<input type="date" value={date} onChange={e=>setDate(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"/></label><label className="text-sm font-medium">Centro<select value={centerId} onChange={e=>setCenterId(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5"><option value="">Todos mis centros</option>{centers.map(c=><option key={c.id} value={c.id}>{c.name} — {c.city}</option>)}</select></label><label className="flex items-end gap-2 text-sm font-medium"><input type="checkbox" checked={available} onChange={e=>setAvailable(e.target.checked)} className="mb-3 h-4 w-4"/>Disponible</label></div><button onClick={()=>void save()} className="mt-4 rounded-lg bg-teal-700 px-5 py-2 font-medium text-white">Guardar fecha</button></div>
+ <div className="mt-6 overflow-hidden rounded-xl border bg-white shadow-sm"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Fecha</th><th className="px-4 py-3">Centro</th><th className="px-4 py-3">Estado</th></tr></thead><tbody className="divide-y divide-slate-100">{rules.map(r=><tr key={r.id}><td className="px-4 py-3">{r.availability_date}</td><td className="px-4 py-3">{r.center_id?centers.find(c=>c.id===r.center_id)?.name||`Centro #${r.center_id}`:"Todos los centros"}</td><td className={`px-4 py-3 font-medium ${r.is_available?"text-emerald-700":"text-red-700"}`}>{r.is_available?"Disponible":"No disponible"}</td></tr>)}</tbody></table></div>
+ </section>;
+}
