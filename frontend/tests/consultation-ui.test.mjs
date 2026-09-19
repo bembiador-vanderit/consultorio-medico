@@ -48,6 +48,7 @@ let studyOrders;
 let intercept;
 let backCount;
 let confirmCount;
+let previousRequests;
 
 function clone(value) {
   return structuredClone(value);
@@ -239,6 +240,7 @@ beforeEach(() => {
   intercept = null;
   backCount = 0;
   confirmCount = 0;
+  previousRequests = [];
   dom.window.confirm = () => { confirmCount += 1; return true; };
   dom.window.HTMLAnchorElement.prototype.click = function clickDownloadFixture() {};
   api.defaults.adapter = responseAdapter;
@@ -510,5 +512,90 @@ test("consulta completed se mantiene legible y el historial previo se abre/cierr
   await act(async () => dialog.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
   assert.ok(host.querySelector('[role="dialog"]'));
   await click(button("Cerrar", dialog));
+  assert.equal(host.querySelector('[role="dialog"]'), null);
+});
+
+function historicalResponse(id, kind) {
+  if (kind === "vital-signs") return { ...vitalSignsFixture, clinical_history_id: id, systolic_pressure: id };
+  if (kind === "diagnoses") return [{ ...diagnosisFixture, clinical_history_id: id, description: `Diagnóstico histórico ${id}` }];
+  if (kind === "prescriptions") return [{ ...prescriptionFixture, clinical_history_id: id, medication: `Medicamento histórico ${id}` }];
+  return [{ ...requestedTestFixture, clinical_history_id: id, test_name: `Solicitud histórica ${id}` }];
+}
+
+function deferHistoricalReads(config) {
+  const match = /^\/clinical-history\/(18|19)\/(vital-signs|diagnoses|prescriptions|requested-tests)$/.exec(config.url);
+  if (!match) return undefined;
+  return new Promise((resolve, reject) => previousRequests.push({ id: Number(match[1]), kind: match[2], config, resolve, reject }));
+}
+
+test("historial anterior conserva lectura por episodio y documenta que las órdenes estructuradas no forman parte del modal actual", async () => {
+  currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
+  currentHistory = clone(clinicalHistoryCompleted);
+  const historical = clone(legacyClinicalHistory);
+  contextHistories = [currentHistory, historical];
+  intercept = (config) => deferHistoricalReads(config) ?? undefined;
+  await mount(currentAppointment);
+  await click(button("Ver historial completo"));
+  for (const request of previousRequests) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  const dialog = host.querySelector('[role="dialog"]');
+  assert.ok(dialog);
+  assert.match(dialog.textContent, /Consulta del 2025-06-02/);
+  assert.match(dialog.textContent, /Diagnóstico histórico 18/);
+  assert.match(dialog.textContent, /Medicamento histórico 18/);
+  assert.match(dialog.textContent, /Solicitud histórica 18/);
+  assert.equal(calls.some((item) => item.url === "/clinical-history/18/laboratory-orders"), false);
+  assert.equal(calls.some((item) => item.url === "/clinical-history/18/study-orders"), false);
+});
+
+test("historial anterior a → b ignora éxito y error tardíos, y el desmontaje invalida publicaciones pendientes", async () => {
+  currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
+  currentHistory = clone(clinicalHistoryCompleted);
+  const historyA = clone(legacyClinicalHistory);
+  const historyB = { ...clone(legacyClinicalHistory), id: 19, consultation_date: "2025-07-03", reason_for_visit: "Consulta B" };
+  contextHistories = [currentHistory, historyA, historyB];
+  intercept = (config) => deferHistoricalReads(config) ?? undefined;
+  await mount(currentAppointment);
+
+  const historicalButtons = () => [...host.querySelectorAll("aside button")].filter((item) => item.textContent.includes("Ver historial completo") || item.textContent.includes("Cargando"));
+  await click(historicalButtons()[0]);
+  const secondButton = historicalButtons()[1];
+  assert.ok(secondButton);
+  secondButton.disabled = false;
+  await click(secondButton);
+  const requestsA = previousRequests.filter((request) => request.id === historyA.id);
+  const requestsB = previousRequests.filter((request) => request.id === historyB.id);
+  assert.equal(requestsA.length, 4);
+  assert.equal(requestsB.length, 4);
+  for (const request of requestsA) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  assert.equal(host.querySelector('[role="dialog"]'), null);
+  for (const request of requestsB) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  assert.match(host.querySelector('[role="dialog"]').textContent, /Consulta del 2025-07-03/);
+  assert.doesNotMatch(host.textContent, /Solicitud histórica 18/);
+
+  await click(button("Cerrar", host.querySelector('[role="dialog"]')));
+  previousRequests = [];
+  await click(historicalButtons()[0]);
+  const secondButtonAfterRetry = historicalButtons()[1];
+  secondButtonAfterRetry.disabled = false;
+  await click(secondButtonAfterRetry);
+  const retryRequestsA = previousRequests.filter((request) => request.id === historyA.id);
+  const retryRequestsB = previousRequests.filter((request) => request.id === historyB.id);
+  for (const request of retryRequestsA) request.reject(new Error("stale historical error"));
+  await settle();
+  assert.doesNotMatch(host.textContent, /stale historical error/);
+  for (const request of retryRequestsB) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  assert.match(host.querySelector('[role="dialog"]').textContent, /Consulta del 2025-07-03/);
+
+  await click(button("Cerrar", host.querySelector('[role="dialog"]')));
+  previousRequests = [];
+  await click(historicalButtons()[0]);
+  const pendingUnmountRequests = [...previousRequests];
+  await act(async () => root.unmount());
+  for (const request of pendingUnmountRequests) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
   assert.equal(host.querySelector('[role="dialog"]'), null);
 });
