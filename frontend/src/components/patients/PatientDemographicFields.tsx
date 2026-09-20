@@ -58,14 +58,7 @@ export default function PatientDemographicFields({ value, onChange, section }: P
   </>;
 
   return <>
-    <FormSection title="Documento y domicilio">
-      <FormField label="Tipo de documento">
-        <Select value={value.document_type ?? ""} onChange={(event) => onChange({ ...value, document_type: event.target.value || null, ...(!event.target.value ? { document_number: null } : {}) })}>
-          <option value="">Sin documento</option>
-          {Object.entries(documentLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </Select>
-      </FormField>
-      {input("document_number", "Número de documento")}
+    <FormSection title="Dirección">
       {input("address", "Dirección", 500)}
       {input("province", "Provincia")}
       <FormField label="Municipio / localidad">
@@ -78,7 +71,6 @@ export default function PatientDemographicFields({ value, onChange, section }: P
       {localityError && <Alert tone="warning" title="Localidades no disponibles">Se conservará la localidad registrada. Puede guardar los otros datos.</Alert>}
     </FormSection>
     <FormSection title="Información adicional">
-      {input("home_phone", "Teléfono de casa", 30, "tel")}
       {input("nationality", "Nacionalidad")}
       {input("occupation", "Ocupación / profesión", 150)}
     </FormSection>
