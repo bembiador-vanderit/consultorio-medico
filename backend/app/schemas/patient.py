@@ -18,6 +18,9 @@ class PatientDemographics(BaseModel):
     locality_id: int | None = Field(default=None, gt=0)
     home_phone: str | None = Field(default=None, max_length=30)
     address: str | None = Field(default=None, max_length=500)
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    territorial_unit_id: int | None = Field(default=None, gt=0)
+    sector_locality: str | None = Field(default=None, max_length=150)
     province: str | None = Field(default=None, max_length=100)
     nationality: str | None = Field(default=None, max_length=100)
     occupation: str | None = Field(default=None, max_length=150)
@@ -39,7 +42,12 @@ class PatientDemographics(BaseModel):
             raise ValueError("El documento contiene caracteres no permitidos")
         return normalize_document(value)
 
-    @field_validator("home_phone", "address", "province", "nationality", "occupation", "emergency_contact_name", "emergency_contact_relationship", "emergency_contact_mobile", "emergency_contact_home_phone", "guardian_name", "guardian_relationship", "guardian_mobile", "guardian_home_phone")
+    @field_validator("country_code")
+    @classmethod
+    def canonical_country(cls, value: str | None) -> str | None:
+        return value.strip().upper() if value else None
+
+    @field_validator("home_phone", "address", "sector_locality", "province", "nationality", "occupation", "emergency_contact_name", "emergency_contact_relationship", "emergency_contact_mobile", "emergency_contact_home_phone", "guardian_name", "guardian_relationship", "guardian_mobile", "guardian_home_phone")
     @classmethod
     def trim_optional(cls, value):
         return (value.strip() or None) if value is not None else None
@@ -51,6 +59,8 @@ class PatientDemographics(BaseModel):
             raise ValueError("Indique tipo y número de documento, o deje ambos vacíos")
         if self.document_number and not any(char.isalnum() for char in self.document_number):
             raise ValueError("Indique un número de documento válido")
+        if (self.country_code is None) != (self.territorial_unit_id is None):
+            raise ValueError("Indique país y territorio administrativo, o deje ambos sin registrar")
         return self
 
 
@@ -90,6 +100,8 @@ class PatientResponse(BaseModel):
 
 class PatientDetailResponse(PatientResponse, PatientDemographics):
     locality_name: str | None = None
+    country_name: str | None = None
+    territorial_path: list[dict] = []
 
 
 class PatientIdentityResponse(BaseModel):

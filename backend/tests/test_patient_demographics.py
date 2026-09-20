@@ -9,7 +9,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Locality, Patient
+from app.models import Country, Locality, Patient, RegionalSettings, TerritorialLevel, TerritorialUnit
 from test_patient_security import patient_app, identity_payload
 
 
@@ -102,6 +102,62 @@ def test_locality_existing_catalog_and_inactive_preservation(patient_app):
     assert client.post("/api/v1/patients", json=payload(locality_id=locality.id)).status_code == 422
 
 
+def test_country_territory_catalog_and_patient_legacy_compatibility(patient_app):
+    ctx = patient_app
+    db = ctx["db"]
+    country = Country(code="DO", name="República Dominicana", is_active=True)
+    province = TerritorialLevel(country_code="DO", position=1, key="province", display_label="Provincia", is_required=True, is_active=True)
+    db.add_all([country, province]); db.flush()
+    municipality = TerritorialLevel(country_code="DO", position=2, key="municipality", display_label="Municipio", is_required=True, is_active=True)
+    db.add(municipality); db.flush()
+    root = TerritorialUnit(country_code="DO", territorial_level_id=province.id, name="La Romana", is_active=True)
+    db.add(root); db.flush()
+    child = TerritorialUnit(country_code="DO", territorial_level_id=municipality.id, parent_id=root.id, name="Villa Hermosa", is_active=True)
+    db.add_all([child, RegionalSettings(id=1, default_country_code="DO")]); db.commit()
+    client = ctx["client"]
+    assert client.get("/api/v1/regional/countries").json() == [{"code": "DO", "name": "República Dominicana"}]
+    assert [item["display_label"] for item in client.get("/api/v1/regional/countries/DO/levels").json()] == ["Provincia", "Municipio"]
+    assert client.get("/api/v1/regional/territories", params={"country_code":"DO", "level":province.id}).json()[0]["name"] == "La Romana"
+    assert client.get("/api/v1/regional/territories", params={"country_code":"DO", "level":municipality.id, "parent_id":root.id}).json()[0]["name"] == "Villa Hermosa"
+    created = client.post("/api/v1/patients", json=payload(country_code="DO", territorial_unit_id=child.id, sector_locality="Villa Verde"))
+    assert created.status_code == 201, created.text
+    assert [item["name"] for item in created.json()["territorial_path"]] == ["La Romana", "Villa Hermosa"]
+    assert created.json()["sector_locality"] == "Villa Verde"
+    assert client.post("/api/v1/patients", json=payload(country_code="DO")).status_code == 422
+    assert client.post("/api/v1/patients", json=payload(country_code="DO", territorial_unit_id=root.id)).status_code == 422
+    assert client.post("/api/v1/patients", json=payload(country_code="DO", territorial_unit_id=root.id + 999)).status_code == 422
+    puerto_rico = Country(code="PR", name="Puerto Rico", is_active=True)
+    pr_level = TerritorialLevel(country_code="PR", position=1, key="municipality", display_label="Municipio", is_required=True, is_active=True)
+    db.add_all([puerto_rico, pr_level]); db.flush()
+    pr_unit = TerritorialUnit(country_code="PR", territorial_level_id=pr_level.id, name="San Juan", is_active=True)
+    db.add(pr_unit); db.commit()
+    ctx["active"]["user"] = ctx["admin"]
+    assert client.put(f"/api/v1/patients/{created.json()['id']}", json=payload(country_code="PR", territorial_unit_id=child.id)).status_code == 422
+    updated = client.put(f"/api/v1/patients/{created.json()['id']}", json=payload(country_code="PR", territorial_unit_id=pr_unit.id))
+    assert updated.status_code == 200 and updated.json()["country_code"] == "PR" and updated.json()["territorial_path"][-1]["name"] == "San Juan"
+    # An older client can still perform a full identity PUT without clearing territory.
+    retained = client.put(f"/api/v1/patients/{created.json()['id']}", json=payload())
+    assert retained.status_code == 200 and retained.json()["territorial_unit_id"] == pr_unit.id
+    legacy = client.post("/api/v1/patients", json=payload(province="Legacy", date_of_birth="2002-01-01"))
+    assert legacy.status_code == 201 and legacy.json()["province"] == "Legacy" and legacy.json()["territorial_path"] == []
+
+
+def test_regional_settings_requires_manage_permission(patient_app):
+    ctx = patient_app
+    client = ctx["client"]
+    assert client.get("/api/v1/regional/settings").status_code == 503
+    country = Country(code="DO", name="República Dominicana", is_active=True)
+    ctx["db"].add(country)
+    ctx["db"].flush()
+    ctx["db"].add(RegionalSettings(id=1, default_country_code="DO"))
+    ctx["db"].commit()
+    assert client.get("/api/v1/regional/settings").json()["default_country_code"] == "DO"
+    assert client.put("/api/v1/regional/settings", json={"default_country_code": "DO"}).status_code == 403
+    ctx["active"]["user"] = ctx["admin"]
+    response = client.put("/api/v1/regional/settings", json={"default_country_code": "do"})
+    assert response.status_code == 200 and response.json()["default_country_code"] == "DO"
+
+
 @pytest.mark.parametrize("role", ["doctor", "secretary", "admin"])
 def test_least_privilege_document_search_and_detail_scope(patient_app, role):
     ctx = patient_app
@@ -177,3 +233,29 @@ def test_migration_preserves_legacy_rows_and_enforces_nullable_unique_document()
             connection.execute(sa.text("UPDATE patients SET document_type='other', document_number='TEST123' WHERE id=2"))
         connection.execute(sa.text("UPDATE patients SET document_type='passport', document_number='TEST123' WHERE id=2"))
         assert connection.execute(sa.text("SELECT count(*) FROM patients")).scalar() == 2
+
+
+
+def test_country_territory_migration_preserves_existing_patients_and_seeds_full_rd_catalog():
+    migrations = Path(__file__).parents[1] / "alembic/versions"
+    def load(name):
+        spec = importlib.util.spec_from_file_location(name, migrations / name)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    demographics = load("0030_patient_demographics.py")
+    territory = load("0031_country_territory.py")
+    engine = sa.create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(sa.text("CREATE TABLE localities (id INTEGER PRIMARY KEY)"))
+        connection.execute(sa.text("CREATE TABLE patients (id INTEGER PRIMARY KEY, first_name VARCHAR(100), phone VARCHAR(30))"))
+        connection.execute(sa.text("INSERT INTO patients VALUES (1, 'Legacy', '5550001')"))
+        with Operations.context(MigrationContext.configure(connection)):
+            demographics.upgrade()
+            territory.upgrade()
+        legacy = connection.execute(sa.text("SELECT first_name, country_code, territorial_unit_id, sector_locality FROM patients")).one()
+        assert legacy == ("Legacy", None, None, None)
+        assert connection.execute(sa.text("SELECT count(*) FROM countries WHERE code = 'DO'")).scalar() == 1
+        assert connection.execute(sa.text("SELECT count(*) FROM territorial_levels WHERE country_code = 'DO'")).scalar() == 2
+        assert connection.execute(sa.text("SELECT count(*) FROM territorial_units WHERE country_code = 'DO' AND territorial_level_id = 2")).scalar() == 158
+        assert connection.execute(sa.text("SELECT count(*) FROM territorial_units WHERE name = 'Villa Hermosa' AND parent_id = 12")).scalar() == 1

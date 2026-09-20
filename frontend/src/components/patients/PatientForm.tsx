@@ -29,7 +29,7 @@ function InputWithIcon({ icon, ...props }: ComponentProps<typeof Input> & { icon
 }
 
 export default function PatientForm({ patient, onClose, onSaved, onExistingSelected, user }: Props) {
-  const [demographics, setDemographics] = useState<PatientDemographics>(() => Object.fromEntries(["document_type", "document_number", "home_phone", "registered_sex", "blood_type", "address", "province", "nationality", "occupation", "emergency_contact_name", "emergency_contact_relationship", "emergency_contact_mobile", "emergency_contact_home_phone", "guardian_name", "guardian_relationship", "guardian_mobile", "guardian_home_phone", "locality_id"].map((key) => [key, patient?.[key as keyof PatientDemographics] ?? null])));
+  const [demographics, setDemographics] = useState<PatientDemographics>(() => Object.fromEntries(["document_type", "document_number", "home_phone", "registered_sex", "blood_type", "address", "country_code", "territorial_unit_id", "territorial_path", "sector_locality", "province", "nationality", "occupation", "emergency_contact_name", "emergency_contact_relationship", "emergency_contact_mobile", "emergency_contact_home_phone", "guardian_name", "guardian_relationship", "guardian_mobile", "guardian_home_phone", "locality_id"].map((key) => [key, patient?.[key as keyof PatientDemographics] ?? null])));
   const [firstName, setFirstName] = useState(patient?.first_name || "");
   const [lastName, setLastName] = useState(patient?.last_name || "");
   const [dateOfBirth, setDateOfBirth] = useState(patient?.date_of_birth || "");
@@ -115,8 +115,9 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
       (currentInsurance.plan_name || "") !== planName.trim()
     );
 
+    const { territorial_path: _territorialPath, ...demographicPayload } = demographics;
     const payload = {
-      ...demographics,
+      ...demographicPayload,
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       date_of_birth: dateOfBirth,

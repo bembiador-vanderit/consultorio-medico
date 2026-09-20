@@ -26,6 +26,32 @@ Rama: `feat/patient-identity-clinical-demographics`. Destino del PR:
 
 ## Contrato y migración
 
+### Evolución territorial posterior
+
+La migración `0031_country_territory` mantiene `province` y `locality_id` como
+legacy y añade, de forma nullable, `country_code`, `territorial_unit_id` y
+`sector_locality` a paciente. No reutiliza `Locality`: ese catálogo plano sigue
+siendo el de centros de atención. El catálogo nuevo separa `Country`,
+`TerritorialLevel`, `TerritorialUnit` y `RegionalSettings`; la unidad territorial
+más profunda guarda su padre, por lo que la ficha reconstruye la ruta y usa los
+labels del país, sin columnas específicas por geografía.
+
+República Dominicana es el país inicial de operación y propone sus niveles
+`Provincia` y `Municipio` a los pacientes nuevos. La migración carga las 32
+unidades provinciales y los 158 municipios del corte de la fuente; `Sector /
+Localidad` sigue siendo texto libre. La fuente versionada es ONE, *División
+Territorial 2020* (edición 2021, consulta 2026-09-20), que describe las unidades
+territoriales vigentes de ese corte. Los nombres y relaciones quedan versionados
+en la migración para que una publicación posterior de ONE cambie filas del
+catálogo, nunca columnas de `Patient`. Un país adicional se incorpora insertando
+país, niveles y unidades; Puerto Rico no se declara cargado en esta fase.
+
+`RegionalSettings.default_country_code` es persistente y solo `users:manage`
+puede actualizarlo. No determina el país de residencia ni la nacionalidad del
+paciente. La API mantiene listados mínimos libres de esos datos; la ficha incluye
+país, unidad final y `territorial_path`. Pacientes legacy continúan mostrando
+provincia/localidad hasta que se migren manualmente desde Editar.
+
 `0030_patient_demographics`, posterior a `0029_clinical_concurrency`, añade columnas
 nullable sin modificar los valores existentes. No almacena edad ni rellena datos
 supuestos. La migración no necesita operaciones sobre volúmenes Docker.
@@ -119,10 +145,10 @@ En consulta se explicita **ficha actual** y no se presenta como resultado histó
 
 ## Archivos por responsabilidad
 
-- Modelo/migración: `backend/app/models/patient.py`, migración `0030_patient_demographics.py`.
-- API/validación: schemas y rutas de pacientes, `services/patient_demographics.py`.
+- Modelo/migración: `backend/app/models/patient.py`, `backend/app/models/regional.py`, migraciones `0030_patient_demographics.py` y `0031_country_territory.py`.
+- API/validación: schemas y rutas de pacientes/regional, `services/patient_demographics.py`.
 - Proyección clínica: modelo/schema/ruta de historia clínica; autorización sin cambios.
-- UI: PatientForm, PatientDemographicFields, PatientDemographicDetails, Patients y CSS.
+- UI: PatientForm, PatientDemographicFields, PatientDemographicDetails, Patients, CareContext y CSS.
 - Edad/contexto: patientAge, AnamnesisModule, ConsultationWorkspace,
   HistoricalConsultationProjection y tipos patient/clinical.
 - Pruebas: patient_demographics, patient_identity_concurrency, patient-age,
@@ -240,6 +266,20 @@ Resultados finales:
 - Avisos backend: deprecaciones de dependencias y `datetime.utcnow` preexistentes;
   no impiden los resultados y no se modifica esa deuda en esta intervención.
 
+### Validación de la evolución territorial
+
+- Demografía y territorio: **33 passed** en SQLite aislado.
+- Suite backend en el entorno disponible: **264 passed, 10 skipped**. Los diez
+  omitidos requieren URLs PostgreSQL específicas de concurrencia que no se usan
+  contra la base clínica.
+- Formulario territorial focalizado: **2 passed**; cubre país principal, limpieza
+  al cambiar provincia, hidratación de edición y conservación legacy.
+- Suite frontend serial: **241 passed, 0 failed**.
+- TypeScript y Vite: **PASS**.
+- PostgreSQL desechable: se actualizó una base hasta `0030`, se insertó un
+  paciente legacy y se aplicó `0031`; el resultado fue 158 municipios, provincia
+  legacy intacta, país principal `DO` y versión `0031_country_territory`.
+
 Comandos reproducibles: `python -m pytest -q --disable-warnings` en backend
 (con `DATABASE_URL`, `SECRET_KEY`, `PATIENT_SECURITY_POSTGRES_URL` hacia una base
 **desechable** llamada `patient_security_test` y `CLINICAL_CONCURRENCY_POSTGRES_URL`
@@ -249,7 +289,7 @@ No usar las bases clínicas para estas pruebas, que crean y eliminan sus tablas.
 ## Fuera de alcance
 
 Reclasificar teléfonos antiguos (no se infiere si eran casa/celular), MPI o fusiones
-de pacientes, país emisor de documento, catálogos geográficos jerárquicos,
+de pacientes, país emisor de documento, distritos municipales/barrios/parajes,
 normalización telefónica internacional, verificaciones de laboratorio, nuevos
 permisos de historia, snapshots de datos maestros, notas clínicas adicionales y
 Phase 6B9. Importaciones SQL externas deben usar la misma normalización; el índice

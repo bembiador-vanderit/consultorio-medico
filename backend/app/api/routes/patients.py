@@ -10,6 +10,7 @@ from app.db import get_db
 from app.models.insurance import InsuranceCompany, PatientInsurance
 from app.models.patient import Patient
 from app.models.locality import Locality
+from app.models.regional import Country, TerritorialLevel, TerritorialUnit
 from app.schemas.center import LocalityResponse
 from app.services.patient_demographics import normalize_document
 from app.schemas.patient import PatientCreate, PatientCreatedResponse, PatientDetailResponse, PatientIdentityResponse, PatientResponse, PatientUpdate
@@ -96,6 +97,40 @@ def _validate_demographics(payload, db: Session, patient: Patient | None = None)
         locality = db.get(Locality, payload.locality_id)
         if locality is None or not locality.is_active:
             raise HTTPException(status_code=422, detail="Localidad inválida")
+
+    if payload.country_code is not None:
+        country = db.get(Country, payload.country_code.upper())
+        if country is None or not country.is_active:
+            raise HTTPException(status_code=422, detail="País de residencia inválido")
+
+    if payload.territorial_unit_id is not None:
+        unit = db.get(TerritorialUnit, payload.territorial_unit_id)
+        if unit is None or not unit.is_active or unit.country_code != (payload.country_code or "").upper():
+            raise HTTPException(status_code=422, detail="Territorio incompatible con el país")
+
+        required_position = db.scalar(
+            select(TerritorialLevel.position)
+            .where(
+                TerritorialLevel.country_code == unit.country_code,
+                TerritorialLevel.is_active.is_(True),
+                TerritorialLevel.is_required.is_(True),
+            )
+            .order_by(TerritorialLevel.position.desc())
+            .limit(1)
+        )
+        if required_position is not None and unit.level.position != required_position:
+            raise HTTPException(status_code=422, detail="Seleccione el nivel territorial requerido más específico")
+
+        expected_position = unit.level.position
+        ancestor = unit
+        while ancestor is not None:
+            if not ancestor.is_active or ancestor.country_code != unit.country_code or ancestor.level.position != expected_position:
+                raise HTTPException(status_code=422, detail="Jerarquía territorial inválida")
+            expected_position -= 1
+            ancestor = ancestor.parent
+        if expected_position != 0:
+            raise HTTPException(status_code=422, detail="Jerarquía territorial inválida")
+
     if payload.document_number:
         query = select(Patient.id).where(Patient.document_type == payload.document_type, Patient.document_number == payload.document_number)
         if patient is not None:

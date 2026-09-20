@@ -5,6 +5,11 @@ export type PatientDemographics = {
   registered_sex?: string | null;
   blood_type?: string | null;
   address?: string | null;
+  country_code?: string | null;
+  country_name?: string | null;
+  territorial_unit_id?: number | null;
+  territorial_path?: Array<{ level:number; key:string; label:string; unit_id:number; name:string }>;
+  sector_locality?: string | null;
   province?: string | null;
   nationality?: string | null;
   occupation?: string | null;

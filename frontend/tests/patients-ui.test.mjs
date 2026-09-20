@@ -23,6 +23,10 @@ beforeEach(() => {
     if (response) { const result = await response(config); if (result !== undefined) return { data: result, status: 200, statusText: "OK", headers: {}, config }; }
     if (config.url === "/patients" && config.method === "get") data = records;
     else if (config.url === "/patients/localities") data = [{ id: 7, name: "Localidad ficticia" }];
+    else if (config.url === "/regional/countries") data = [{ code: "DO", name: "República Dominicana" }];
+    else if (config.url === "/regional/settings") data = { default_country_code: "DO" };
+    else if (config.url === "/regional/countries/DO/levels") data = [{ id: 1, position: 1, key: "province", display_label: "Provincia" }, { id: 2, position: 2, key: "municipality", display_label: "Municipio" }];
+    else if (config.url === "/regional/territories") data = config.params.level === 1 ? [{ id: 10, name: "Provincia ficticia", parent_id: null }] : [{ id: 7, name: "Municipio ficticio", parent_id: 10 }];
     else if (/^\/patients\/\d+$/.test(config.url) && config.method === "get") data = records.find((item) => item.id === Number(config.url.split("/").at(-1)));
     else if (config.url === "/insurance/companies") data = [{ id: 3, name: "ARS ficticia", is_active: true }];
     else if (config.url.startsWith("/insurance/patients/")) data = [{ id: 4, insurance_company_id: 3, insurance_company_name: "ARS ficticia", member_number: "FICTIONAL", plan_name: null, is_primary: true, is_active: true }];
@@ -271,7 +275,7 @@ test("new form keeps the approved personal and clinical folders visible together
 
   for (const [label, next] of [["Nombre", "Nuevo"], ["Apellido", "Ficticio"], ["Fecha de nacimiento", "2000-01-01"],
     ["Tipo de documento", "passport"], ["Número de documento", "test-123"], ["Teléfono (Celular)", "555001"], ["Teléfono (Casa)", "555002"],
-    ["Dirección", "Calle ficticia"], ["Provincia", "Provincia ficticia"], ["Municipio / localidad", "7"], ["Nacionalidad", "Ficticia"],
+    ["Dirección", "Calle ficticia"], ["País", "DO"], ["Provincia", "10"], ["Municipio", "7"], ["Sector / Localidad", "Sector ficticio"], ["Nacionalidad", "Ficticia"],
     ["Ocupación / Profesión", "Profesión ficticia"], ["Sexo registrado (clínico)", "female"], ["Tipo sanguíneo", "AB-"]]) await value(field(label, dialog), next);
   for (const [label, next] of [["Nombre completo", "Contacto ficticio"], ["Parentesco", "Familiar"], ["Teléfono (Celular)", "555003"], ["Teléfono (Casa)", "555004"]]) await value(fieldInSection("Contacto de emergencia", label, dialog), next);
   for (const [label, next] of [["Nombre completo", "Tutor ficticio"], ["Parentesco", "Responsable"], ["Teléfono (Celular)", "555005"], ["Teléfono (Casa)", "555006"]]) await value(fieldInSection("Tutor / Responsable", label, dialog), next);
@@ -288,8 +292,46 @@ test("new form keeps the approved personal and clinical folders visible together
   assert.equal(data.emergency_contact_mobile, "555003"); assert.equal(data.emergency_contact_home_phone, "555004");
   assert.equal(data.guardian_mobile, "555005"); assert.equal(data.guardian_home_phone, "555006");
   assert.equal(data.document_type, "passport"); assert.equal(data.document_number, "test-123");
-  assert.equal(data.locality_id, 7); assert.equal(data.blood_type, "AB-"); assert.equal(data.registered_sex, "female");
+  assert.equal(data.territorial_unit_id, 7); assert.equal(data.country_code, "DO"); assert.equal(data.blood_type, "AB-"); assert.equal(data.registered_sex, "female");
   assert.equal(Object.hasOwn(data, "age"), false);
+});
+
+
+
+test("territorial selection defaults for new patients and clearing a province clears its municipality", async () => {
+  await mount(["admin"]); await click(button("+ Nuevo paciente")); const dialog = panel();
+  await act(async () => {});
+  assert.equal(field("País", dialog).value, "DO");
+  await value(field("Provincia", dialog), "10");
+  await value(field("Municipio", dialog), "7");
+  assert.equal(field("Municipio", dialog).value, "7");
+  await value(field("Provincia", dialog), "");
+  assert.equal(field("Municipio", dialog).value, "");
+});
+
+test("editing hydrates the territorial path and retains a legacy location without auto-migration", async () => {
+  const structured = { ...a, country_code: "DO", country_name: "República Dominicana", territorial_unit_id: 7, territorial_path: [
+    { level: 1, key: "province", label: "Provincia", unit_id: 10, name: "Provincia ficticia" },
+    { level: 2, key: "municipality", label: "Municipio", unit_id: 7, name: "Municipio ficticio" },
+  ], sector_locality: "Sector ficticio", address: "Calle ficticia" };
+  await mount(); response = (config) => config.url === "/patients/1" ? structured : undefined;
+  await select(); await click(button("Editar"));
+  assert.equal(field("País", panel()).value, "DO");
+  assert.equal(field("Provincia", panel()).value, "10");
+  assert.equal(field("Municipio", panel()).value, "7");
+  assert.equal(field("Sector / Localidad", panel()).value, "Sector ficticio");
+  await click(button("Cancelar"));
+
+  const legacy = { ...a, province: "Provincia anterior", locality_id: 7, locality_name: "Localidad anterior" };
+  response = (config) => config.url === "/patients/1" ? legacy : undefined;
+  await click(host.querySelectorAll(".patients-row")[1]); await click(host.querySelector(".patients-row")); await click(button("Editar"));
+  assert.equal(field("País", panel()).value, "");
+  assert.match(panel().textContent, /Ubicación anterior: Provincia anterior/);
+  await value(field("Teléfono (Casa)", panel()), "5550099"); await submit(panel().querySelector("form"));
+  const payload = JSON.parse(requests.filter((item) => item.method === "put").at(-1).data);
+  assert.equal(payload.province, "Provincia anterior");
+  assert.equal(payload.country_code, null);
+  assert.equal(payload.territorial_unit_id, null);
 });
 
 test("mobile patient form keeps both folders in one semantic flow", async () => {

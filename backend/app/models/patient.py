@@ -29,6 +29,9 @@ class Patient(Base):
     registered_sex: Mapped[str | None] = mapped_column(String(20), nullable=True)
     blood_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    country_code: Mapped[str | None] = mapped_column(ForeignKey("countries.code"), nullable=True, index=True)
+    territorial_unit_id: Mapped[int | None] = mapped_column(ForeignKey("territorial_units.id"), nullable=True, index=True)
+    sector_locality: Mapped[str | None] = mapped_column(String(150), nullable=True)
     province: Mapped[str | None] = mapped_column(String(100), nullable=True)
     nationality: Mapped[str | None] = mapped_column(String(100), nullable=True)
     occupation: Mapped[str | None] = mapped_column(String(150), nullable=True)
@@ -42,10 +45,25 @@ class Patient(Base):
     guardian_home_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     locality_id: Mapped[int | None] = mapped_column(ForeignKey("localities.id"), nullable=True)
     locality: Mapped["Locality | None"] = relationship()
+    country: Mapped["Country | None"] = relationship()
+    territorial_unit: Mapped["TerritorialUnit | None"] = relationship()
 
     @property
     def locality_name(self) -> str | None:
         return self.locality.name if self.locality else None
+
+    @property
+    def country_name(self) -> str | None:
+        return self.country.name if self.country else None
+
+    @property
+    def territorial_path(self) -> list[dict]:
+        path = []
+        unit = self.territorial_unit
+        while unit is not None:
+            path.append({"level": unit.level.position, "key": unit.level.key, "label": unit.level.display_label, "unit_id": unit.id, "name": unit.name})
+            unit = unit.parent
+        return list(reversed(path))
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

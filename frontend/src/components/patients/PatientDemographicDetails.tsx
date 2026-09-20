@@ -1,17 +1,15 @@
 import type { Patient } from "../../types/patient";
-import { documentLabels, sexLabels } from "./PatientDemographicFields";
 
 export default function PatientDemographicDetails({ patient }: { patient: Patient }) {
-  const rows = [
-    ["Documento", patient.document_number ? `${documentLabels[patient.document_type ?? ""] ?? "Documento"}: ${patient.document_number}` : null],
-    ["Dirección", patient.address], ["Provincia", patient.province], ["Municipio / localidad", patient.locality_name],
-    ["Nacionalidad", patient.nationality], ["Ocupación / profesión", patient.occupation],
-    ["Teléfono de casa", patient.home_phone], ["Sexo registrado para fines clínicos", sexLabels[patient.registered_sex ?? ""]],
-    ["Tipo sanguíneo declarado/registrado", patient.blood_type],
-    ["Contacto de emergencia", patient.emergency_contact_name], ["Parentesco del contacto", patient.emergency_contact_relationship],
-    ["Celular de emergencia", patient.emergency_contact_mobile], ["Casa de emergencia", patient.emergency_contact_home_phone],
-    ["Tutor / responsable", patient.guardian_name], ["Parentesco del tutor", patient.guardian_relationship],
-    ["Celular del tutor", patient.guardian_mobile], ["Casa del tutor", patient.guardian_home_phone],
+  const structured = patient.territorial_path?.length ? patient.territorial_path : [];
+  const rows: Array<[string, string | number | null | undefined]> = [
+    ["Documento", patient.document_type && patient.document_number ? `${patient.document_type}: ${patient.document_number}` : null],
+    ["Sexo registrado", patient.registered_sex], ["Tipo sanguíneo declarado/registrado", patient.blood_type],
+    ["País", patient.country_name], ...structured.map(item => [item.label, item.name] as [string, string]),
+    ["Sector / Localidad", patient.sector_locality], ["Dirección", patient.address],
+    ...(structured.length ? [] : [["Provincia", patient.province], ["Municipio / localidad", patient.locality_name]] as Array<[string, string | null | undefined]>),
+    ["Nacionalidad", patient.nationality], ["Ocupación / Profesión", patient.occupation],
+    ["Teléfono de casa", patient.home_phone], ["Contacto de emergencia", patient.emergency_contact_name], ["Tutor / responsable", patient.guardian_name],
   ];
-  return <section aria-label="Identidad y demografía"><dl className="patients-facts">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || "Sin registrar"}</dd></div>)}</dl><p className="atlas-help">El tipo sanguíneo registrado no equivale a confirmación de laboratorio.</p></section>;
+  return <dl className="patients-facts">{rows.filter(([, value]) => value).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
