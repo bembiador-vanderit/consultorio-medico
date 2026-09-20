@@ -19,6 +19,7 @@ type Props = {
 };
 
 export default function PatientForm({ patient, onClose, onSaved, onExistingSelected, user }: Props) {
+  const [activeTab, setActiveTab] = useState<"personal" | "clinical">("personal");
   const [demographics, setDemographics] = useState<PatientDemographics>(() => Object.fromEntries(["document_type", "document_number", "home_phone", "registered_sex", "blood_type", "address", "province", "nationality", "occupation", "emergency_contact_name", "emergency_contact_relationship", "emergency_contact_mobile", "emergency_contact_home_phone", "guardian_name", "guardian_relationship", "guardian_mobile", "guardian_home_phone", "locality_id"].map((key) => [key, patient?.[key as keyof PatientDemographics] ?? null])));
   const [firstName, setFirstName] = useState(patient?.first_name || "");
   const [lastName, setLastName] = useState(patient?.last_name || "");
@@ -157,7 +158,11 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
       {error && <Alert tone="danger" title="Revise los datos del paciente">{error}</Alert>}
       {identityMatches.length > 0 && <div className="patient-identity-matches">{identityMatches.map((match) => <Button key={match.id} variant="outline" onClick={() => onExistingSelected({ id: match.id, first_name: match.first_name, last_name: match.last_name, date_of_birth: match.date_of_birth, phone: match.phone_masked, email: null, created_at: new Date().toISOString(), selection_token: match.selection_token })}><strong>Usar {match.first_name} {match.last_name}</strong><span className="atlas-help"> · {match.date_of_birth}{match.phone_masked ? ` · ${match.phone_masked}` : ""}</span></Button>)}</div>}
       {!patient && user.roles.includes("secretary") && <Alert title="Seleccionar un paciente existente">Para buscar un paciente existente, use Nueva cita y seleccione primero el centro y el médico autorizado.</Alert>}
-      <section aria-label="Datos personales"><h3 className="atlas-section-title">Datos personales</h3>
+      <div className="patient-form-tabs" role="tablist" aria-label="Secciones de la ficha del paciente">
+        <button type="button" id={`${formId}-personal-tab`} role="tab" aria-selected={activeTab === "personal"} aria-controls={`${formId}-personal-panel`} tabIndex={activeTab === "personal" ? 0 : -1} className="patient-form-tab" onClick={() => setActiveTab("personal")}><span className="patient-form-tab-number">1</span><span><strong>Datos personales</strong><small>Identidad, contacto y cobertura</small></span></button>
+        <button type="button" id={`${formId}-clinical-tab`} role="tab" aria-selected={activeTab === "clinical"} aria-controls={`${formId}-clinical-panel`} tabIndex={activeTab === "clinical" ? 0 : -1} className="patient-form-tab" onClick={() => setActiveTab("clinical")}><span className="patient-form-tab-number">2</span><span><strong>Datos clínicos</strong><small>Información médica básica</small></span></button>
+      </div>
+      <section id={`${formId}-personal-panel`} role="tabpanel" aria-labelledby={`${formId}-personal-tab`} aria-label="Datos personales" hidden={activeTab !== "personal"}>
       <FormSection title="Identidad y contacto">
         <FormField label="Nombre" required><Input minLength={2} maxLength={100} autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} /></FormField>
         <FormField label="Apellido" required><Input minLength={2} maxLength={100} autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} /></FormField>
@@ -179,7 +184,9 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
         {!hasInsurance && insuranceReady && <p className="atlas-help patient-form-wide">Paciente sin Seguro</p>}
       </FormSection>
       </section>
-      <section aria-label="Datos clínicos"><h3 className="atlas-section-title">Datos clínicos</h3><PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical" /></section>
+      <section id={`${formId}-clinical-panel`} role="tabpanel" aria-labelledby={`${formId}-clinical-tab`} aria-label="Datos clínicos" hidden={activeTab !== "clinical"}>
+        <PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical" />
+      </section>
     </form>
   </Modal>;
 }
