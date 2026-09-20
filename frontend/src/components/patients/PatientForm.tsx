@@ -4,7 +4,7 @@ import "../../pages/patients.css";
 import { api } from "../../services/api";
 import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
 import { patientAgeLabel, todayDate } from "../../services/patientAge";
-import PatientDemographicFields from "./PatientDemographicFields";
+import PatientDemographicFields, { documentLabels } from "./PatientDemographicFields";
 import type { PatientDemographics, Patient } from "../../types/patient";
 import type { User } from "../../types/user";
 
@@ -167,9 +167,19 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
             <FormSection title="Identificación">
               <FormField label="Nombre" required><Input minLength={2} maxLength={100} autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} /></FormField>
               <FormField label="Apellido" required><Input minLength={2} maxLength={100} autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} /></FormField>
+              <FormField label="Tipo de documento">
+                <Select value={demographics.document_type ?? ""} onChange={(event) => setDemographics({ ...demographics, document_type: event.target.value || null, ...(!event.target.value ? { document_number: null } : {}) })}>
+                  <option value="">Sin documento</option>
+                  {Object.entries(documentLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Número de documento"><Input maxLength={100} value={demographics.document_number ?? ""} onChange={(event) => setDemographics({ ...demographics, document_number: event.target.value || null })} /></FormField>
               <FormField label="Fecha de nacimiento" required><Input type="date" max={todayDate()} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></FormField>
               <FormField label="Edad calculada"><Input readOnly value={patientAgeLabel(dateOfBirth)} /></FormField>
+            </FormSection>
+            <FormSection title="Información de contacto">
               <FormField label="Teléfono celular"><Input type="tel" maxLength={30} autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></FormField>
+              <FormField label="Teléfono de casa"><Input type="tel" maxLength={30} value={demographics.home_phone ?? ""} onChange={(event) => setDemographics({ ...demographics, home_phone: event.target.value || null })} /></FormField>
               <div className="patient-form-wide"><FormField label="Correo"><Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FormField></div>
             </FormSection>
             <PatientDemographicFields value={demographics} onChange={setDemographics} section="personal" />
@@ -183,6 +193,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
           </header>
           <div className="patient-form-folder-content">
             <PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical-basic" />
+            <Alert title="Tipo sanguíneo">El tipo sanguíneo puede ser declarado por el paciente y posteriormente confirmado por laboratorio. El dato registrado aquí no sustituye una confirmación de laboratorio.</Alert>
             <FormSection title="Seguro médico" description="Indique si el paciente tiene seguro médico.">
               {insuranceError && <div className="patient-form-wide"><Alert tone="warning" title="Seguro no disponible">{insuranceError}</Alert></div>}
               {loadingInsurance && <p role="status" className="atlas-help patient-form-wide">Cargando seguro...</p>}
