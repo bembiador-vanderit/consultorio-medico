@@ -41,6 +41,7 @@ async function mount(roles = ["doctor"]) { await act(async () => root.render(h(P
 async function click(element) { assert.ok(element); await act(async () => { element.focus(); element.click(); }); }
 const button = (label, scope = document) => [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === label);
 const field = (label, scope = document) => { const labels = [...scope.querySelectorAll("label")]; const node = labels.find((item) => item.textContent.trim() === label) ?? labels.find((item) => item.textContent.startsWith(label)); assert.ok(node, label); return document.getElementById(node.htmlFor); };
+const fieldInSection = (sectionTitle, label, scope = document) => { const section = [...scope.querySelectorAll(".atlas-form-section")].find((item) => item.querySelector("legend")?.textContent.includes(sectionTitle)); assert.ok(section, sectionTitle); return field(label, section); };
 const panel = () => [...document.querySelectorAll("dialog[open]")].at(-1);
 async function value(control, next) { await act(async () => { Object.getOwnPropertyDescriptor(control.tagName === "SELECT" ? dom.window.HTMLSelectElement.prototype : dom.window.HTMLInputElement.prototype, "value").set.call(control, next); control.dispatchEvent(new dom.window.Event(control.tagName === "SELECT" ? "change" : "input", { bubbles: true })); }); }
 async function submit(form) { await act(async () => form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }))); }
@@ -186,7 +187,7 @@ test("explicit opt-out preserves false meaning", async () => {
   assert.equal(JSON.parse(requests.find((item) => item.method === "put").data).has_insurance, false);
 });
 test("explicit insurance change sends a valid update object", async () => {
-  await mount(); await select(); await click(button("Editar")); await value(field("Número de afiliado", panel()), "NEW-FICTIONAL"); await submit(panel().querySelector("form"));
+  await mount(); await select(); await click(button("Editar")); await value(field("Número de póliza / Afiliado", panel()), "NEW-FICTIONAL"); await submit(panel().querySelector("form"));
   const payload = JSON.parse(requests.find((item) => item.method === "put").data);
   assert.equal(payload.has_insurance, true); assert.equal(payload.insurance.member_number, "NEW-FICTIONAL"); assert.equal(payload.insurance.insurance_company_id, 3);
 });
@@ -269,17 +270,17 @@ test("new form keeps the approved personal and clinical folders visible together
   assert.equal(dialog.querySelector('[role="tablist"]'), null);
 
   for (const [label, next] of [["Nombre", "Nuevo"], ["Apellido", "Ficticio"], ["Fecha de nacimiento", "2000-01-01"],
-    ["Tipo de documento", "passport"], ["Número de documento", "test-123"], ["Teléfono celular", "555001"], ["Teléfono de casa", "555002"],
+    ["Tipo de documento", "passport"], ["Número de documento", "test-123"], ["Teléfono (Celular)", "555001"], ["Teléfono (Casa)", "555002"],
     ["Dirección", "Calle ficticia"], ["Provincia", "Provincia ficticia"], ["Municipio / localidad", "7"], ["Nacionalidad", "Ficticia"],
-    ["Ocupación / profesión", "Profesión ficticia"], ["Sexo registrado para fines clínicos", "female"], ["Tipo sanguíneo", "AB-"],
-    ["Nombre del contacto de emergencia", "Contacto ficticio"], ["Parentesco del contacto de emergencia", "Familiar"],
-    ["Celular del contacto de emergencia", "555003"], ["Casa del contacto de emergencia", "555004"],
-    ["Nombre del tutor / responsable", "Tutor ficticio"], ["Parentesco del tutor / responsable", "Responsable"],
-    ["Celular del tutor / responsable", "555005"], ["Casa del tutor / responsable", "555006"]]) await value(field(label, dialog), next);
+    ["Ocupación / Profesión", "Profesión ficticia"], ["Sexo registrado (clínico)", "female"], ["Tipo sanguíneo", "AB-"]]) await value(field(label, dialog), next);
+  for (const [label, next] of [["Nombre completo", "Contacto ficticio"], ["Parentesco", "Familiar"], ["Teléfono (Celular)", "555003"], ["Teléfono (Casa)", "555004"]]) await value(fieldInSection("Contacto de emergencia", label, dialog), next);
+  for (const [label, next] of [["Nombre completo", "Tutor ficticio"], ["Parentesco", "Responsable"], ["Teléfono (Celular)", "555005"], ["Teléfono (Casa)", "555006"]]) await value(fieldInSection("Tutor / Responsable", label, dialog), next);
 
-  assert.ok(field("Edad calculada", dialog).readOnly);
-  assert.match(field("Edad calculada", dialog).value, /años/);
-  assert.match(folders[1].textContent, /no sustituye una confirmación de laboratorio/);
+  assert.ok(field("Edad", dialog).readOnly);
+  assert.match(field("Edad", dialog).value, /años/);
+  assert.match(folders[1].textContent, /Puede ser declarado por el paciente y posteriormente confirmado por laboratorio/);
+  assert.equal(dialog.querySelectorAll(".patient-form-folder-heading svg").length, 2);
+  assert.ok(dialog.querySelector(".patient-form-section-title svg"));
 
   await submit(dialog.querySelector("form"));
   const data = JSON.parse(requests.find((item) => item.method === "post" && item.url === "/patients").data);
@@ -298,8 +299,8 @@ test("mobile patient form keeps both folders in one semantic flow", async () => 
   assert.equal(folders.length, 2);
   assert.match(folders[0].textContent, /Datos personales/);
   assert.match(folders[1].textContent, /Datos clínicos/);
-  assert.ok(field("Teléfono celular", dialog));
-  assert.ok(field("Teléfono de casa", dialog));
+  assert.ok(field("Teléfono (Celular)", dialog));
+  assert.ok(field("Teléfono (Casa)", dialog));
   assert.ok(button("Guardar paciente", dialog));
 });
 test("extended details are fetched on demand and hydrate editing", async () => {
@@ -307,9 +308,9 @@ test("extended details are fetched on demand and hydrate editing", async () => {
   await mount(); response = (config) => config.url === "/patients/1" ? extended : undefined;
   await select(); assert.match(host.querySelector(".patients-detail").textContent, /TEST123/);
   await click(button("Editar")); assert.equal(field("Número de documento", panel()).value, "TEST123");
-  assert.equal(field("Teléfono de casa", panel()).value, "555007");
+  assert.equal(field("Teléfono (Casa)", panel()).value, "555007");
   assert.equal(field("Tipo sanguíneo", panel()).value, "O+");
-  await value(field("Teléfono celular", panel()), "555008"); await submit(panel().querySelector("form"));
+  await value(field("Teléfono (Celular)", panel()), "555008"); await submit(panel().querySelector("form"));
   const data = JSON.parse(requests.find((item) => item.method === "put").data);
   assert.equal(data.phone, "555008"); assert.equal(data.home_phone, "555007"); assert.equal(data.document_number, "TEST123");
 });

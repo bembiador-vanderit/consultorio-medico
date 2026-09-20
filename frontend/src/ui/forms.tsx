@@ -49,6 +49,6 @@ function Choice({ label, type, className, ...props }: ChoiceProps & { type: "che
 }
 export function Checkbox(props: ChoiceProps) { return <Choice {...props} type="checkbox" />; }
 export function Radio(props: ChoiceProps) { return <Choice {...props} type="radio" />; }
-export function FormSection({ title, description, className, children }: { title: string; description?: string; className?: string; children: ReactNode }) {
+export function FormSection({ title, description, className, children }: { title: ReactNode; description?: string; className?: string; children: ReactNode }) {
   return <fieldset className={cx("atlas-form-section", className)}><legend className="atlas-card-title">{title}</legend>{description && <p className="atlas-help">{description}</p>}<div className="atlas-form-grid">{children}</div></fieldset>;
 }

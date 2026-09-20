@@ -190,6 +190,19 @@ ficha están inmediatamente tras la identidad; en el drawer móvil forman dos
 columnas desde 360 px y una columna en 320 px para evitar desborde y mantener
 objetivos táctiles de 44 px.
 
+La corrección visual posterior al contraste con la maqueta aprobada elimina las
+tarjetas anidadas de cada grupo: cada carpeta conserva su borde externo y los
+grupos internos se presentan como encabezados con icono y cuadrícula. El diálogo,
+las dos carpetas, identificación, contacto, dirección, información adicional,
+datos clínicos, seguro, emergencia y tutor usan iconos SVG locales, sin añadir una
+dependencia ni iconos de texto. Se unificaron las etiquetas visibles de edad,
+teléfonos, correo, sexo, seguro y afiliación con la maqueta; el aviso de sangre se
+presenta una sola vez y mantiene que es un dato declarado, susceptible de
+confirmación posterior. Tutor conserva el tratamiento visual opcional y el footer
+permanece fijo. No se añade `Observaciones`: el modelo de paciente no tiene ese
+campo y las notas pertenecen a la historia clínica, por lo que mostrar un control
+sin persistencia o crear otra fuente clínica de verdad sería incorrecto.
+
 La validación posterior de la ficha detectó un segundo problema de layout: antes
 de resolver `GET /patients/{id}`, el resumen tenía espacio por contener solo la
 carga breve; al llegar `PatientDemographicDetails`, su `clientHeight` se reducía
