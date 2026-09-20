@@ -19,7 +19,6 @@ type Props = {
 };
 
 export default function PatientForm({ patient, onClose, onSaved, onExistingSelected, user }: Props) {
-  const [activeTab, setActiveTab] = useState<"personal" | "clinical">("personal");
   const [demographics, setDemographics] = useState<PatientDemographics>(() => Object.fromEntries(["document_type", "document_number", "home_phone", "registered_sex", "blood_type", "address", "province", "nationality", "occupation", "emergency_contact_name", "emergency_contact_relationship", "emergency_contact_mobile", "emergency_contact_home_phone", "guardian_name", "guardian_relationship", "guardian_mobile", "guardian_home_phone", "locality_id"].map((key) => [key, patient?.[key as keyof PatientDemographics] ?? null])));
   const [firstName, setFirstName] = useState(patient?.first_name || "");
   const [lastName, setLastName] = useState(patient?.last_name || "");
@@ -158,35 +157,47 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
       {error && <Alert tone="danger" title="Revise los datos del paciente">{error}</Alert>}
       {identityMatches.length > 0 && <div className="patient-identity-matches">{identityMatches.map((match) => <Button key={match.id} variant="outline" onClick={() => onExistingSelected({ id: match.id, first_name: match.first_name, last_name: match.last_name, date_of_birth: match.date_of_birth, phone: match.phone_masked, email: null, created_at: new Date().toISOString(), selection_token: match.selection_token })}><strong>Usar {match.first_name} {match.last_name}</strong><span className="atlas-help"> · {match.date_of_birth}{match.phone_masked ? ` · ${match.phone_masked}` : ""}</span></Button>)}</div>}
       {!patient && user.roles.includes("secretary") && <Alert title="Seleccionar un paciente existente">Para buscar un paciente existente, use Nueva cita y seleccione primero el centro y el médico autorizado.</Alert>}
-      <div className="patient-form-tabs" role="tablist" aria-label="Secciones de la ficha del paciente">
-        <button type="button" id={`${formId}-personal-tab`} role="tab" aria-selected={activeTab === "personal"} aria-controls={`${formId}-personal-panel`} tabIndex={activeTab === "personal" ? 0 : -1} className="patient-form-tab" onClick={() => setActiveTab("personal")} onKeyDown={(event) => { if (event.key === "ArrowRight" || event.key === "End") { event.preventDefault(); setActiveTab("clinical"); document.getElementById(`${formId}-clinical-tab`)?.focus(); } }}><span className="patient-form-tab-number">1</span><span><strong>Datos personales</strong><small>Identidad, contacto y cobertura</small></span></button>
-        <button type="button" id={`${formId}-clinical-tab`} role="tab" aria-selected={activeTab === "clinical"} aria-controls={`${formId}-clinical-panel`} tabIndex={activeTab === "clinical" ? 0 : -1} className="patient-form-tab" onClick={() => setActiveTab("clinical")} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "Home") { event.preventDefault(); setActiveTab("personal"); document.getElementById(`${formId}-personal-tab`)?.focus(); } }}><span className="patient-form-tab-number">2</span><span><strong>Datos clínicos</strong><small>Información médica básica</small></span></button>
+      <div className="patient-form-columns">
+        <section className="patient-form-folder patient-form-folder--personal" aria-labelledby={`${formId}-personal-title`}>
+          <header className="patient-form-folder-heading patient-form-folder-heading--personal">
+            <span className="patient-form-folder-number" aria-hidden="true">1</span>
+            <span><strong id={`${formId}-personal-title`}>Datos personales</strong><small>Información básica y de contacto</small></span>
+          </header>
+          <div className="patient-form-folder-content">
+            <FormSection title="Identificación">
+              <FormField label="Nombre" required><Input minLength={2} maxLength={100} autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} /></FormField>
+              <FormField label="Apellido" required><Input minLength={2} maxLength={100} autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} /></FormField>
+              <FormField label="Fecha de nacimiento" required><Input type="date" max={todayDate()} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></FormField>
+              <FormField label="Edad calculada"><Input readOnly value={patientAgeLabel(dateOfBirth)} /></FormField>
+              <FormField label="Teléfono celular"><Input type="tel" maxLength={30} autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></FormField>
+              <div className="patient-form-wide"><FormField label="Correo"><Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FormField></div>
+            </FormSection>
+            <PatientDemographicFields value={demographics} onChange={setDemographics} section="personal" />
+          </div>
+        </section>
+
+        <section className="patient-form-folder patient-form-folder--clinical" aria-labelledby={`${formId}-clinical-title`}>
+          <header className="patient-form-folder-heading patient-form-folder-heading--clinical">
+            <span className="patient-form-folder-number" aria-hidden="true">2</span>
+            <span><strong id={`${formId}-clinical-title`}>Datos clínicos</strong><small>Información médica relevante</small></span>
+          </header>
+          <div className="patient-form-folder-content">
+            <PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical-basic" />
+            <FormSection title="Seguro médico" description="Indique si el paciente tiene seguro médico.">
+              {insuranceError && <div className="patient-form-wide"><Alert tone="warning" title="Seguro no disponible">{insuranceError}</Alert></div>}
+              {loadingInsurance && <p role="status" className="atlas-help patient-form-wide">Cargando seguro...</p>}
+              <div className="patient-form-wide patient-form-actions"><Radio name={insuranceGroupId} label="Sí" checked={hasInsurance} disabled={!insuranceReady || loadingInsurance} onChange={() => selectInsurance(true)} /><Radio name={insuranceGroupId} label="No" checked={!hasInsurance} disabled={!insuranceReady || loadingInsurance} onChange={() => selectInsurance(false)} /></div>
+              {hasInsurance && <>
+                <FormField label="ARS" required><Select disabled={!insuranceReady || loadingInsurance} value={companyId} onChange={(e) => setCompanyId(e.target.value)}><option value="">Seleccione una ARS</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}</Select></FormField>
+                <FormField label="Número de afiliado" required><Input disabled={!insuranceReady || loadingInsurance} maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} /></FormField>
+                <div className="patient-form-wide"><FormField label="Plan"><Input disabled={!insuranceReady || loadingInsurance} maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} /></FormField></div>
+              </>}
+              {!hasInsurance && insuranceReady && <p className="atlas-help patient-form-wide">Paciente sin Seguro</p>}
+            </FormSection>
+            <PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical-contacts" />
+          </div>
+        </section>
       </div>
-      <section id={`${formId}-personal-panel`} role="tabpanel" aria-labelledby={`${formId}-personal-tab`} aria-label="Datos personales" hidden={activeTab !== "personal"}>
-      <FormSection title="Identidad y contacto">
-        <FormField label="Nombre" required><Input minLength={2} maxLength={100} autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} /></FormField>
-        <FormField label="Apellido" required><Input minLength={2} maxLength={100} autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} /></FormField>
-        <FormField label="Fecha de nacimiento" required><Input type="date" max={todayDate()} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></FormField>
-        <FormField label="Edad calculada"><Input readOnly value={patientAgeLabel(dateOfBirth)} /></FormField>
-        <FormField label="Teléfono celular"><Input type="tel" maxLength={30} autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></FormField>
-        <div className="patient-form-wide"><FormField label="Correo"><Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FormField></div>
-      </FormSection>
-      <PatientDemographicFields value={demographics} onChange={setDemographics} section="personal" />
-      <FormSection title="Seguro" description="Indique si el paciente tiene seguro médico.">
-        {insuranceError && <div className="patient-form-wide"><Alert tone="warning" title="Seguro no disponible">{insuranceError}</Alert></div>}
-        {loadingInsurance && <p role="status" className="atlas-help patient-form-wide">Cargando seguro...</p>}
-        <div className="patient-form-wide patient-form-actions"><Radio name={insuranceGroupId} label="Sí" checked={hasInsurance} disabled={!insuranceReady || loadingInsurance} onChange={() => selectInsurance(true)} /><Radio name={insuranceGroupId} label="No" checked={!hasInsurance} disabled={!insuranceReady || loadingInsurance} onChange={() => selectInsurance(false)} /></div>
-        {hasInsurance && <>
-          <FormField label="ARS" required><Select disabled={!insuranceReady || loadingInsurance} value={companyId} onChange={(e) => setCompanyId(e.target.value)}><option value="">Seleccione una ARS</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}</Select></FormField>
-          <FormField label="Número de afiliado" required><Input disabled={!insuranceReady || loadingInsurance} maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} /></FormField>
-          <div className="patient-form-wide"><FormField label="Plan"><Input disabled={!insuranceReady || loadingInsurance} maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} /></FormField></div>
-        </>}
-        {!hasInsurance && insuranceReady && <p className="atlas-help patient-form-wide">Paciente sin Seguro</p>}
-      </FormSection>
-      </section>
-      <section id={`${formId}-clinical-panel`} role="tabpanel" aria-labelledby={`${formId}-clinical-tab`} aria-label="Datos clínicos" hidden={activeTab !== "clinical"}>
-        <PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical" />
-      </section>
     </form>
   </Modal>;
 }
