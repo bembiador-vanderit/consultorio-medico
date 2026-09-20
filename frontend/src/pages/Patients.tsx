@@ -101,21 +101,23 @@ export default function Patients({ onBack, onPatientChanged, onScheduleAppointme
   function detail() {
     if (!selected) return <EmptyState title="Selecciona un paciente para ver su información" description="Su ficha y acciones aparecerán aquí." />;
     return <div className="patients-detail-content">
-      <div className="patients-detail-summary"><div className="patients-identity"><Avatar patient={selected} /><div><p className="atlas-caption">Ficha del paciente</p><h3 className="atlas-section-title" title={fullName(selected)}>{fullName(selected)}</h3><p className="patients-identity-age atlas-muted">{ageLabel(selected)}<span> · {birthLabel(selected.date_of_birth)}</span></p></div></div>
-      <section className="patients-personal" aria-label="Información personal"><h4 className="atlas-card-title">Información personal</h4><dl className="patients-facts">
-        <div><dt>Fecha de nacimiento</dt><dd>{birthLabel(selected.date_of_birth)}</dd></div>
-      </dl></section>
-      <section className="patients-contact" aria-label="Contacto"><h4 className="atlas-card-title">Contacto</h4><dl className="patients-facts">
-        <div><dt>Teléfono celular</dt><dd>{selected.phone || "Sin teléfono registrado"}</dd></div>
-        <div><dt>Correo</dt><dd>{selected.email || "Sin correo registrado"}</dd></div>
-      </dl></section></div>
-      {detailError ? <Alert tone="danger" title="No se pudo cargar la ficha">{detailError}<Button variant="outline" onClick={() => setDetailVersion((version) => version + 1)}>Reintentar ficha</Button></Alert> : fullPatient?.id === selected.id ? <PatientDemographicDetails patient={fullPatient} /> : <LoadingState label="Cargando ficha..." />}
-      <div className="patients-quick-actions" aria-label="Acciones del paciente">
-        <Button className="patients-action--schedule" icon={<NavigationIcon name="calendar" />} onClick={() => onScheduleAppointment(selected)}>Agendar cita</Button>
-        {canAccessClinical && <Button className="patients-action--history" icon={<NavigationIcon name="report" />} variant="outline" onClick={() => setHistoryPatient(selected)}>Historia clínica</Button>}
-        <Button className="patients-action--edit" icon={<NavigationIcon name="patient" />} variant="outline" disabled={!fullPatient || fullPatient.id !== selected.id || Boolean(detailError)} onClick={() => { setEditing(fullPatient); setShowForm(true); }}>Editar</Button>
-        <Button className="patients-action--insurance" icon={<NavigationIcon name="clinical" />} variant="outline" onClick={() => setInsurancePatient(selected)}>Seguro</Button>
+      <div className="patients-detail-summary">
+        <div className="patients-identity"><Avatar patient={selected} /><div><p className="atlas-caption">Ficha del paciente</p><h3 className="atlas-section-title" title={fullName(selected)}>{fullName(selected)}</h3><p className="patients-identity-age atlas-muted">{ageLabel(selected)}<span> · {birthLabel(selected.date_of_birth)}</span></p></div></div>
+        <div className="patients-quick-actions" aria-label="Acciones del paciente">
+          <Button className="patients-action--schedule" icon={<NavigationIcon name="calendar" />} onClick={() => onScheduleAppointment(selected)}>Agendar cita</Button>
+          {canAccessClinical && <Button className="patients-action--history" icon={<NavigationIcon name="report" />} variant="outline" onClick={() => setHistoryPatient(selected)}>Historia clínica</Button>}
+          <Button className="patients-action--edit" icon={<NavigationIcon name="patient" />} variant="outline" disabled={!fullPatient || fullPatient.id !== selected.id || Boolean(detailError)} onClick={() => { setEditing(fullPatient); setShowForm(true); }}>Editar</Button>
+          <Button className="patients-action--insurance" icon={<NavigationIcon name="clinical" />} variant="outline" onClick={() => setInsurancePatient(selected)}>Seguro</Button>
+        </div>
+        <section className="patients-personal" aria-label="Información personal"><h4 className="atlas-card-title">Información personal</h4><dl className="patients-facts">
+          <div><dt>Fecha de nacimiento</dt><dd>{birthLabel(selected.date_of_birth)}</dd></div>
+        </dl></section>
+        <section className="patients-contact" aria-label="Contacto"><h4 className="atlas-card-title">Contacto</h4><dl className="patients-facts">
+          <div><dt>Teléfono celular</dt><dd>{selected.phone || "Sin teléfono registrado"}</dd></div>
+          <div><dt>Correo</dt><dd>{selected.email || "Sin correo registrado"}</dd></div>
+        </dl></section>
       </div>
+      {detailError ? <Alert tone="danger" title="No se pudo cargar la ficha">{detailError}<Button variant="outline" onClick={() => setDetailVersion((version) => version + 1)}>Reintentar ficha</Button></Alert> : fullPatient?.id === selected.id ? <PatientDemographicDetails patient={fullPatient} /> : <LoadingState label="Cargando ficha..." />}
     </div>;
   }
 
