@@ -198,8 +198,10 @@ datos clínicos, seguro, emergencia y tutor usan iconos SVG locales, sin añadir
 dependencia ni iconos de texto. Se unificaron las etiquetas visibles de edad,
 teléfonos, correo, sexo, seguro y afiliación con la maqueta; el aviso de sangre se
 presenta una sola vez y mantiene que es un dato declarado, susceptible de
-confirmación posterior. Tutor conserva el tratamiento visual opcional y el footer
-permanece fijo. No se añade `Observaciones`: el modelo de paciente no tiene ese
+confirmación posterior. La pregunta de seguro y sus opciones Sí/No comparten fila
+en escritorio para conservar la altura; `Plan` permanece debajo porque forma parte
+del contrato vigente de la afiliación. Tutor conserva el tratamiento visual
+opcional y el footer permanece fijo. No se añade `Observaciones`: el modelo de paciente no tiene ese
 campo y las notas pertenecen a la historia clínica, por lo que mostrar un control
 sin persistencia o crear otra fuente clínica de verdad sería incorrecto.
 
