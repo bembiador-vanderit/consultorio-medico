@@ -216,22 +216,42 @@ test("mobile patient actions preserve clinical guard and accessible heading focu
 });
 
 
-test("new form contains personal and clinical sections with independent phones and contacts", async () => {
+test("new form uses two accessible tabs and preserves values while switching folders", async () => {
   await mount(["admin"]); await click(button("+ Nuevo paciente"));
-  assert.ok(panel().querySelector('section[aria-label="Datos personales"]'));
-  assert.ok(panel().querySelector('section[aria-label="Datos clínicos"]'));
+  const dialog = panel();
+  const tablist = dialog.querySelector('[role="tablist"][aria-label="Secciones de la ficha del paciente"]');
+  assert.ok(tablist);
+  const [personalTab, clinicalTab] = [...tablist.querySelectorAll('[role="tab"]')];
+  const personalPanel = dialog.querySelector('section[aria-label="Datos personales"]');
+  const clinicalPanel = dialog.querySelector('section[aria-label="Datos clínicos"]');
+  assert.equal(personalTab.getAttribute("aria-selected"), "true"); assert.equal(personalPanel.hidden, false);
+  assert.equal(clinicalTab.getAttribute("aria-selected"), "false"); assert.equal(clinicalPanel.hidden, true);
+  assert.equal(personalTab.getAttribute("aria-controls"), personalPanel.id);
+  assert.equal(clinicalTab.getAttribute("aria-controls"), clinicalPanel.id);
+
   for (const [label, next] of [["Nombre", "Nuevo"], ["Apellido", "Ficticio"], ["Fecha de nacimiento", "2000-01-01"],
     ["Tipo de documento", "passport"], ["Número de documento", "test-123"], ["Teléfono celular", "555001"], ["Teléfono de casa", "555002"],
     ["Dirección", "Calle ficticia"], ["Provincia", "Provincia ficticia"], ["Municipio / localidad", "7"], ["Nacionalidad", "Ficticia"],
-    ["Ocupación / profesión", "Profesión ficticia"], ["Sexo registrado para fines clínicos", "female"], ["Tipo sanguíneo", "AB-"],
-    ["Nombre del contacto de emergencia", "Contacto ficticio"], ["Parentesco del contacto de emergencia", "Familiar"],
-    ["Celular del contacto de emergencia", "555003"], ["Casa del contacto de emergencia", "555004"],
-    ["Nombre del tutor / responsable", "Tutor ficticio"], ["Parentesco del tutor / responsable", "Responsable"],
-    ["Celular del tutor / responsable", "555005"], ["Casa del tutor / responsable", "555006"]]) await value(field(label, panel()), next);
-  assert.ok(field("Edad calculada", panel()).readOnly);
-  assert.match(field("Edad calculada", panel()).value, /años/);
-  assert.match(panel().textContent, /no equivale a confirmación de laboratorio/);
-  await submit(panel().querySelector("form"));
+    ["Ocupación / profesión", "Profesión ficticia"], ["Nombre del contacto de emergencia", "Contacto ficticio"],
+    ["Parentesco del contacto de emergencia", "Familiar"], ["Celular del contacto de emergencia", "555003"],
+    ["Casa del contacto de emergencia", "555004"], ["Nombre del tutor / responsable", "Tutor ficticio"],
+    ["Parentesco del tutor / responsable", "Responsable"], ["Celular del tutor / responsable", "555005"],
+    ["Casa del tutor / responsable", "555006"]]) await value(field(label, dialog), next);
+  assert.ok(field("Edad calculada", dialog).readOnly);
+  assert.match(field("Edad calculada", dialog).value, /años/);
+
+  await click(clinicalTab);
+  assert.equal(personalPanel.hidden, true); assert.equal(clinicalPanel.hidden, false);
+  await value(field("Sexo registrado para fines clínicos", dialog), "female");
+  await value(field("Tipo sanguíneo", dialog), "AB-");
+  assert.match(clinicalPanel.textContent, /no equivale a confirmación de laboratorio/);
+
+  await click(personalTab);
+  assert.equal(field("Teléfono celular", dialog).value, "555001");
+  assert.equal(field("Teléfono de casa", dialog).value, "555002");
+  assert.equal(field("Número de documento", dialog).value, "test-123");
+
+  await submit(dialog.querySelector("form"));
   const data = JSON.parse(requests.find((item) => item.method === "post" && item.url === "/patients").data);
   assert.equal(data.phone, "555001"); assert.equal(data.home_phone, "555002");
   assert.equal(data.emergency_contact_mobile, "555003"); assert.equal(data.emergency_contact_home_phone, "555004");
