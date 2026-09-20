@@ -3,15 +3,15 @@ import { cx } from "./primitives";
 
 type FieldContextValue = { id: string; describedBy?: string; invalid: boolean; required?: boolean };
 const FieldContext = createContext<FieldContextValue | null>(null);
-type FieldProps = { id?: string; label: string; description?: string; error?: string; required?: boolean; requiredLabel?: string; children: ReactNode };
+type FieldProps = { id?: string; label: string; description?: string; error?: string; required?: boolean; requiredLabel?: string; className?: string; children: ReactNode };
 
 /** One control per FormField. Use a fieldset/FormSection for checkbox or radio groups. */
-export function FormField({ id: explicitId, label, description, error, required, requiredLabel = "(obligatorio)", children }: FieldProps) {
+export function FormField({ id: explicitId, label, description, error, required, requiredLabel = "(obligatorio)", className, children }: FieldProps) {
   const generatedId = useId();
   const id = explicitId ?? generatedId;
   const describedBy = [description && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
   return <FieldContext.Provider value={{ id, describedBy, invalid: Boolean(error), required }}>
-    <div className="atlas-field"><label htmlFor={id} className="atlas-label">{label}{required && <span> {requiredLabel}</span>}</label>
+    <div className={cx("atlas-field", className)}><label htmlFor={id} className="atlas-label">{label}{required && <span> {requiredLabel}</span>}</label>
       {children}{description && <p id={`${id}-help`} className="atlas-help">{description}</p>}
       {error && <p id={`${id}-error`} className="atlas-field-error">{error}</p>}
     </div>
@@ -49,6 +49,6 @@ function Choice({ label, type, className, ...props }: ChoiceProps & { type: "che
 }
 export function Checkbox(props: ChoiceProps) { return <Choice {...props} type="checkbox" />; }
 export function Radio(props: ChoiceProps) { return <Choice {...props} type="radio" />; }
-export function FormSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
-  return <fieldset className="atlas-form-section"><legend className="atlas-card-title">{title}</legend>{description && <p className="atlas-help">{description}</p>}<div className="atlas-form-grid">{children}</div></fieldset>;
+export function FormSection({ title, description, className, children }: { title: string; description?: string; className?: string; children: ReactNode }) {
+  return <fieldset className={cx("atlas-form-section", className)}><legend className="atlas-card-title">{title}</legend>{description && <p className="atlas-help">{description}</p>}<div className="atlas-form-grid">{children}</div></fieldset>;
 }

@@ -24,8 +24,8 @@ export default function PatientDemographicFields({ value, onChange, section }: P
   }, [section]);
 
   const change = (key: keyof PatientDemographics, next: string) => onChange({ ...value, [key]: next || null });
-  const input = (key: keyof PatientDemographics, label: string, maxLength = 100, type = "text") =>
-    <FormField key={key} label={label}><Input type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(event) => change(key, event.target.value)} /></FormField>;
+  const input = (key: keyof PatientDemographics, label: string, maxLength = 100, type = "text", className?: string) =>
+    <FormField key={key} label={label} className={className}><Input type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(event) => change(key, event.target.value)} /></FormField>;
 
   if (section === "clinical-basic") return <FormSection title="Datos clínicos básicos" description="Datos registrados en la ficha del paciente.">
     <FormField label="Sexo registrado para fines clínicos">
@@ -43,13 +43,13 @@ export default function PatientDemographicFields({ value, onChange, section }: P
   </FormSection>;
 
   if (section === "clinical-contacts") return <>
-    <FormSection title="Contacto de emergencia" description="Opcional.">
+    <FormSection title="Contacto de emergencia" description="Opcional." className="patient-form-contacts-section">
       {input("emergency_contact_name", "Nombre del contacto de emergencia", 150)}
       {input("emergency_contact_relationship", "Parentesco del contacto de emergencia")}
       {input("emergency_contact_mobile", "Celular del contacto de emergencia", 30, "tel")}
       {input("emergency_contact_home_phone", "Casa del contacto de emergencia", 30, "tel")}
     </FormSection>
-    <FormSection title="Tutor / responsable" description="Opcional; registre los datos cuando corresponda.">
+    <FormSection title="Tutor / responsable" description="Opcional; registre los datos cuando corresponda." className="patient-form-contacts-section">
       {input("guardian_name", "Nombre del tutor / responsable", 150)}
       {input("guardian_relationship", "Parentesco del tutor / responsable")}
       {input("guardian_mobile", "Celular del tutor / responsable", 30, "tel")}
@@ -58,8 +58,8 @@ export default function PatientDemographicFields({ value, onChange, section }: P
   </>;
 
   return <>
-    <FormSection title="Dirección">
-      {input("address", "Dirección", 500)}
+    <FormSection title="Dirección" className="patient-form-address-section">
+      {input("address", "Dirección", 500, "text", "patient-form-wide")}
       {input("province", "Provincia")}
       <FormField label="Municipio / localidad">
         <Select disabled={localityError} value={value.locality_id ?? ""} onChange={(event) => onChange({ ...value, locality_id: event.target.value ? Number(event.target.value) : null })}>

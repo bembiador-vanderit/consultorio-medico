@@ -177,10 +177,10 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
               <FormField label="Fecha de nacimiento" required><Input type="date" max={todayDate()} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></FormField>
               <FormField label="Edad calculada"><Input readOnly value={patientAgeLabel(dateOfBirth)} /></FormField>
             </FormSection>
-            <FormSection title="Información de contacto">
+            <FormSection title="Información de contacto" className="patient-form-contact-section">
               <FormField label="Teléfono celular"><Input type="tel" maxLength={30} autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></FormField>
               <FormField label="Teléfono de casa"><Input type="tel" maxLength={30} value={demographics.home_phone ?? ""} onChange={(event) => setDemographics({ ...demographics, home_phone: event.target.value || null })} /></FormField>
-              <div className="patient-form-wide"><FormField label="Correo"><Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FormField></div>
+              <FormField label="Correo" className="patient-form-contact-email"><Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FormField>
             </FormSection>
             <PatientDemographicFields value={demographics} onChange={setDemographics} section="personal" />
           </div>

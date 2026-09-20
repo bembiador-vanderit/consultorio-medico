@@ -181,11 +181,14 @@ otro frontend en ese puerto ni un montaje desactualizado. Se reinició solamente
 contenedor frontend, sin eliminar su volumen, y `vite.config.ts` activa polling
 para que las modificaciones futuras invaliden esa caché de transformación.
 
-El ajuste posterior aplica el ancho aprobado `min(92vw, 1150px)`, conserva el
-footer del diálogo y usa dos columnas desde 840 px; por debajo se apilan las dos
-carpetas y sus campos. Las acciones rápidas de la ficha están inmediatamente tras
-la identidad; en el drawer móvil forman dos columnas desde 360 px y una columna
-en 320 px para evitar desborde y mantener objetivos táctiles de 44 px.
+El ajuste posterior aplica `min(96rem, calc(100vw - 2rem))`, conserva el footer
+del diálogo y muestra las dos carpetas en paralelo desde 1180 px; por debajo se
+apilan antes de comprimir sus controles. En escritorio grande, contacto y los
+contactos de emergencia/tutor usan tres columnas; en ancho intermedio, celular y
+casa comparten fila y correo ocupa una fila completa. Las acciones rápidas de la
+ficha están inmediatamente tras la identidad; en el drawer móvil forman dos
+columnas desde 360 px y una columna en 320 px para evitar desborde y mantener
+objetivos táctiles de 44 px.
 
 La validación posterior de la ficha detectó un segundo problema de layout: antes
 de resolver `GET /patients/{id}`, el resumen tenía espacio por contener solo la

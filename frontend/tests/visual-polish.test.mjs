@@ -58,8 +58,11 @@ test("mobile heading stays unboxed while patient actions retain 44px and clinica
 test("patient registration uses the approved wide two-folder layout without obsolete tabs", async () => {
   const css = await read("pages/patients.css");
   const foundation = await read("ui/foundation.css");
-  assert.match(css, /\.atlas-dialog:has\(\.patient-form\)\s*\{[^}]*width:min\(92vw,1150px\);[^}]*max-width:calc\(100vw - 1rem\)/);
-  assert.match(css, /\.patient-form-columns\s*\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.atlas-dialog:has\(\.patient-form\)\s*\{[^}]*width:min\(96rem,calc\(100vw - 2rem\)\);[^}]*max-height:calc\(100dvh - 2rem\)/);
+  assert.match(css, /\.patient-form-columns\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(css, /@media \(min-width:1180px\)[\s\S]*?\.patient-form-columns\s*\{\s*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.patient-form-contact-email\s*\{\s*grid-column:1\/-1/);
+  assert.match(css, /@media \(min-width:1366px\)[\s\S]*?patient-form-contact-section \.atlas-form-grid,.patient-form-contacts-section \.atlas-form-grid\s*\{\s*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(css, /@media \(max-width:839px\)[\s\S]*?\.patient-form-columns\s*\{\s*grid-template-columns:minmax\(0,1fr\)/);
   assert.match(foundation, /\.atlas-dialog-body\s*\{[^}]*overflow-y:\s*auto/);
   assert.doesNotMatch(css, /patient-form-tabs|patient-form-tab|section\[hidden\]/);

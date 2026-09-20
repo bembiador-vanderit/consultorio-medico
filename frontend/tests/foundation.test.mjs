@@ -45,6 +45,8 @@ test("FormField associates label, required, help and error with each control", (
     assert.match(html, /required=""/);
     assert.doesNotMatch(html, /ignored-override/);
   }
+  assert.match(render(ui.FormField, { id: "styled", label: "Campo", className: "patient-form-wide" }, h(ui.Input)), /class="atlas-field patient-form-wide"/);
+  assert.match(render(ui.FormSection, { title: "Grupo", className: "patient-form-contact-section" }, h(ui.Input)), /class="atlas-form-section patient-form-contact-section"/);
 });
 
 test("automatically generated field IDs are unique and match labels", () => {
