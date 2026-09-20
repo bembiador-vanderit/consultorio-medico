@@ -44,11 +44,26 @@ test("mobile heading stays unboxed while patient actions retain 44px and clinica
   assert.match(css, /patients-action--history\s*\{[^}]*--atlas-success/);
   assert.match(css, /\.atlas-dialog--drawer \.patients-quick-actions\s*\{[^}]*width:100%;[^}]*margin-inline:0;[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /\.atlas-dialog--drawer \.patients-quick-actions>\.atlas-button\s*\{[^}]*width:100%;[^}]*min-width:0;[^}]*margin:0;[^}]*justify-self:stretch/);
-  assert.match(css, /\.atlas-dialog--drawer \.patients-action--edit\s*\{\s*grid-column:1/);
-  assert.match(css, /\.atlas-dialog--drawer \.patients-action--insurance\s*\{\s*grid-column:2/);
+  assert.match(css, /\.atlas-dialog--drawer \.patients-action--schedule,.atlas-dialog--drawer \.patients-action--history\s*\{\s*grid-column:auto/);
+  assert.match(css, /max-width:359px[^}]*\.atlas-dialog--drawer \.patients-quick-actions\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
   const agenda = await read("index.css");
   assert.match(agenda, /\.agenda-event-status\s*\{[^}]*font-size:clamp\(\.8125rem,\.85vw,\.9rem\);[^}]*font-weight:700;[^}]*line-height:1\.2/);
   assert.match(agenda, /grid-template-rows:repeat\(3,minmax\(0,1fr\)\) auto/);
+});
+
+test("patient registration uses the approved wide two-folder layout without obsolete tabs", async () => {
+  const css = await read("pages/patients.css");
+  const foundation = await read("ui/foundation.css");
+  assert.match(css, /\.atlas-dialog:has\(\.patient-form\)\s*\{[^}]*width:min\(92vw,1150px\);[^}]*max-width:calc\(100vw - 1rem\)/);
+  assert.match(css, /\.patient-form-columns\s*\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /@media \(max-width:839px\)[\s\S]*?\.patient-form-columns\s*\{\s*grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(foundation, /\.atlas-dialog-body\s*\{[^}]*overflow-y:\s*auto/);
+  assert.doesNotMatch(css, /patient-form-tabs|patient-form-tab|section\[hidden\]/);
+});
+
+test("Vite watches the Windows bind mount so transformed modules cannot become stale", async () => {
+  const vite = await readFile(new URL("../vite.config.ts", import.meta.url), "utf8");
+  assert.match(vite, /watch:\s*\{\s*usePolling:\s*true,\s*interval:\s*300\s*\}/);
 });
 
 test("desktop dashboard scales fluidly without changing compact mobile navigation", async () => {

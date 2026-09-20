@@ -47,10 +47,9 @@
 @media (max-width:1023px) {
   .atlas-dialog--drawer .patients-quick-actions { width:100%; min-width:0; margin-inline:0; align-self:stretch; grid-template-columns:repeat(2,minmax(0,1fr)); }
   .atlas-dialog--drawer .patients-quick-actions>.atlas-button { width:100%; min-width:0; margin:0; justify-self:stretch; box-sizing:border-box; }
-  .atlas-dialog--drawer .patients-action--schedule,.atlas-dialog--drawer .patients-action--history { grid-column:1/-1; }
-  .atlas-dialog--drawer .patients-action--edit { grid-column:1; }
-  .atlas-dialog--drawer .patients-action--insurance { grid-column:2; }
+  .atlas-dialog--drawer .patients-action--schedule,.atlas-dialog--drawer .patients-action--history { grid-column:auto; }
 }
+@media (max-width:359px) { .atlas-dialog--drawer .patients-quick-actions { grid-template-columns:minmax(0,1fr); } }
 @media (max-width:639px) {
   .atlas-dialog--drawer:has(.patients-detail-content) .atlas-dialog-header { padding:var(--atlas-space-4); gap:var(--atlas-space-2); align-items:center; }
   .atlas-dialog--drawer:has(.patients-detail-content) .atlas-dialog-header h2 { font-size:1.0625rem; }
@@ -88,7 +87,7 @@
   .patients-quick-actions>.patients-action--schedule,.patients-quick-actions>.patients-action--history { grid-column:auto; }
 }
 
-.atlas-dialog:has(.patient-form) { width:min(74rem,calc(100vw - 2rem)); }
+.atlas-dialog:has(.patient-form) { width:min(92vw,1150px); max-width:calc(100vw - 1rem); }
 .patient-form { display:grid; gap:var(--atlas-space-4); min-width:0; }
 .patient-form-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--atlas-space-4); align-items:start; min-width:0; }
 .patient-form-folder { display:grid; gap:0; min-width:0; border:1px solid var(--atlas-border); border-radius:var(--atlas-radius-lg); overflow:hidden; background:var(--atlas-surface); }

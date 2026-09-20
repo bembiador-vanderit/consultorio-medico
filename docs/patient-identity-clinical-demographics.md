@@ -167,6 +167,26 @@ En consulta se explicita **ficha actual** y no se presenta como resultado histó
 
 ## Verificación
 
+### Runtime local del PR #44
+
+La comprobación de `localhost:5174` verificó el contenedor temporal
+`consultorio-44-manual`, su bind mount
+`C:\\proyectoconsultorio\\consultorio-medico\\frontend => /app`, la rama y el
+HEAD `ac1c19d7cb5656adcce126ee5a20717e8f8c4839`. Aunque el HTML respondía
+`Cache-Control: no-cache`, Vite conservaba en memoria módulos transformados de la
+versión anterior porque Chokidar no recibió los cambios del bind mount de Docker
+Desktop para Windows. El archivo en `/app` ya contenía las carpetas, pero el módulo
+servido aún contenía `activeTab` y `patient-form-tabs`. No hubo service worker,
+otro frontend en ese puerto ni un montaje desactualizado. Se reinició solamente el
+contenedor frontend, sin eliminar su volumen, y `vite.config.ts` activa polling
+para que las modificaciones futuras invaliden esa caché de transformación.
+
+El ajuste posterior aplica el ancho aprobado `min(92vw, 1150px)`, conserva el
+footer del diálogo y usa dos columnas desde 840 px; por debajo se apilan las dos
+carpetas y sus campos. Las acciones rápidas de la ficha están inmediatamente tras
+la identidad; en el drawer móvil forman dos columnas desde 360 px y una columna
+en 320 px para evitar desborde y mantener objetivos táctiles de 44 px.
+
 Las comprobaciones se ejecutan en contenedores aislados con datos ficticios, sin
 usar la base clínica. PostgreSQL desechable ejecuta además las pruebas concurrentes
 de pacientes y consultas. Se comprueba la cadena Alembic completa y la actualización

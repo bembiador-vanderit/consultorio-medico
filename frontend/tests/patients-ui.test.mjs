@@ -195,6 +195,8 @@ test("new form fields have unique labels and associated submit/cancel controls",
   assert.equal(new Set(ids).size, ids.length);
   for (const label of panel().querySelectorAll("label")) assert.ok(document.getElementById(label.htmlFor));
   const submitButton = button("Guardar paciente"); assert.equal(submitButton.getAttribute("form"), panel().querySelector("form").id);
+  assert.equal(submitButton.closest(".atlas-dialog-footer"), panel().querySelector(".atlas-dialog-footer"));
+  assert.equal(button("Cancelar").closest(".atlas-dialog-footer"), panel().querySelector(".atlas-dialog-footer"));
   await click(button("Cancelar")); assert.equal(panel(), undefined); assert.equal(document.body.style.overflow, "");
 });
 test("sorting stays local to fetched results and retains previous sortable fields", async () => {
