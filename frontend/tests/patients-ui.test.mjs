@@ -89,6 +89,19 @@ test("selection loads extended detail only for the selected patient", async () =
   assert.equal(requests.length, 2); await click(host.querySelectorAll(".patients-row")[1]);
   assert.match(host.querySelector(".patients-detail").textContent, /Sin teléfono registrado/); assert.doesNotMatch(host.querySelector(".patients-detail").textContent, /ana@example.test/);
 });
+test("patient quick actions stay directly below identity before extended details", async () => {
+  await mount(); await select();
+  const detail = host.querySelector(".patients-detail");
+  const summary = detail.querySelector(".patients-detail-summary");
+  const children = [...summary.children];
+  const identityIndex = children.findIndex((node) => node.classList.contains("patients-identity"));
+  const actionsIndex = children.findIndex((node) => node.classList.contains("patients-quick-actions"));
+  const personalIndex = children.findIndex((node) => node.getAttribute("aria-label") === "Información personal");
+  assert.equal(identityIndex, 0);
+  assert.equal(actionsIndex, 1);
+  assert.ok(personalIndex > actionsIndex);
+  assert.deepEqual([...summary.querySelectorAll(".patients-quick-actions button")].map((node) => node.textContent), ["Agendar cita", "Historia clínica", "Editar", "Seguro"]);
+});
 test("age is calculated correctly before/on birthday, leap dates and invalid/future DOB", () => {
   assert.equal(patientAge("1990-09-15", new Date(2026, 8, 14)), 35); assert.equal(patientAge("1990-09-15", new Date(2026, 8, 15)), 36);
   assert.equal(patientAge("2000-02-29", new Date(2025, 1, 28)), 24); assert.equal(patientAge("2000-02-29", new Date(2025, 2, 1)), 25);
