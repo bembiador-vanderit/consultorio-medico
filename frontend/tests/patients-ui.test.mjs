@@ -216,41 +216,27 @@ test("mobile patient actions preserve clinical guard and accessible heading focu
 });
 
 
-test("new form uses two accessible tabs and preserves values while switching folders", async () => {
+test("new form keeps the approved personal and clinical folders visible together", async () => {
   await mount(["admin"]); await click(button("+ Nuevo paciente"));
   const dialog = panel();
-  const tablist = dialog.querySelector('[role="tablist"][aria-label="Secciones de la ficha del paciente"]');
-  assert.ok(tablist);
-  const [personalTab, clinicalTab] = [...tablist.querySelectorAll('[role="tab"]')];
-  const personalPanel = dialog.querySelector('section[aria-label="Datos personales"]');
-  const clinicalPanel = dialog.querySelector('section[aria-label="Datos clínicos"]');
-  assert.equal(personalTab.getAttribute("aria-selected"), "true"); assert.equal(personalPanel.hidden, false);
-  assert.equal(clinicalTab.getAttribute("aria-selected"), "false"); assert.equal(clinicalPanel.hidden, true);
-  assert.equal(personalTab.getAttribute("aria-controls"), personalPanel.id);
-  assert.equal(clinicalTab.getAttribute("aria-controls"), clinicalPanel.id);
+  const folders = [...dialog.querySelectorAll(".patient-form-folder")];
+  assert.equal(folders.length, 2);
+  assert.match(folders[0].querySelector(".patient-form-folder-heading").textContent, /1.*Datos personales.*Información básica y de contacto/);
+  assert.match(folders[1].querySelector(".patient-form-folder-heading").textContent, /2.*Datos clínicos.*Información médica relevante/);
+  assert.equal(dialog.querySelector('[role="tablist"]'), null);
 
   for (const [label, next] of [["Nombre", "Nuevo"], ["Apellido", "Ficticio"], ["Fecha de nacimiento", "2000-01-01"],
     ["Tipo de documento", "passport"], ["Número de documento", "test-123"], ["Teléfono celular", "555001"], ["Teléfono de casa", "555002"],
     ["Dirección", "Calle ficticia"], ["Provincia", "Provincia ficticia"], ["Municipio / localidad", "7"], ["Nacionalidad", "Ficticia"],
-    ["Ocupación / profesión", "Profesión ficticia"], ["Nombre del contacto de emergencia", "Contacto ficticio"],
-    ["Parentesco del contacto de emergencia", "Familiar"], ["Celular del contacto de emergencia", "555003"],
-    ["Casa del contacto de emergencia", "555004"], ["Nombre del tutor / responsable", "Tutor ficticio"],
-    ["Parentesco del tutor / responsable", "Responsable"], ["Celular del tutor / responsable", "555005"],
-    ["Casa del tutor / responsable", "555006"]]) await value(field(label, dialog), next);
+    ["Ocupación / profesión", "Profesión ficticia"], ["Sexo registrado para fines clínicos", "female"], ["Tipo sanguíneo", "AB-"],
+    ["Nombre del contacto de emergencia", "Contacto ficticio"], ["Parentesco del contacto de emergencia", "Familiar"],
+    ["Celular del contacto de emergencia", "555003"], ["Casa del contacto de emergencia", "555004"],
+    ["Nombre del tutor / responsable", "Tutor ficticio"], ["Parentesco del tutor / responsable", "Responsable"],
+    ["Celular del tutor / responsable", "555005"], ["Casa del tutor / responsable", "555006"]]) await value(field(label, dialog), next);
+
   assert.ok(field("Edad calculada", dialog).readOnly);
   assert.match(field("Edad calculada", dialog).value, /años/);
-
-  await act(async () => { personalTab.focus(); personalTab.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); });
-  assert.equal(document.activeElement, clinicalTab);
-  assert.equal(personalPanel.hidden, true); assert.equal(clinicalPanel.hidden, false);
-  await value(field("Sexo registrado para fines clínicos", dialog), "female");
-  await value(field("Tipo sanguíneo", dialog), "AB-");
-  assert.match(clinicalPanel.textContent, /no equivale a confirmación de laboratorio/);
-
-  await click(personalTab);
-  assert.equal(field("Teléfono celular", dialog).value, "555001");
-  assert.equal(field("Teléfono de casa", dialog).value, "555002");
-  assert.equal(field("Número de documento", dialog).value, "test-123");
+  assert.match(folders[1].textContent, /no sustituye una confirmación de laboratorio/);
 
   await submit(dialog.querySelector("form"));
   const data = JSON.parse(requests.find((item) => item.method === "post" && item.url === "/patients").data);
@@ -260,6 +246,18 @@ test("new form uses two accessible tabs and preserves values while switching fol
   assert.equal(data.document_type, "passport"); assert.equal(data.document_number, "test-123");
   assert.equal(data.locality_id, 7); assert.equal(data.blood_type, "AB-"); assert.equal(data.registered_sex, "female");
   assert.equal(Object.hasOwn(data, "age"), false);
+});
+
+test("mobile patient form keeps both folders in one semantic flow", async () => {
+  setDesktop(false); await mount(["admin"]); await click(button("+ Nuevo paciente"));
+  const dialog = panel();
+  const folders = [...dialog.querySelectorAll(".patient-form-folder")];
+  assert.equal(folders.length, 2);
+  assert.match(folders[0].textContent, /Datos personales/);
+  assert.match(folders[1].textContent, /Datos clínicos/);
+  assert.ok(field("Teléfono celular", dialog));
+  assert.ok(field("Teléfono de casa", dialog));
+  assert.ok(button("Guardar paciente", dialog));
 });
 test("extended details are fetched on demand and hydrate editing", async () => {
   const extended = { ...a, document_type: "other", document_number: "TEST123", home_phone: "555007", address: "Calle ficticia", blood_type: "O+" };
