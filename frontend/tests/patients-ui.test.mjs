@@ -240,7 +240,8 @@ test("new form uses two accessible tabs and preserves values while switching fol
   assert.ok(field("Edad calculada", dialog).readOnly);
   assert.match(field("Edad calculada", dialog).value, /años/);
 
-  await click(clinicalTab);
+  await act(async () => { personalTab.focus(); personalTab.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); });
+  assert.equal(document.activeElement, clinicalTab);
   assert.equal(personalPanel.hidden, true); assert.equal(clinicalPanel.hidden, false);
   await value(field("Sexo registrado para fines clínicos", dialog), "female");
   await value(field("Tipo sanguíneo", dialog), "AB-");
