@@ -187,6 +187,17 @@ carpetas y sus campos. Las acciones rápidas de la ficha están inmediatamente t
 la identidad; en el drawer móvil forman dos columnas desde 360 px y una columna
 en 320 px para evitar desborde y mantener objetivos táctiles de 44 px.
 
+La validación posterior de la ficha detectó un segundo problema de layout: antes
+de resolver `GET /patients/{id}`, el resumen tenía espacio por contener solo la
+carga breve; al llegar `PatientDemographicDetails`, su `clientHeight` se reducía
+a `0` mientras su `scrollHeight` quedaba en `404`, y el detalle completo elevaba
+el `scrollHeight` del contenedor a `1057`. Era una contracción de Flexbox, no una
+regla de permisos ni un cambio de estado de las acciones. El detalle ahora separa
+`patients-detail-fixed` (identidad y acciones, `flex: 0 0 auto`) de
+`patients-detail-body` (única región desplazable, `flex: 1 1 auto`). Las pruebas
+diferidas verifican ambas transiciones: éxito y error de la ficha conservan las
+acciones en la zona fija; solo el cuerpo se actualiza.
+
 Las comprobaciones se ejecutan en contenedores aislados con datos ficticios, sin
 usar la base clínica. PostgreSQL desechable ejecuta además las pruebas concurrentes
 de pacientes y consultas. Se comprueba la cadena Alembic completa y la actualización

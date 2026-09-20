@@ -32,6 +32,10 @@ test("desktop patient detail reserves 38 percent with bounded tracks and long te
   assert.match(css, /\.patients-contact \.patients-facts\s*\{/);
   assert.match(css, /\.patients-master,.patients-detail\s*\{[^}]*min-width:0/);
   assert.match(css, /max-width:1023px[^\n]*grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(css, /\.patients-detail-scroll\s*\{[^}]*display:flex;[^}]*overflow:hidden/);
+  assert.match(css, /\.patients-detail-fixed\s*\{[^}]*flex:0 0 auto;[^}]*flex-shrink:0/);
+  assert.match(css, /\.patients-detail-body\s*\{[^}]*flex:1 1 auto;[^}]*min-height:0;[^}]*overflow-y:auto/);
+  assert.doesNotMatch(css, /patients-detail-summary/);
 });
 
 test("mobile heading stays unboxed while patient actions retain 44px and clinical hierarchy", async () => {

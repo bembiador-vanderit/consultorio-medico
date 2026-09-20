@@ -8,6 +8,7 @@
 .patients-list-header>.atlas-field { max-width:12rem; min-width:0; }
 .patients-list-header .atlas-input { min-height:40px; padding-block:var(--atlas-space-2); font-size:var(--atlas-type-secondary); }
 .patients-list-scroll,.patients-detail-scroll { overflow-y:auto; overscroll-behavior:contain; min-height:0; flex:1; }
+.patients-detail-scroll { display:flex; overflow:hidden; }
 .patients-list { list-style:none; padding:0; margin:0; }
 .patients-row { display:grid; grid-template-columns:2.5rem minmax(0,1.2fr) minmax(0,1fr) auto; align-items:center; gap:var(--atlas-space-3); width:100%; padding:var(--atlas-space-4); border-bottom:1px solid var(--atlas-border); border-left:3px solid transparent; text-align:left; background:var(--atlas-surface); cursor:pointer; min-width:0; }
 .patients-row:hover { background:var(--atlas-surface-secondary); }
@@ -20,8 +21,9 @@
 .patients-row-identity>span,.patients-row-contact { font-size:var(--atlas-type-caption); color:var(--atlas-text-muted); }
 .patients-row-status { font-size:var(--atlas-type-caption); color:var(--atlas-action); font-weight:600; }
 .patients-list-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--atlas-space-2); padding:var(--atlas-space-3) var(--atlas-space-4); border-top:1px solid var(--atlas-border); flex-shrink:0; }
-.patients-detail-content { padding:var(--atlas-space-4); display:flex; flex-direction:column; height:100%; gap:var(--atlas-space-4); min-width:0; min-height:0; }
-.patients-detail-summary { display:grid; gap:var(--atlas-space-4); flex:0 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.patients-detail-content { padding:var(--atlas-space-4); display:flex; flex:1 1 auto; flex-direction:column; height:100%; gap:var(--atlas-space-4); min-width:0; min-height:0; overflow:hidden; }
+.patients-detail-fixed { display:grid; gap:var(--atlas-space-4); flex:0 0 auto; flex-shrink:0; min-width:0; }
+.patients-detail-body { display:grid; gap:var(--atlas-space-4); flex:1 1 auto; min-width:0; min-height:0; overflow-y:auto; overscroll-behavior:contain; align-content:start; }
 .atlas-dialog-body:has(>.patients-detail-content) { display:flex; flex:1; min-height:0; }
 .atlas-dialog-body>.patients-detail-content { padding:0; }
 .patients-identity { display:flex; align-items:center; gap:var(--atlas-space-3); }
@@ -54,7 +56,7 @@
   .atlas-dialog--drawer:has(.patients-detail-content) .atlas-dialog-header { padding:var(--atlas-space-4); gap:var(--atlas-space-2); align-items:center; }
   .atlas-dialog--drawer:has(.patients-detail-content) .atlas-dialog-header h2 { font-size:1.0625rem; }
   .atlas-dialog--drawer:has(.patients-detail-content) .atlas-dialog-body { padding:var(--atlas-space-4); }
-  .patients-detail-content,.patients-detail-summary { gap:var(--atlas-space-3); }
+  .patients-detail-content,.patients-detail-fixed,.patients-detail-body { gap:var(--atlas-space-3); }
   .patients-identity .patients-avatar { width:2.75rem; height:2.75rem; }
   .patients-identity-age>span { display:none; }
   .patients-quick-actions { padding-top:var(--atlas-space-3); }
@@ -82,7 +84,7 @@
 @media (max-width:639px) { .patients-search { align-items:stretch; flex-direction:column; }.patients-search-actions>.atlas-button { flex:1; }.patients-row { grid-template-columns:2.5rem minmax(0,1fr); padding:var(--atlas-space-3); }.patients-row-contact { grid-column:2; }.patients-row-status { display:none; }.patients-list-header { align-items:flex-start; flex-direction:column; }.patients-list-header>.atlas-field { width:100%; max-width:none; }.patients-list-scroll { max-height:none; }.patients-list-footer { flex-direction:column; align-items:flex-start; }.patient-form-actions { display:grid; grid-template-columns:minmax(0,1fr); }.patient-form-actions>.atlas-button { width:100%; }.patients-identity { align-items:flex-start; } }
 
 @media (min-width:1024px) {
-  .patients-detail-content,.patients-detail-summary { gap:var(--atlas-space-3); }
+  .patients-detail-content,.patients-detail-fixed,.patients-detail-body { gap:var(--atlas-space-3); }
   .patients-personal .patients-facts>div { grid-template-columns:minmax(0,1fr) auto; align-items:baseline; gap:var(--atlas-space-2); }
   .patients-quick-actions>.patients-action--schedule,.patients-quick-actions>.patients-action--history { grid-column:auto; }
 }

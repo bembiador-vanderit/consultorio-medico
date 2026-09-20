@@ -46,7 +46,7 @@ async function value(control, next) { await act(async () => { Object.getOwnPrope
 async function submit(form) { await act(async () => form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }))); }
 async function select() { await click(host.querySelector(".patients-row")); }
 const mainRequests = () => requests.filter((item) => item.url === "/patients" && item.method === "get");
-function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
+function deferred() { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
 
 test("initial workspace uses one main request and only real identity fields", async () => {
   await mount();
@@ -92,15 +92,43 @@ test("selection loads extended detail only for the selected patient", async () =
 test("patient quick actions stay directly below identity before extended details", async () => {
   await mount(); await select();
   const detail = host.querySelector(".patients-detail");
-  const summary = detail.querySelector(".patients-detail-summary");
-  const children = [...summary.children];
+  const fixed = detail.querySelector(".patients-detail-fixed");
+  const body = detail.querySelector(".patients-detail-body");
+  const children = [...fixed.children];
   const identityIndex = children.findIndex((node) => node.classList.contains("patients-identity"));
   const actionsIndex = children.findIndex((node) => node.classList.contains("patients-quick-actions"));
-  const personalIndex = children.findIndex((node) => node.getAttribute("aria-label") === "Información personal");
   assert.equal(identityIndex, 0);
   assert.equal(actionsIndex, 1);
-  assert.ok(personalIndex > actionsIndex);
-  assert.deepEqual([...summary.querySelectorAll(".patients-quick-actions button")].map((node) => node.textContent), ["Agendar cita", "Historia clínica", "Editar", "Seguro"]);
+  assert.ok(body.querySelector('[aria-label="Información personal"]'));
+  assert.equal(body.querySelector(".patients-quick-actions"), null);
+  assert.deepEqual([...fixed.querySelectorAll(".patients-quick-actions button")].map((node) => node.textContent), ["Agendar cita", "Historia clínica", "Editar", "Seguro"]);
+});
+test("quick actions remain in the fixed area when full patient detail resolves", async () => {
+  const pending = deferred(); response = (config) => config.url === "/patients/1" ? pending.promise : undefined;
+  await mount(); await select();
+  const detail = host.querySelector(".patients-detail");
+  const fixed = detail.querySelector(".patients-detail-fixed");
+  const body = detail.querySelector(".patients-detail-body");
+  const actions = fixed.querySelector(".patients-quick-actions");
+  assert.deepEqual([...actions.querySelectorAll("button")].map((node) => node.textContent), ["Agendar cita", "Historia clínica", "Editar", "Seguro"]);
+  assert.ok(button("Editar").disabled); assert.match(body.textContent, /Cargando ficha/);
+  await act(async () => pending.resolve({ ...a, address: "Calle de prueba" }));
+  assert.equal(detail.querySelector(".patients-quick-actions"), actions);
+  assert.equal(actions.closest(".patients-detail-fixed"), fixed);
+  assert.equal(body.querySelector(".patients-quick-actions"), null);
+  assert.match(body.textContent, /Calle de prueba/); assert.equal(button("Editar").disabled, false);
+});
+test("quick actions remain fixed when full patient detail fails", async () => {
+  const pending = deferred(); response = (config) => config.url === "/patients/1" ? pending.promise : undefined;
+  await mount(); await select();
+  const detail = host.querySelector(".patients-detail");
+  const fixed = detail.querySelector(".patients-detail-fixed");
+  const body = detail.querySelector(".patients-detail-body");
+  const actions = fixed.querySelector(".patients-quick-actions");
+  await act(async () => pending.reject({ response: { data: { detail: "No se pudo cargar la ficha" } } }));
+  assert.equal(detail.querySelector(".patients-quick-actions"), actions);
+  assert.equal(body.querySelector(".patients-quick-actions"), null);
+  assert.ok(button("Editar").disabled); assert.match(body.querySelector('[role="alert"]').textContent, /No se pudo cargar la ficha/);
 });
 test("age is calculated correctly before/on birthday, leap dates and invalid/future DOB", () => {
   assert.equal(patientAge("1990-09-15", new Date(2026, 8, 14)), 35); assert.equal(patientAge("1990-09-15", new Date(2026, 8, 15)), 36);
