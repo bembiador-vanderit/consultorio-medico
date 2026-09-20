@@ -503,6 +503,9 @@ test("consulta completed se mantiene legible y el historial previo se abre/cierr
     if (config.method === "get" && config.url === "/clinical-history/18/diagnoses") return ok(config, []);
     if (config.method === "get" && config.url === "/clinical-history/18/prescriptions") return ok(config, []);
     if (config.method === "get" && config.url === "/clinical-history/18/requested-tests") return ok(config, []);
+    if (config.method === "get" && config.url === "/clinical-history/18/addenda") return ok(config, []);
+    if (config.method === "get" && config.url === "/clinical-history/18/laboratory-orders") return ok(config, []);
+    if (config.method === "get" && config.url === "/clinical-history/18/study-orders") return ok(config, []);
     return undefined;
   };
   await click(button("Ver historial completo"));
@@ -519,16 +522,21 @@ function historicalResponse(id, kind) {
   if (kind === "vital-signs") return { ...vitalSignsFixture, clinical_history_id: id, systolic_pressure: id };
   if (kind === "diagnoses") return [{ ...diagnosisFixture, clinical_history_id: id, description: `Diagnóstico histórico ${id}` }];
   if (kind === "prescriptions") return [{ ...prescriptionFixture, clinical_history_id: id, medication: `Medicamento histórico ${id}` }];
-  return [{ ...requestedTestFixture, clinical_history_id: id, test_name: `Solicitud histórica ${id}` }];
+  if (kind === "requested-tests") return [{ ...requestedTestFixture, clinical_history_id: id, test_name: `Solicitud histórica ${id}` }];
+  if (kind === "addenda") return [{ id: id * 10, clinical_history_id: id, author_user_id: 12, author_name: "Dra. Prueba", reason: "Aclaración", note: `Nota histórica ${id}`, created_at: "2026-09-17T10:00:00" }];
+  if (kind === "laboratory-orders") return [{ id: id * 10, clinical_history_id: id, patient_name: "Paciente de prueba", doctor_name: "Dra. Prueba", center_name: "Centro de prueba", specialty_name: "Cardiología ficticia", status: "ordered", is_additional: false, notes: `Nota laboratorio ${id}`, created_at: "2026-09-17T10:00:00", items: [{ id: id * 100, laboratory_test_id: 31, test_code: "LAB-FICT", test_name: `Laboratorio histórico ${id}`, test_category: "Laboratorio", custom_note: null }] }];
+  if (kind === "study-orders") return [{ id: id * 10, clinical_history_id: id, patient_name: "Paciente de prueba", doctor_name: "Dra. Prueba", center_name: "Centro de prueba", specialty_name: "Cardiología ficticia", status: "ordered", is_additional: false, notes: `Nota estudio ${id}`, created_at: "2026-09-17T10:00:00", items: [{ id: id * 100, medical_study_id: 21, modality: "study", study_name: `Estudio histórico ${id}`, region_description: "Abdomen", contrast: "not_applicable", clinical_notes: "Detalle histórico" }] }];
+  return [];
 }
 
 function deferHistoricalReads(config) {
-  const match = /^\/clinical-history\/(18|19)\/(vital-signs|diagnoses|prescriptions|requested-tests)$/.exec(config.url);
+  if (/^\/(laboratory-orders|study-orders)\/\d+\/pdf$/.test(config.url)) return ok(config, new Blob(["fixture"]));
+  const match = /^\/clinical-history\/(18|19)\/(vital-signs|diagnoses|prescriptions|requested-tests|addenda|laboratory-orders|study-orders)$/.exec(config.url);
   if (!match) return undefined;
   return new Promise((resolve, reject) => previousRequests.push({ id: Number(match[1]), kind: match[2], config, resolve, reject }));
 }
 
-test("historial anterior conserva lectura por episodio y documenta que las órdenes estructuradas no forman parte del modal actual", async () => {
+test("historial anterior comparte la proyección clínica completa y conserva PDFs estructurados", async () => {
   currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
   currentHistory = clone(clinicalHistoryCompleted);
   const historical = clone(legacyClinicalHistory);
@@ -544,8 +552,15 @@ test("historial anterior conserva lectura por episodio y documenta que las órde
   assert.match(dialog.textContent, /Diagnóstico histórico 18/);
   assert.match(dialog.textContent, /Medicamento histórico 18/);
   assert.match(dialog.textContent, /Solicitud histórica 18/);
-  assert.equal(calls.some((item) => item.url === "/clinical-history/18/laboratory-orders"), false);
-  assert.equal(calls.some((item) => item.url === "/clinical-history/18/study-orders"), false);
+  assert.match(dialog.textContent, /Laboratorio histórico 18/);
+  assert.match(dialog.textContent, /Estudio histórico 18/);
+  assert.match(dialog.textContent, /Nota histórica 18/);
+  const orderPdfButtons = [...dialog.querySelectorAll("button")].filter((item) => item.textContent?.trim() === "Descargar PDF");
+  assert.equal(orderPdfButtons.length, 2);
+  await click(orderPdfButtons[0]);
+  assert.ok(calls.some((item) => item.url === "/laboratory-orders/180/pdf"));
+  await click(orderPdfButtons[1]);
+  assert.ok(calls.some((item) => item.url === "/study-orders/180/pdf"));
 });
 
 test("historial anterior a → b ignora éxito y error tardíos, y el desmontaje invalida publicaciones pendientes", async () => {
@@ -565,8 +580,8 @@ test("historial anterior a → b ignora éxito y error tardíos, y el desmontaje
   await click(secondButton);
   const requestsA = previousRequests.filter((request) => request.id === historyA.id);
   const requestsB = previousRequests.filter((request) => request.id === historyB.id);
-  assert.equal(requestsA.length, 4);
-  assert.equal(requestsB.length, 4);
+  assert.equal(requestsA.length, 7);
+  assert.equal(requestsB.length, 7);
   for (const request of requestsA) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
   await settle();
   assert.equal(host.querySelector('[role="dialog"]'), null);

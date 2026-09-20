@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 
 import ClinicalOrdersSection from "../clinical/ClinicalOrdersSection";
+import HistoricalConsultationProjection from "./HistoricalConsultationProjection";
 import ConsultationHeader from "./ConsultationHeader";
 import AnamnesisModule from "./AnamnesisModule";
 import DiagnosesModule from "./DiagnosesModule";
 import PrescriptionsModule from "./PrescriptionsModule";
 import VitalSignsModule from "./VitalSignsModule";
 import { api } from "../../services/api";
-import { clinicalApi, clinicalErrorMessage } from "../../services/clinicalApi";
+import { clinicalApi, clinicalErrorMessage, isReadAborted } from "../../services/clinicalApi";
+import { loadHistoricalConsultationDetails } from "../../services/historicalConsultation";
 import { useConsultationBootstrap } from "../../hooks/useConsultationBootstrap";
 import type { Appointment } from "../../types/appointment";
 import type { ClinicalHistory, ClinicalHistoryContent, ConsultationContext, Diagnosis, Prescription, RequestedTest, VitalSigns } from "../../types/clinical";
+import type { HistoricalConsultationDetails } from "../../types/historicalConsultation";
 import type { User } from "../../types/user";
 
 type Props = { appointment: Appointment; onBack: () => void };
-type PreviousDetails = { consultation: ClinicalHistory; vitalSigns: VitalSigns | null; diagnoses: Diagnosis[]; prescriptions: Prescription[]; requestedTests: RequestedTest[] };
+type PreviousDetails = { consultation: ClinicalHistory; details: HistoricalConsultationDetails };
 
 export default function ConsultationWorkspace({ appointment, onBack }: Props) {
   const bootstrap = useConsultationBootstrap(appointment.id);
@@ -26,18 +29,21 @@ export default function ConsultationWorkspace({ appointment, onBack }: Props) {
   const [saving, setSaving] = useState(false); const [completing, setCompleting] = useState(false); const [loadingVitalSigns, setLoadingVitalSigns] = useState(false);
   const [downloadingSummaryPdf, setDownloadingSummaryPdf] = useState(false); const [downloadingPrescriptionPdf, setDownloadingPrescriptionPdf] = useState(false); const [downloadingTestsPdf, setDownloadingTestsPdf] = useState(false);
   const [saved, setSaved] = useState<ClinicalHistory | null>(null); const [error, setError] = useState("");
-  const [previousDetails, setPreviousDetails] = useState<PreviousDetails | null>(null); const [currentUser, setCurrentUser] = useState<User | null>(null); const [loadingPrevious, setLoadingPrevious] = useState(false);
+  const [previousDetails, setPreviousDetails] = useState<PreviousDetails | null>(null); const [currentUser, setCurrentUser] = useState<User | null>(null); const [loadingPreviousId, setLoadingPreviousId] = useState<number | null>(null);
   const previousRequestGeneration = useRef(0);
+  const previousRequestController = useRef<AbortController | null>(null);
   const isCompleted = saved?.status === "completed";
   const previousConsultations = context?.previous_consultations.filter((item) => item.appointment_id !== context.appointment_id) || [];
 
   useEffect(() => { void api.get<User>("/auth/me").then(({ data }) => setCurrentUser(data)).catch(() => setCurrentUser(null)); }, []);
   useEffect(() => {
     previousRequestGeneration.current += 1;
+    previousRequestController.current?.abort();
+    previousRequestController.current = null;
     setPreviousDetails(null);
-    setLoadingPrevious(false);
+    setLoadingPreviousId(null);
     setContext(null); setSaved(null); setDiagnoses([]); setPrescriptions([]); setRequestedTests([]); setVitalSigns(null); setLoadingVitalSigns(true); setError("");
-    return () => { previousRequestGeneration.current += 1; };
+    return () => { previousRequestGeneration.current += 1; previousRequestController.current?.abort(); previousRequestController.current = null; };
   }, [appointment.id, appointment.reason]);
   useEffect(() => {
     if (bootstrap.loading) return;
@@ -93,19 +99,20 @@ export default function ConsultationWorkspace({ appointment, onBack }: Props) {
 
   async function viewPrevious(consultation: ClinicalHistory) {
     const generation = ++previousRequestGeneration.current;
-    setLoadingPrevious(true); setError("");
+    previousRequestController.current?.abort();
+    const controller = new AbortController();
+    previousRequestController.current = controller;
+    setLoadingPreviousId(consultation.id); setError("");
     setPreviousDetails(null);
     try {
-      const [vitals, diagnosisList, prescriptionList, testList] = await Promise.all([
-        api.get<VitalSigns | null>(`/clinical-history/${consultation.id}/vital-signs`), api.get<Diagnosis[]>(`/clinical-history/${consultation.id}/diagnoses`), api.get<Prescription[]>(`/clinical-history/${consultation.id}/prescriptions`), api.get<RequestedTest[]>(`/clinical-history/${consultation.id}/requested-tests`),
-      ]);
+      const details = await loadHistoricalConsultationDetails(consultation.id, { signal: controller.signal });
       if (generation !== previousRequestGeneration.current) return;
-      setPreviousDetails({ consultation, vitalSigns: vitals.data, diagnoses: diagnosisList.data, prescriptions: prescriptionList.data, requestedTests: testList.data });
+      setPreviousDetails({ consultation, details });
     } catch (reason: any) {
-      if (generation !== previousRequestGeneration.current) return;
+      if (generation !== previousRequestGeneration.current || isReadAborted(reason)) return;
       setError(reason?.response?.data?.detail || "No fue posible cargar el historial anterior.");
     } finally {
-      if (generation === previousRequestGeneration.current) setLoadingPrevious(false);
+      if (generation === previousRequestGeneration.current) { setLoadingPreviousId(null); previousRequestController.current = null; }
     }
   }
 
@@ -127,7 +134,7 @@ export default function ConsultationWorkspace({ appointment, onBack }: Props) {
       <PrescriptionsModule episodeId={appointment.id} historyId={saved?.id ?? null} prescriptions={prescriptions} completed={isCompleted} onChange={setPrescriptions} onError={setError} downloadingPrescriptionPdf={downloadingPrescriptionPdf} downloadPrescriptionPdf={downloadPrescriptionPdf} />
       {saved ? <ClinicalOrdersSection historyId={saved.id} specialtyId={saved.specialty_id} completed={isCompleted} allowAdditional={Boolean(isCompleted && currentUser?.is_active && currentUser.roles.includes("doctor") && saved.doctor_id === currentUser.id)} /> : <div className="rounded-xl border border-dashed bg-white p-6 text-sm text-slate-600 shadow-sm">Guarda primero la consulta para crear órdenes estructuradas de laboratorio, estudios o procedimientos.</div>}
       {requestedTests.length > 0 && <section className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Solicitudes heredadas</h3><p className="text-sm text-slate-500">Solicitudes registradas con el formato anterior de Atlas.</p></div><button type="button" onClick={() => void downloadRequestedTestsPdf()} disabled={downloadingTestsPdf} className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-medium text-indigo-700 disabled:opacity-40">{downloadingTestsPdf ? "Generando PDF..." : "Descargar orden PDF"}</button></div><ul className="mt-4 space-y-2">{requestedTests.map((item) => <li key={item.id} className="rounded-lg bg-slate-50 p-3 text-sm font-medium">{item.test_name}</li>)}</ul></section>}
-    </div><aside className="space-y-4"><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Contexto de atención</h3><dl className="mt-3 space-y-3 text-sm"><div><dt className="text-slate-500">Paciente</dt><dd className="font-semibold">{appointment.patient_name}</dd></div><div><dt className="text-slate-500">Fecha de nacimiento</dt><dd className="font-semibold">{appointment.patient_date_of_birth}</dd></div><div><dt className="text-slate-500">Documento</dt><dd className="text-slate-500">No registrado en el modelo actual</dd></div><div><dt className="text-slate-500">Médico</dt><dd className="font-semibold">{appointment.doctor_name}</dd></div><div><dt className="text-slate-500">Centro</dt><dd className="font-semibold">{appointment.center_name ? `${appointment.center_name}${appointment.center_city ? ` · ${appointment.center_city}` : ""}` : "Sin centro"}</dd></div><div><dt className="text-slate-500">Motivo</dt><dd>{appointment.reason || "—"}</dd></div></dl><div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">appointment_id: <strong>{context?.appointment_id}</strong><br />doctor_id: <strong>{context?.doctor_id}</strong><br />center_id: <strong>{context?.center_id ?? "NULL"}</strong></div></div><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Consultas anteriores</h3>{previousConsultations.length ? <div className="mt-3 space-y-3">{previousConsultations.slice(0, 5).map((item) => <div key={item.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-medium">{item.consultation_date}</p><p className="mt-1 text-slate-600">{item.reason_for_visit || "Sin motivo registrado"}</p><button onClick={() => void viewPrevious(item)} className="mt-2 font-medium text-teal-700 hover:underline disabled:opacity-40">{loadingPrevious ? "Cargando..." : "Ver historial completo"}</button></div>)}</div> : <p className="mt-3 text-sm text-slate-500">No hay consultas anteriores.</p>}</div></aside></div>
+    </div><aside className="space-y-4"><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Contexto de atención</h3><dl className="mt-3 space-y-3 text-sm"><div><dt className="text-slate-500">Paciente</dt><dd className="font-semibold">{appointment.patient_name}</dd></div><div><dt className="text-slate-500">Fecha de nacimiento</dt><dd className="font-semibold">{appointment.patient_date_of_birth}</dd></div><div><dt className="text-slate-500">Documento</dt><dd className="text-slate-500">No registrado en el modelo actual</dd></div><div><dt className="text-slate-500">Médico</dt><dd className="font-semibold">{appointment.doctor_name}</dd></div><div><dt className="text-slate-500">Centro</dt><dd className="font-semibold">{appointment.center_name ? `${appointment.center_name}${appointment.center_city ? ` · ${appointment.center_city}` : ""}` : "Sin centro"}</dd></div><div><dt className="text-slate-500">Motivo</dt><dd>{appointment.reason || "—"}</dd></div></dl><div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">appointment_id: <strong>{context?.appointment_id}</strong><br />doctor_id: <strong>{context?.doctor_id}</strong><br />center_id: <strong>{context?.center_id ?? "NULL"}</strong></div></div><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Consultas anteriores</h3>{previousConsultations.length ? <div className="mt-3 space-y-3">{previousConsultations.slice(0, 5).map((item) => <div key={item.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-medium">{item.consultation_date}</p><p className="mt-1 text-slate-600">{item.reason_for_visit || "Sin motivo registrado"}</p><button onClick={() => void viewPrevious(item)} className="mt-2 font-medium text-teal-700 hover:underline">{loadingPreviousId === item.id ? "Cargando..." : "Ver historial completo"}</button></div>)}</div> : <p className="mt-3 text-sm text-slate-500">No hay consultas anteriores.</p>}</div></aside></div>
     {previousDetails && <PreviousConsultationModal details={previousDetails} onClose={() => setPreviousDetails(null)} onDownload={() => void downloadPreviousSummary(previousDetails.consultation.id)} />}
   </section>;
 }
@@ -137,11 +144,6 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 function PreviousConsultationModal({ details, onClose, onDownload }: { details: PreviousDetails; onClose: () => void; onDownload: () => void }) {
-  const item = details.consultation; const vitals = details.vitalSigns;
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Historial clínico anterior"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-semibold">Consulta del {item.consultation_date}</h3><p className="text-sm text-slate-500">Historial anterior · solo lectura</p></div><button onClick={onClose} className="rounded border px-3 py-1.5 text-sm">Cerrar</button></div><div className="mt-5 grid gap-4 md:grid-cols-2"><HistoryBlock title="Motivo e historia" lines={[item.reason_for_visit, item.current_illness, item.clinical_notes]} /><HistoryBlock title="Antecedentes" lines={[item.personal_history, item.family_history, item.allergies, item.chronic_conditions]} /><HistoryBlock title="Signos vitales" lines={vitals ? [`PA: ${vitals.systolic_pressure ?? "—"}/${vitals.diastolic_pressure ?? "—"} mmHg`, `FC: ${vitals.heart_rate ?? "—"} lpm · FR: ${vitals.respiratory_rate ?? "—"} rpm`, `Temperatura: ${vitals.temperature_c ?? "—"} °C · SpO₂: ${vitals.oxygen_saturation ?? "—"}%`, `Peso: ${vitals.weight_kg ?? "—"} kg · Talla: ${vitals.height_cm ?? "—"} cm`] : []} /><HistoryBlock title="Diagnósticos" lines={details.diagnoses.map((diagnosis) => `${diagnosis.is_primary ? "Principal · " : ""}${diagnosis.icd10_code ? `${diagnosis.icd10_code} · ` : ""}${diagnosis.description}`)} /><HistoryBlock title="Recetas" lines={details.prescriptions.map((prescription) => `${prescription.medication}${prescription.dose ? ` · ${prescription.dose}` : ""}${prescription.frequency ? ` · ${prescription.frequency}` : ""}`)} /><HistoryBlock title="Estudios" lines={details.requestedTests.map((test) => test.test_name)} /></div><button onClick={onDownload} className="mt-5 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white">Descargar resumen PDF</button></div></div>;
-}
-
-function HistoryBlock({ title, lines }: { title: string; lines: Array<string | null> }) {
-  const visible = lines.filter((line): line is string => Boolean(line));
-  return <div className="rounded-lg bg-slate-50 p-4"><h4 className="font-semibold">{title}</h4>{visible.length ? <ul className="mt-2 space-y-1 text-sm text-slate-700">{visible.map((line, index) => <li key={`${title}-${index}`}>{line}</li>)}</ul> : <p className="mt-2 text-sm text-slate-500">Sin datos registrados.</p>}</div>;
+  const item = details.consultation;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Historial clínico anterior"><div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-4"><div><h3 className="text-xl font-semibold">Consulta del {item.consultation_date}</h3><p className="text-sm text-slate-500">Historial anterior · solo lectura</p></div><button onClick={onClose} className="rounded border px-3 py-1.5 text-sm">Cerrar</button></div><HistoricalConsultationProjection history={item} details={details.details} onSummaryPdf={onDownload} /></div></div>;
 }

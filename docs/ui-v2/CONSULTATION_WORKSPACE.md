@@ -63,17 +63,17 @@ Datos clínicos solo en memoria del árbol React. Sin localStorage, sessionStora
 
 Las solicitudes libres `RequestedTest` y las órdenes estructuradas son recursos distintos y permanecen compatibles. `RequestedTest` sigue cargándose desde el bootstrap del workspace y conservando PDF/solo lectura cuando hay registros, sin creador nuevo en la consulta normal. Las órdenes estructuradas son el flujo preferido y usan `ClinicalOrdersSection` con resumen compacto, chooser y catálogos bajo demanda. Se conservan los únicos flujos append-only post-cierre autorizados para el médico responsable. La caracterización completa está en [CLINICAL_ORDERS_BOUNDARY.md](CLINICAL_ORDERS_BOUNDARY.md).
 
-## Historial previo y post-cierre — Phase 6B8A
+## Historial previo y post-cierre — Phase 6B8B
 
-El modal de consultas anteriores de este workspace es de solo lectura y actualmente carga Historia clínica, signos vitales, diagnósticos, recetas y `RequestedTest`. No carga `LaboratoryOrder` ni `StudyOrder`; esos recursos continúan siendo legibles/descargables desde la consulta activa completada mediante `ClinicalOrdersSection`, sujeto a autorización backend. La superficie histórica de Pacientes (`ClinicalHistoryPanel`) sí carga ambos órdenes, addenda y sus PDFs por historia. El detalle de endpoints, ciclo de vida y la protección A → B → respuesta tardía está en [HISTORICAL_POST_CLOSE_BOUNDARY.md](HISTORICAL_POST_CLOSE_BOUNDARY.md).
+El modal de consultas anteriores y la superficie histórica de Pacientes (`ClinicalHistoryPanel`) comparten `loadHistoricalConsultationDetails` y `HistoricalConsultationProjection`. Ambos muestran ClinicalHistory, signos vitales, diagnósticos, recetas, `RequestedTest`, addenda, `LaboratoryOrder` y `StudyOrder` como snapshots de solo lectura, con los PDFs existentes. Cada wrapper conserva sus acciones de documentos y controles autorizados de post-cierre; la proyección compartida no muta recursos. El seguimiento sigue siendo un workflow separado. El detalle de endpoints, ciclo de vida y la protección A → B → respuesta tardía está en [HISTORICAL_POST_CLOSE_BOUNDARY.md](HISTORICAL_POST_CLOSE_BOUNDARY.md).
 
 ## Roadmap
 
 - 6B5 Anamnesis + Vital Signs — DONE
 - 6B6 Diagnoses + Prescriptions — DONE
 - 6B7 Requested tests / structured orders UX boundary — CURRENT
-- 6B8A historical/post-close safety net — CURRENT
-- 6B8B historical/post-close visual and architectural unification
+- 6B8A historical/post-close safety net — DONE
+- 6B8B historical/post-close visual and architectural unification — CURRENT
 - 6B9 performance/accessibility/dirty/conflict/responsive
 - 6C1 registry/versioned model
 - 6C2 Cardiology pilot generic

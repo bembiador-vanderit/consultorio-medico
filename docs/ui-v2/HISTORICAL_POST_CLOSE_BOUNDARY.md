@@ -1,8 +1,8 @@
-# Historical / post-close boundary — Phase 6B8A
+# Historical / post-close boundary — Phase 6B8B
 
 ## Alcance auditado
 
-Esta fase caracteriza el comportamiento existente de `ConsultationWorkspace`, el contexto de la cita, el modal de consultas anteriores y `ClinicalOrdersSection`. No unifica la UI histórica ni modifica contratos de backend. La base auditada es `cbdbf435c6dc97e2f293d979adba53adce69cbaf` (`feat/complete-care-context`).
+Phase 6B8B unifica la lectura histórica en un modelo tipado compartido sin modificar contratos de backend. La base es `ec5d387c6632acdebb577687ab435b6e402f6253` (`feat/complete-care-context`). `ConsultationWorkspace` y `ClinicalHistoryPanel` usan el mismo loader y `HistoricalConsultationProjection` para representar el episodio completo en solo lectura.
 
 ## Fuentes de verdad y endpoints
 
@@ -29,17 +29,17 @@ El workspace monta los módulos clínicos con el `historyId` de la cita. Una his
 
 `status === "completed"` oculta guardar, finalizar, editar y eliminar en los módulos existentes. El resumen de consulta, receta, órdenes estructuradas y sus PDFs siguen siendo legibles/descargables. Una orden adicional crea una fila nueva con `is_additional=true`; no cambia la historia, la revisión ni las filas anteriores.
 
-### Consulta abierta desde “Consultas anteriores” en `ConsultationWorkspace`
+### Proyección histórica compartida
 
-`PreviousConsultationModal` carga solo `ClinicalHistory` ya entregada por el contexto, signos vitales, diagnósticos, prescripciones y `RequestedTest`. Presenta esos valores como solo lectura y ofrece el PDF de resumen `GET /clinical-history/{history_id}/summary/pdf`. Actualmente **no solicita ni muestra** `LaboratoryOrder` ni `StudyOrder`, aunque esos recursos pueden existir para la historia y tienen endpoints de lectura/PDF autorizados. Esta omisión es una frontera observada, no una migración ni un cambio de contrato; queda para 6B8B.
+`loadHistoricalConsultationDetails(historyId, { signal })` reúne en paralelo signos vitales, diagnósticos, prescripciones, `RequestedTest`, addenda, `LaboratoryOrder` y `StudyOrder`. `HistoricalConsultationProjection` presenta esos snapshots, incluidos los PDFs estructurados, sin controles de mutación. El modal de `ConsultationWorkspace` conserva su PDF de resumen; el wrapper de `ClinicalHistoryPanel` conserva los PDFs de resumen, receta y `RequestedTest`, además de sus acciones autorizadas de addenda y órdenes adicionales.
 
-El modal no ofrece botones de mutación, no reabre historias completadas y no crea órdenes adicionales. Los órdenes estructurados históricos permanecen accesibles desde la consulta activa completada, sujeto al mismo alcance backend.
+La proyección no carga catálogos ni crea recursos. `RequestedTest` sigue siendo compatibilidad/historial; no se migra a órdenes estructuradas.
 
 ### Historia del paciente en `ClinicalHistoryPanel`
 
 Existe una segunda superficie histórica desde Pacientes. `ClinicalHistoryPanel` obtiene `GET /clinical-history/patients/{patient_id}` y, al seleccionar o expandir una historia, carga en paralelo diagnósticos, prescripciones, `RequestedTest`, signos vitales, `GET /clinical-history/{history_id}/addenda`, `GET /clinical-history/{history_id}/laboratory-orders` y `GET /clinical-history/{history_id}/study-orders`. Renderiza `ClinicalOrdersHistory` con los dos tipos de orden y sus PDFs, muestra addenda inmutables para historias completadas y expone **Agregar nota adicional** / **Nueva orden adicional** solo cuando el propio frontend identifica al médico responsable activo; el backend vuelve a autorizar cada escritura.
 
-Sus detalles se guardan por `historyId`, por lo que una respuesta de A se asocia a la clave de A y no reemplaza los datos de B. Este loader no tiene el mismo guard explícito de generación/unmount que el workspace 6B8A; la futura unificación 6B8B debe conservar la separación por episodio y cerrar esa diferencia antes de compartir el modelo visual.
+Sus detalles se guardan por `historyId`. El loader mantiene controladores AbortController y una generación por ciclo del panel: cambio de paciente/historia, respuesta tardía y desmontaje no pueden publicar en otro episodio. Las acciones de mutación siguen fuera de la proyección y mantienen su autorización existente.
 
 ## Legacy frente a órdenes estructuradas
 
@@ -51,11 +51,11 @@ Todos los GET históricos y PDFs pasan por `require_history_access` y el alcance
 
 La finalización usa la revisión actual y deja la historia inmutable. Se conserva el comportamiento 409 de revisión obsoleta y de consulta ya finalizada. No se agregan estados, campos, endpoints, persistencia PHI ni reintentos.
 
-## Auditoría de carreras del historial previo
+## Guards de carreras del historial previo — Phase 6B8B
 
 Antes de 6B8A, `viewPrevious` usaba `Promise.all` sin generación propia: una respuesta o error tardío podía publicar sobre el modal después de cambiar de consulta o desmontar el workspace. El bootstrap activo y `ClinicalOrdersSection` ya tenían sus propios guards.
 
-6B8A añade el cambio mínimo al loader del modal de `ConsultationWorkspace`: `previousRequestGeneration` se incrementa al iniciar una carga, al cambiar de cita y al desmontar. Solo la generación vigente puede publicar detalles, error o `loading=false`; iniciar otra consulta limpia el detalle anterior. No se abortan escrituras, no hay reintentos automáticos y no se inicia un segundo bootstrap. La selección de otra consulta permanece posible mientras la anterior carga, y las pruebas cubren:
+`ConsultationWorkspace` conserva `previousRequestGeneration`, abortado y limpieza al cambiar de cita o desmontar. `ClinicalHistoryPanel` aplica el mismo aislamiento por generación a su loader compartido. Solo la generación vigente puede publicar detalles, error o estado de carga; no se abortan escrituras, no hay reintentos automáticos y no se inicia un segundo bootstrap. Las pruebas cubren:
 
 - A → B → éxito tardío de A: no aparece A en B;
 - A → B → error tardío de A: no aparece el error de A;
@@ -67,7 +67,7 @@ El resumen histórico conserva `GET /clinical-history/{history_id}/summary/pdf`.
 
 ## Alcance exacto de Phase 6B8B
 
-6B8B puede unificar visual y arquitectónicamente la lectura histórica para que la consulta anterior exponga, con el mismo modelo modular, órdenes estructuradas y sus PDFs. Debe reutilizar los endpoints y contratos existentes, mantener `RequestedTest` como compatibilidad/historial, respetar alcance y solo lectura, y conservar el guard de generación. No debe rediseñar ni migrar recursos como parte de 6B8A.
+6B8B implementa esa proyección compartida. No unifica formularios ni introduce una nueva pantalla histórica: cada wrapper conserva su contexto, acciones autorizadas y composición visual. El seguimiento (`/follow-ups`) sigue siendo un workflow separado y no forma parte del snapshot histórico porque no existe un endpoint de lectura histórica para él.
 
 ## Intencionalmente sin cambios
 

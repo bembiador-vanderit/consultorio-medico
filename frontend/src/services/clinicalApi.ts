@@ -3,6 +3,7 @@ import type { AxiosRequestConfig } from "axios";
 
 import { api } from "./api";
 import type {
+  ClinicalAddendum,
   ClinicalHistory,
   ClinicalHistoryContent,
   ConsultationContext,
@@ -75,6 +76,7 @@ export const clinicalApi = {
   updatePrescription: (historyId: number, prescriptionId: number, payload: PrescriptionInput) => api.put<Prescription>(`/clinical-history/${historyId}/prescriptions/${prescriptionId}`, payload).then((response) => response.data),
   deletePrescription: (historyId: number, prescriptionId: number) => api.delete(`/clinical-history/${historyId}/prescriptions/${prescriptionId}`),
   getRequestedTests: (historyId: number, options?: ReadOptions) => read<RequestedTest[]>(`/clinical-history/${historyId}/requested-tests`, options),
+  getAddenda: (historyId: number, options?: ReadOptions) => read<ClinicalAddendum[]>(`/clinical-history/${historyId}/addenda`, options),
   createRequestedTest: (historyId: number, payload: RequestedTestInput) => api.post<RequestedTest>(`/clinical-history/${historyId}/requested-tests`, payload).then((response) => response.data),
   deleteRequestedTest: (requestedTestId: number) => api.delete(`/clinical-history/requested-tests/${requestedTestId}`),
 

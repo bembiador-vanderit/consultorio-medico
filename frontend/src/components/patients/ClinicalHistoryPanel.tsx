@@ -1,24 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../services/api";
 import ClinicalOrdersHistory from "../clinical/ClinicalOrdersHistory";
 import ClinicalOrdersSection from "../clinical/ClinicalOrdersSection";
-import type { LaboratoryOrder, StudyOrder } from "../../types/clinicalOrder";
+import HistoricalConsultationProjection from "../consultation/HistoricalConsultationProjection";
+import { loadHistoricalConsultationDetails } from "../../services/historicalConsultation";
+import { isReadAborted } from "../../services/clinicalApi";
 import type { ClinicalAddendum, ClinicalHistory, ClinicalHistoryInput, RequestedTest } from "../../types/clinicalHistory";
+import type { HistoricalConsultationDetails } from "../../types/historicalConsultation";
 import type { User } from "../../types/user";
 
 type Props = { patientId: number; patientName: string; user: User; onClose: () => void; initialAddendumHistoryId?: number | null; embedded?: boolean };
-type Diagnosis = { id: number; description: string; icd10_code: string | null; is_primary: boolean };
-type Prescription = {
-  id: number;
-  medication: string;
-  presentation: string | null;
-  dose: string | null;
-  route: string | null;
-  frequency: string | null;
-  duration: string | null;
-  quantity: number | null;
-  instructions: string | null;
-};
 type VitalSigns = {
   systolic_pressure: number | null;
   diastolic_pressure: number | null;
@@ -29,7 +20,7 @@ type VitalSigns = {
   weight_kg: number | null;
   height_cm: number | null;
 };
-type ClinicalDetails = { diagnoses: Diagnosis[]; prescriptions: Prescription[]; tests: string[]; vitalSigns: VitalSigns | null; addenda: ClinicalAddendum[]; laboratoryOrders: LaboratoryOrder[]; studyOrders: StudyOrder[] };
+type ClinicalDetails = HistoricalConsultationDetails & { tests: string[] };
 
 type FollowUpForm = {
   due_at: string;
@@ -151,6 +142,8 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
   const [addendumError, setAddendumError] = useState("");
   const [savingAddendum, setSavingAddendum] = useState(false);
   const [additionalOrdersHistory, setAdditionalOrdersHistory] = useState<ClinicalHistory | null>(null);
+  const detailsGenerationRef = useRef(0);
+  const detailsControllersRef = useRef(new Map<number, AbortController>());
 
   const current = records[index];
   const currentDetails = current ? detailsByHistory[current.id] : undefined;
@@ -165,30 +158,33 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
     return data.map((item) => item.test_name);
   }
 
-  async function loadClinicalDetails(historyId: number) {
+  async function loadClinicalDetails(historyId: number, generation = detailsGenerationRef.current) {
+    detailsControllersRef.current.get(historyId)?.abort();
+    const controller = new AbortController();
+    detailsControllersRef.current.set(historyId, controller);
     setLoadingDetailsId(historyId);
     try {
-      const [{ data: diagnoses }, { data: prescriptions }, tests, { data: vitalSigns }, { data: addenda }, { data: laboratoryOrders }, { data: studyOrders }] = await Promise.all([
-        api.get<Diagnosis[]>(`/clinical-history/${historyId}/diagnoses`),
-        api.get<Prescription[]>(`/clinical-history/${historyId}/prescriptions`),
-        loadTests(historyId),
-        api.get<VitalSigns | null>(`/clinical-history/${historyId}/vital-signs`),
-        api.get<ClinicalAddendum[]>(`/clinical-history/${historyId}/addenda`),
-        api.get<LaboratoryOrder[]>(`/clinical-history/${historyId}/laboratory-orders`),
-        api.get<StudyOrder[]>(`/clinical-history/${historyId}/study-orders`),
-      ]);
-      const details = { diagnoses, prescriptions, tests, vitalSigns, addenda, laboratoryOrders, studyOrders };
+      const loaded = await loadHistoricalConsultationDetails(historyId, { signal: controller.signal });
+      if (generation !== detailsGenerationRef.current || controller.signal.aborted) return null;
+      const tests = loaded.requestedTests.map((item) => item.test_name);
+      const details = { ...loaded, tests };
       setDetailsByHistory((currentDetails) => ({ ...currentDetails, [historyId]: details }));
       setPreviousTests((currentTests) => ({ ...currentTests, [historyId]: tests }));
       return details;
     } finally {
-      setLoadingDetailsId((currentId) => currentId === historyId ? null : currentId);
+      if (detailsControllersRef.current.get(historyId) === controller) {
+        detailsControllersRef.current.delete(historyId);
+      }
+      if (generation === detailsGenerationRef.current) {
+        setLoadingDetailsId((currentId) => currentId === historyId ? null : currentId);
+      }
     }
   }
 
-  async function load() {
+  async function load(generation = detailsGenerationRef.current) {
     try {
       const { data } = await api.get<ClinicalHistory[]>(`/clinical-history/patients/${patientId}`);
+      if (generation !== detailsGenerationRef.current) return;
       setRecords(data);
       if (data.length) {
         const requestedIndex = initialAddendumHistoryId
@@ -204,7 +200,9 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
         setShowTests(Boolean(initialTests.length));
         setPreviousTests({ [selectedRecord.id]: initialTests });
         try {
-          const { tests } = await loadClinicalDetails(selectedRecord.id);
+          const details = await loadClinicalDetails(selectedRecord.id, generation);
+          if (!details || generation !== detailsGenerationRef.current) return;
+          const { tests } = details;
           setForm({ ...selectedRecord, requested_tests: tests.join("\n") });
           if (initialAddendumHistoryId && canAddAddendum(selectedRecord)) openAddendum(selectedRecord);
         } catch (err: any) {
@@ -215,15 +213,30 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
         setIsNew(true);
       }
     } catch (err: any) {
+      if (generation !== detailsGenerationRef.current || isReadAborted(err)) return;
       setError(err?.response?.data?.detail || "No fue posible cargar la historia clínica.");
     } finally {
-      setLoading(false);
+      if (generation === detailsGenerationRef.current) setLoading(false);
     }
   }
 
-  useEffect(() => { void load(); }, [patientId, initialAddendumHistoryId]);
+  useEffect(() => {
+    const generation = ++detailsGenerationRef.current;
+    detailsControllersRef.current.forEach((controller) => controller.abort());
+    detailsControllersRef.current.clear();
+    setDetailsByHistory({});
+    setPreviousTests({});
+    setShowFullPrevious(null);
+    void load(generation);
+    return () => {
+      if (detailsGenerationRef.current === generation) detailsGenerationRef.current += 1;
+      detailsControllersRef.current.forEach((controller) => controller.abort());
+      detailsControllersRef.current.clear();
+    };
+  }, [patientId, initialAddendumHistoryId]);
 
   async function showRecord(nextIndex: number) {
+    const generation = detailsGenerationRef.current;
     const record = records[nextIndex];
     const initialTests = record.requested_tests.map((item) => item.test_name);
     setIndex(nextIndex);
@@ -234,23 +247,29 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
     setMessage("");
     setError("");
     try {
-      const { tests } = detailsByHistory[record.id] || await loadClinicalDetails(record.id);
+      const details = detailsByHistory[record.id] || await loadClinicalDetails(record.id, generation);
+      if (!details) return;
+      const { tests } = details;
       setForm({ ...record, requested_tests: tests.join("\n") });
       setShowTests(Boolean(tests.length));
     } catch (err: any) {
+      if (generation !== detailsGenerationRef.current || isReadAborted(err)) return;
       setError(err?.response?.data?.detail || "La consulta se cargó, pero no fue posible obtener diagnósticos y recetas.");
     }
   }
 
   async function openPreviousRecord(historyId: number) {
+    const generation = detailsGenerationRef.current;
     if (showFullPrevious === historyId) {
       setShowFullPrevious(null);
       return;
     }
     try {
-      if (!detailsByHistory[historyId]) await loadClinicalDetails(historyId);
+      if (!detailsByHistory[historyId] && !(await loadClinicalDetails(historyId, generation))) return;
+      if (generation !== detailsGenerationRef.current) return;
       setShowFullPrevious(historyId);
     } catch (err: any) {
+      if (isReadAborted(err)) return;
       setError(err?.response?.data?.detail || "No fue posible cargar el detalle de la consulta.");
     }
   }
@@ -270,6 +289,7 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
       [historyId]: {
         diagnoses: currentDetails[historyId]?.diagnoses || [],
         prescriptions: currentDetails[historyId]?.prescriptions || [],
+        requestedTests: currentDetails[historyId]?.requestedTests || savedTests,
         tests,
         vitalSigns: currentDetails[historyId]?.vitalSigns || null,
         addenda: currentDetails[historyId]?.addenda || [],
@@ -284,14 +304,23 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
     if (isNew || current?.status === "completed") return;
     setSaving(true); setMessage(""); setError("");
     try {
-      const historyPayload = { ...form };
-      delete (historyPayload as any).requested_tests;
+      const historyPayload = {
+        consultation_date: form.consultation_date,
+        reason_for_visit: form.reason_for_visit ?? null,
+        current_illness: form.current_illness ?? null,
+        personal_history: form.personal_history ?? null,
+        family_history: form.family_history ?? null,
+        allergies: form.allergies ?? null,
+        current_medications: form.current_medications ?? null,
+        previous_surgeries: form.previous_surgeries ?? null,
+        chronic_conditions: form.chronic_conditions ?? null,
+        habits: form.habits ?? null,
+        clinical_notes: form.clinical_notes ?? null,
+        expected_revision: current.revision,
+      };
       let saved: ClinicalHistory;
       if (current) {
-        const { data } = await api.put<ClinicalHistory>(`/clinical-history/${current.id}`, {
-          ...historyPayload,
-          expected_revision: current.revision,
-        });
+        const { data } = await api.put<ClinicalHistory>(`/clinical-history/${current.id}`, historyPayload);
         saved = data;
       } else return;
       const savedTests = await syncTests(saved.id);
@@ -441,23 +470,32 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
               </div>
 
               {isNew && <div className="rounded-lg border border-dashed bg-slate-50 p-5 text-sm text-slate-600">No hay consultas vinculadas a citas para este paciente. Las nuevas consultas deben iniciarse desde la Agenda.</div>}
-              {!isNew && fields.map(([name, label]) => <label key={name} className="block"><span className="mb-1 block text-sm font-medium">{label}</span><textarea value={form[name] ?? ""} disabled={current?.status === "completed"} onChange={(event) => { setForm({ ...form, [name]: event.target.value }); setHasUnsavedChanges(true); }} rows={3} className="w-full rounded-lg border px-3 py-2 disabled:bg-slate-100" /></label>)}
+              {!isNew && current?.status !== "completed" && fields.map(([name, label]) => <label key={name} className="block"><span className="mb-1 block text-sm font-medium">{label}</span><textarea value={form[name] ?? ""} onChange={(event) => { setForm({ ...form, [name]: event.target.value }); setHasUnsavedChanges(true); }} rows={3} className="w-full rounded-lg border px-3 py-2" /></label>)}
 
-              {!isNew && current && <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+              {!isNew && current?.status === "completed" && currentDetails && <HistoricalConsultationProjection
+                history={current}
+                details={currentDetails}
+                onSummaryPdf={() => void downloadPdf(current.id, "summary")}
+                onPrescriptionPdf={() => void downloadPdf(current.id, "prescription")}
+                onRequestedTestsPdf={() => void downloadPdf(current.id, "tests")}
+                downloading={downloadingDocument === `${current.id}:summary` ? "summary" : downloadingDocument === `${current.id}:prescription` ? "prescription" : downloadingDocument === `${current.id}:tests` ? "requested-tests" : ""}
+              />}
+
+              {!isNew && current?.status !== "completed" && current && <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-semibold text-teal-950">Contenido clínico vinculado</h4><p className="text-xs text-teal-700">Diagnósticos, receta y documentos de esta consulta.</p>{hasUnsavedChanges && <p className="mt-1 text-xs font-medium text-amber-700">Guarda los cambios antes de generar documentos.</p>}</div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void downloadPdf(current.id, "summary")} disabled={hasUnsavedChanges || Boolean(downloadingDocument)} className="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">{downloadingDocument === `${current.id}:summary` ? "Generando..." : "Resumen PDF"}</button><button type="button" onClick={() => void downloadPdf(current.id, "prescription")} disabled={hasUnsavedChanges || !currentDetails?.prescriptions.length || Boolean(downloadingDocument)} className="rounded-lg border border-teal-300 bg-white px-3 py-2 text-sm font-medium text-teal-800 disabled:opacity-40">{downloadingDocument === `${current.id}:prescription` ? "Generando..." : "Receta PDF"}</button></div></div>
                 {loadingDetailsId === current.id ? <p className="mt-4 text-sm text-slate-500">Cargando contenido clínico...</p> : <><div className="mt-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Signos vitales</p>{currentVitalSigns.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{currentVitalSigns.map(([label, value]) => <div key={label} className="rounded-lg border border-cyan-100 bg-white p-3 text-sm"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-semibold text-cyan-900">{value}</p></div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin signos vitales registrados.</p>}</div><div className="mt-4 grid gap-4 md:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Diagnósticos</p>{currentDetails?.diagnoses.length ? <div className="mt-2 space-y-2">{currentDetails.diagnoses.map((item) => <div key={item.id} className="rounded-lg border bg-white p-3 text-sm"><p className="font-medium">{item.description}{item.is_primary && <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-800">Principal</span>}</p>{item.icd10_code && <p className="mt-1 text-xs text-slate-500">CIE-10: {item.icd10_code}</p>}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin diagnósticos registrados.</p>}</div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Medicamentos recetados</p>{currentDetails?.prescriptions.length ? <div className="mt-2 space-y-2">{currentDetails.prescriptions.map((item) => <div key={item.id} className="rounded-lg border bg-white p-3 text-sm"><p className="font-medium">{item.medication}{item.presentation ? ` · ${item.presentation}` : ""}</p><p className="mt-1 text-xs text-slate-600">{[item.dose, item.route, item.frequency, item.duration].filter(Boolean).join(" · ") || "Pauta no especificada"}</p>{item.quantity && <p className="mt-1 text-xs text-slate-500">Cantidad: {item.quantity}</p>}{item.instructions && <p className="mt-1 text-xs text-slate-500">{item.instructions}</p>}</div>)}</div> : <p className="mt-2 text-sm text-slate-500">Sin medicamentos recetados.</p>}</div></div></>}
               </div>}
 
-              {!isNew && currentDetails && <ClinicalOrdersHistory laboratoryOrders={currentDetails.laboratoryOrders} studyOrders={currentDetails.studyOrders} />}
+              {!isNew && current?.status !== "completed" && currentDetails && <ClinicalOrdersHistory laboratoryOrders={currentDetails.laboratoryOrders} studyOrders={currentDetails.studyOrders} />}
 
-              {!isNew && current?.status === "completed" && currentDetails && <AddendaTimeline items={currentDetails.addenda} />}
+              {!isNew && current?.status !== "completed" && currentDetails && <AddendaTimeline items={currentDetails.addenda} />}
 
-              {!isNew && <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+              {!isNew && current?.status !== "completed" && <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3"><div><h4 className="font-semibold text-indigo-900">Análisis y pruebas indicadas</h4><p className="text-xs text-indigo-700">Opcional y asociado a esta consulta.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setShowTests((value) => !value)} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-800">{showTests ? "Ocultar" : "Agregar análisis / pruebas"}</button><button type="button" onClick={() => current && void downloadPdf(current.id, "tests")} disabled={hasUnsavedChanges || isNew || !current || !form.requested_tests?.trim() || Boolean(downloadingDocument)} className="rounded-lg bg-indigo-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">{current && downloadingDocument === `${current.id}:tests` ? "Generando PDF..." : "Descargar orden PDF"}</button></div></div>
-                {showTests && <label className="mt-4 block"><span className="mb-1 block text-sm font-medium">Un análisis o prueba por línea</span><textarea value={form.requested_tests ?? ""} disabled={current?.status === "completed"} onChange={(event) => { setForm({ ...form, requested_tests: event.target.value }); setHasUnsavedChanges(true); }} rows={7} placeholder={'Hemograma\nGlucosa en sangre\nPerfil lipídico\nRadiografía de tórax'} className="w-full rounded-lg border bg-white px-3 py-2 disabled:bg-slate-100" /></label>}
+                {showTests && <label className="mt-4 block"><span className="mb-1 block text-sm font-medium">Un análisis o prueba por línea</span><textarea value={form.requested_tests ?? ""} onChange={(event) => { setForm({ ...form, requested_tests: event.target.value }); setHasUnsavedChanges(true); }} rows={7} placeholder={'Hemograma\nGlucosa en sangre\nPerfil lipídico\nRadiografía de tórax'} className="w-full rounded-lg border bg-white px-3 py-2" /></label>}
               </div>}
 
-              {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+              {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
               {message && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{message}</div>}
               <div className="flex justify-end gap-3 border-t pt-5"><button onClick={onClose} className="rounded-lg border px-5 py-2">Cerrar</button>{!isNew && current?.status !== "completed" && <button onClick={() => void save()} disabled={saving} className="rounded-lg bg-teal-700 px-5 py-2 text-white disabled:opacity-50">{saving ? "Guardando..." : "Guardar cambios"}</button>}</div>
             </section>
@@ -474,17 +512,18 @@ export default function ClinicalHistoryPanel({ patientId, patientName, user, onC
                   return <article key={record.id} className="rounded-lg border bg-white p-3 shadow-sm">
                     <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{formatDate(record.consultation_date)}</p><p className="mt-1 text-xs font-medium text-slate-600">{record.specialty_name} · {record.doctor_name ?? "Médico no disponible"} · {record.center_name ?? "Centro no disponible"}</p><p className="mt-1 font-medium text-slate-900">{historySummary(record)}</p>{record.appointment_id && <p className="mt-1 text-xs text-slate-400">Cita #{record.appointment_id}</p>}</div><button type="button" onClick={() => void openPreviousRecord(record.id)} disabled={isLoading} className="shrink-0 text-xs font-semibold text-indigo-700 hover:underline disabled:opacity-40">{isLoading ? "Cargando..." : isExpanded ? "Ocultar" : "Ver completa"}</button></div>
                     <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-600">{record.chronic_conditions && <span className="rounded-full bg-slate-100 px-2 py-1">Condición crónica</span>}{record.allergies && <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-800">Alergias</span>}{vitalItems.length > 0 && <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">Signos vitales</span>}{details?.diagnoses.length ? <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-800">{details.diagnoses.length} diagnóstico{details.diagnoses.length === 1 ? "" : "s"}</span> : null}{details?.prescriptions.length ? <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-800">{details.prescriptions.length} medicamento{details.prescriptions.length === 1 ? "" : "s"}</span> : null}{tests.length > 0 && <span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-800">{tests.length} estudio{tests.length === 1 ? "" : "s"}</span>}{details?.laboratoryOrders.length ? <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-800">{details.laboratoryOrders.length} orden lab.</span> : null}{details?.studyOrders.length ? <span className="rounded-full bg-violet-50 px-2 py-1 text-violet-800">{details.studyOrders.length} orden est.</span> : null}</div>
-                    {isExpanded && details && <div className="mt-3 space-y-3 border-t pt-3 text-xs text-slate-700">
-                      {record.reason_for_visit && <p><strong>Motivo original:</strong> {record.reason_for_visit}</p>}{record.current_illness && <p><strong>Enfermedad actual:</strong> {record.current_illness}</p>}{record.personal_history && <p><strong>Antecedentes personales:</strong> {record.personal_history}</p>}{record.family_history && <p><strong>Antecedentes familiares:</strong> {record.family_history}</p>}{record.previous_surgeries && <p><strong>Cirugías:</strong> {record.previous_surgeries}</p>}{record.habits && <p><strong>Hábitos:</strong> {record.habits}</p>}{record.clinical_notes && <p><strong>Notas clínicas originales:</strong> {record.clinical_notes}</p>}
-                      <div><p className="font-semibold">Signos vitales:</p>{vitalItems.length ? <ul className="mt-1 list-disc pl-4">{vitalItems.map(([label, value]) => <li key={label}>{label}: {value}</li>)}</ul> : <p className="mt-1 text-slate-500">Sin mediciones.</p>}</div>
-                      <div><p className="font-semibold">Diagnósticos:</p>{details.diagnoses.length ? <ul className="mt-1 list-disc pl-4">{details.diagnoses.map((item) => <li key={item.id}>{item.description}{item.icd10_code ? ` · CIE-10 ${item.icd10_code}` : ""}{item.is_primary ? " · Principal" : ""}</li>)}</ul> : <p className="mt-1 text-slate-500">Sin diagnósticos.</p>}</div>
-                      <div><p className="font-semibold">Receta:</p>{details.prescriptions.length ? <ul className="mt-1 list-disc pl-4">{details.prescriptions.map((item) => <li key={item.id}>{item.medication}{item.presentation ? ` · ${item.presentation}` : ""}{item.dose ? ` · ${item.dose}` : ""}</li>)}</ul> : <p className="mt-1 text-slate-500">Sin medicamentos.</p>}</div>
-                      {tests.length > 0 && <div><p className="font-semibold">Estudios/análisis:</p><ul className="mt-1 list-disc pl-4">{tests.map((test) => <li key={test}>{test}</li>)}</ul></div>}
-                      <ClinicalOrdersHistory laboratoryOrders={details.laboratoryOrders} studyOrders={details.studyOrders} compact />
-                      {record.status === "completed" && <AddendaTimeline items={details.addenda} />}
-                      {canAddAddendum(record) && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => openAddendum(record)} className="rounded-md bg-violet-700 px-2.5 py-1.5 font-medium text-white">Agregar nota adicional</button><button type="button" onClick={() => setAdditionalOrdersHistory(record)} className="rounded-md bg-cyan-700 px-2.5 py-1.5 font-medium text-white">Nueva orden adicional</button></div>}
-                      <div className="flex flex-wrap gap-2 pt-1"><button type="button" onClick={() => void downloadPdf(record.id, "summary")} disabled={Boolean(downloadingDocument)} className="rounded-md bg-teal-700 px-2.5 py-1.5 font-medium text-white disabled:opacity-40">{downloadingDocument === `${record.id}:summary` ? "Generando..." : "Resumen PDF"}</button><button type="button" onClick={() => void downloadPdf(record.id, "prescription")} disabled={!details.prescriptions.length || Boolean(downloadingDocument)} className="rounded-md border border-blue-200 px-2.5 py-1.5 font-medium text-blue-700 disabled:opacity-40">Receta PDF</button><button type="button" onClick={() => void downloadPdf(record.id, "tests")} disabled={!tests.length || Boolean(downloadingDocument)} className="rounded-md border border-indigo-200 px-2.5 py-1.5 font-medium text-indigo-700 disabled:opacity-40">Orden PDF</button></div>
-                    </div>}
+                    {isExpanded && details && <>
+                      <HistoricalConsultationProjection
+                        history={record}
+                        details={details}
+                        compact
+                        onSummaryPdf={() => void downloadPdf(record.id, "summary")}
+                        onPrescriptionPdf={() => void downloadPdf(record.id, "prescription")}
+                        onRequestedTestsPdf={() => void downloadPdf(record.id, "tests")}
+                        downloading={downloadingDocument === `${record.id}:summary` ? "summary" : downloadingDocument === `${record.id}:prescription` ? "prescription" : downloadingDocument === `${record.id}:tests` ? "requested-tests" : ""}
+                      />
+                      {canAddAddendum(record) && <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => openAddendum(record)} className="rounded-md bg-violet-700 px-2.5 py-1.5 font-medium text-white">Agregar nota adicional</button><button type="button" onClick={() => setAdditionalOrdersHistory(record)} className="rounded-md bg-cyan-700 px-2.5 py-1.5 font-medium text-white">Nueva orden adicional</button></div>}
+                    </>}
                   </article>;
                 })}</div>}
               </div>
