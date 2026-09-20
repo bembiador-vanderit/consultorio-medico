@@ -53,3 +53,15 @@ test("workspace renderiza el contexto bootstrap sin persistir datos clínicos", 
   assert.equal(window.localStorage.length, 0);
   assert.equal(window.sessionStorage.length, 0);
 });
+
+test("workspace mantiene módulos y contexto en una estructura adaptativa sin ancho mínimo rígido", async () => {
+  await act(async () => root.render(h(ConsultationWorkspace, { appointment, onBack() {} })));
+  await settle();
+  const layout = host.querySelector('[data-consultation-layout="adaptive"]');
+  assert.ok(layout);
+  assert.ok(layout.querySelector("[data-consultation-modules]"));
+  assert.ok(layout.querySelector("aside[data-consultation-context]"));
+  assert.match(layout.className, /min-w-0/);
+  assert.match(layout.className, /xl:grid-cols/);
+  assert.doesNotMatch(host.textContent, /appointment_id:|doctor_id:|center_id:/);
+});

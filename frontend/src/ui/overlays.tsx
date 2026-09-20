@@ -12,6 +12,7 @@ type DialogProps = {
   footer?: ReactNode;
   closeLabel?: string;
   closeOnBackdrop?: boolean;
+  className?: string;
 };
 
 // A shared lock also supports a modal opened from a drawer without early unlock.
@@ -25,7 +26,7 @@ function lockScroll() {
   return () => { if (--scrollLocks === 0) document.body.style.overflow = previousOverflow; };
 }
 
-function Dialog({ open, onClose, title, headingIcon, description, children, footer, closeLabel = "Cerrar panel", closeOnBackdrop = false, drawer = false }: DialogProps & { drawer?: boolean }) {
+function Dialog({ open, onClose, title, headingIcon, description, children, footer, closeLabel = "Cerrar panel", closeOnBackdrop = false, className, drawer = false }: DialogProps & { drawer?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -43,7 +44,7 @@ function Dialog({ open, onClose, title, headingIcon, description, children, foot
       if (trigger?.isConnected) trigger.focus();
     };
   }, [open]);
-  return createPortal(<dialog ref={ref} className={cx("atlas-dialog", drawer && "atlas-dialog--drawer")}
+  return createPortal(<dialog ref={ref} className={cx("atlas-dialog", drawer && "atlas-dialog--drawer", className)}
     aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined}
     onKeyDown={(event) => {
       if (event.key !== "Tab") return;

@@ -59,6 +59,14 @@ export function isReadAborted(error: unknown) {
   return axios.isCancel(error) || (axios.isAxiosError(error) && error.code === "ERR_CANCELED");
 }
 
+export function isRevisionConflict(error: unknown) {
+  if (typeof error !== "object" || error === null || !("response" in error)) return false;
+  const response = (error as { response?: { status?: unknown; data?: { detail?: unknown } } }).response;
+  return response?.status === 409
+    && typeof response.data?.detail === "string"
+    && response.data.detail.startsWith("La consulta fue modificada en otra sesión o pestaña");
+}
+
 export const clinicalApi = {
   getConsultationContext: (appointmentId: number, options?: ReadOptions) => read<ConsultationContext>(`/clinical-history/appointments/${appointmentId}/context`, options),
   getHistory: (historyId: number, options?: ReadOptions) => read<ClinicalHistory>(`/clinical-history/${historyId}`, options),

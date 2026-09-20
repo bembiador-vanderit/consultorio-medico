@@ -2,6 +2,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 import { createBrowser } from "./browser.mjs";
+import { appointmentScheduled } from "./fixtures/clinical.mjs";
 
 const { dom, setDesktop } = createBrowser();
 const { createElement: h, act } = await import("react");
@@ -42,6 +43,7 @@ async function mount(roles) {
   await act(async () => root.render(h(App)));
 }
 async function click(button) { assert.ok(button); await act(async () => button.click()); }
+async function change(input, value) { assert.ok(input); await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(input, value); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); }); }
 function button(text, scope = host) { return [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === text); }
 function navigation() { return host.querySelector(".atlas-sidebar nav"); }
 
@@ -171,4 +173,39 @@ test("account disclosure closes with Escape and retains accessible logout", asyn
   assert.equal(requests.length, before);
   await click(button("Cerrar sesión", menu));
   assert.equal(host.querySelector(".atlas-shell"), null);
+});
+
+test("la navegación principal respeta el guard temporal de Consulta", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const appointment = { ...structuredClone(appointmentScheduled), appointment_date: today, doctor_id: 1, doctor_name: "Personal de prueba" };
+  data.set("/appointments", [appointment]);
+  data.set(`/clinical-history/appointments/${appointment.id}/context`, {
+    appointment_id: appointment.id,
+    patient_id: appointment.patient_id,
+    doctor_id: appointment.doctor_id,
+    center_id: appointment.center_id,
+    specialty_id: appointment.specialty_id,
+    specialty_name: appointment.specialty_name,
+    appointment_date: appointment.appointment_date,
+    appointment_time: appointment.appointment_time,
+    appointment_reason: appointment.reason,
+    appointment_status: appointment.status,
+    previous_consultations: [],
+  });
+  await mount(["doctor"]);
+  await click(button("Agenda", navigation()));
+  await click(host.querySelector(".agenda-appointment-card--day"));
+  await click(button("Iniciar consulta", document));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+  const reason = [...host.querySelectorAll("label")].find((item) => item.textContent.startsWith("Motivo de consulta")).querySelector("input");
+  await change(reason, "Cambio pendiente desde navegación");
+  let confirmations = 0;
+  dom.window.confirm = () => { confirmations += 1; return false; };
+  await click(button("Dashboard", navigation()));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+  assert.equal(confirmations, 1);
+  dom.window.confirm = () => { confirmations += 1; return true; };
+  await click(button("Dashboard", navigation()));
+  assert.match(host.querySelector("main").textContent, /Hola, Personal de prueba/);
+  assert.equal(confirmations, 2);
 });
