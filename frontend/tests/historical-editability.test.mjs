@@ -140,3 +140,9 @@ test("completed wrapper keeps post-close controls separate from read-only projec
   assert.ok(button("Nueva orden adicional"));
   assert.equal(button("Guardar cambios"), undefined);
 });
+
+
+test("historical age uses the consultation date rather than today", async () => {
+  await act(async () => root.render(h(HistoricalConsultationProjection, { history: history({ patient_date_of_birth: "2000-09-02", consultation_date: "2020-09-01" }), details })));
+  assert.match(host.textContent, /Edad en la consulta: 19 años/);
+});

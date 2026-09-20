@@ -87,3 +87,5 @@
   .patients-personal .patients-facts>div { grid-template-columns:minmax(0,1fr) auto; align-items:baseline; gap:var(--atlas-space-2); }
   .patients-quick-actions>.patients-action--schedule,.patients-quick-actions>.patients-action--history { grid-column:auto; }
 }
+
+.patient-form>section { display:grid; gap:var(--atlas-space-5); min-width:0; }

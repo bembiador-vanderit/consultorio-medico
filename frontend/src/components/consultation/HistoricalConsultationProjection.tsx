@@ -1,3 +1,4 @@
+import { patientAgeLabel } from "../../services/patientAge";
 import ClinicalOrdersHistory from "../clinical/ClinicalOrdersHistory";
 import type { HistoricalConsultationDetails } from "../../types/historicalConsultation";
 import type { ClinicalHistory } from "../../types/clinical";
@@ -15,6 +16,7 @@ type Props = {
 export default function HistoricalConsultationProjection({ history, details, compact = false, onSummaryPdf, onPrescriptionPdf, onRequestedTestsPdf, downloading = "" }: Props) {
   const documentActions = onSummaryPdf || onPrescriptionPdf || onRequestedTestsPdf;
   return <div className={compact ? "space-y-3" : "mt-5 space-y-4"}>
+    {history.patient_date_of_birth && <p className="text-sm text-slate-600">Edad en la consulta: {patientAgeLabel(history.patient_date_of_birth, history.consultation_date)}</p>}
     <div className="grid gap-4 md:grid-cols-2">
       <HistoryBlock title="Motivo e historia" lines={[history.reason_for_visit, history.current_illness, history.clinical_notes]} />
       <HistoryBlock title="Antecedentes" lines={[history.personal_history, history.family_history, history.allergies, history.chronic_conditions, history.current_medications, history.previous_surgeries, history.habits]} />

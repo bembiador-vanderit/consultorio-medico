@@ -1,3 +1,6 @@
+import { patientAgeLabel } from "../services/patientAge";
+export { patientAge } from "../services/patientAge";
+import PatientDemographicDetails from "../components/patients/PatientDemographicDetails";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../services/api";
 import PatientForm from "../components/patients/PatientForm";
@@ -13,14 +16,8 @@ type Props = { onBack: () => void; onPatientChanged: () => void; onScheduleAppoi
 type PatientSortKey = "name" | "dateOfBirth" | "phone" | "email";
 const collator = new Intl.Collator("es", { numeric: true, sensitivity: "base" });
 
-export function patientAge(dateOfBirth: string, now = new Date()): number | null {
-  const birth = new Date(`${dateOfBirth}T00:00:00`);
-  if (!Number.isFinite(birth.getTime()) || birth > now) return null;
-  const birthdayPending = now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate());
-  return now.getFullYear() - birth.getFullYear() - Number(birthdayPending);
-}
 const birthLabel = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString("es-DO", { day: "2-digit", month: "2-digit", year: "numeric" });
-const ageLabel = (patient: Patient) => { const age = patientAge(patient.date_of_birth); return age === null ? "Edad no disponible" : `${age} años`; };
+const ageLabel = (patient: Patient) => patientAgeLabel(patient.date_of_birth);
 const fullName = (patient: Patient) => `${patient.first_name} ${patient.last_name}`;
 function Avatar({ patient }: { patient: Patient }) {
   return <span className="patients-avatar" aria-hidden="true">{patient.first_name.trim().slice(0, 1)}{patient.last_name.trim().slice(0, 1)}</span>;
@@ -38,6 +35,9 @@ export default function Patients({ onBack, onPatientChanged, onScheduleAppointme
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Patient | null>(null);
+  const [fullPatient, setFullPatient] = useState<Patient | null>(null);
+  const [detailError, setDetailError] = useState("");
+  const [detailVersion, setDetailVersion] = useState(0);
   const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
   const [detailOpen, setDetailOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -71,6 +71,16 @@ export default function Patients({ onBack, onPatientChanged, onScheduleAppointme
     return () => media.removeEventListener("change", change);
   }, []);
 
+  useEffect(() => {
+    setFullPatient(null); setDetailError("");
+    if (!selected) return;
+    let active = true;
+    api.get<Patient>(`/patients/${selected.id}`).then(({ data }) => {
+      if (active) setFullPatient({ ...data, selection_token: selected.selection_token });
+    }).catch((reason) => { if (active) setDetailError(errorMessage(reason)); });
+    return () => { active = false; };
+  }, [selected?.id, detailVersion]);
+
   const sortedPatients = useMemo(() => {
     if (!sort) return patients;
     const direction = sort.direction === "asc" ? 1 : -1;
@@ -84,7 +94,7 @@ export default function Patients({ onBack, onPatientChanged, onScheduleAppointme
   function createPatient() { setEditing(null); setShowForm(true); }
   function handleSaved(patient: Patient) {
     const saved = { ...patient, selection_token: patient.selection_token ?? editing?.selection_token };
-    setShowForm(false); setSelected(saved); onPatientChanged();
+    setShowForm(false); setSelected(saved); setDetailVersion((version) => version + 1); onPatientChanged();
     if (!editing && (user.roles.includes("doctor") || user.roles.includes("secretary"))) onScheduleAppointment(saved);
     else void loadPatients(appliedQuery);
   }
@@ -96,13 +106,14 @@ export default function Patients({ onBack, onPatientChanged, onScheduleAppointme
         <div><dt>Fecha de nacimiento</dt><dd>{birthLabel(selected.date_of_birth)}</dd></div>
       </dl></section>
       <section className="patients-contact" aria-label="Contacto"><h4 className="atlas-card-title">Contacto</h4><dl className="patients-facts">
-        <div><dt>Teléfono</dt><dd>{selected.phone || "Sin teléfono registrado"}</dd></div>
+        <div><dt>Teléfono celular</dt><dd>{selected.phone || "Sin teléfono registrado"}</dd></div>
         <div><dt>Correo</dt><dd>{selected.email || "Sin correo registrado"}</dd></div>
       </dl></section></div>
+      {detailError ? <Alert tone="danger" title="No se pudo cargar la ficha">{detailError}<Button variant="outline" onClick={() => setDetailVersion((version) => version + 1)}>Reintentar ficha</Button></Alert> : fullPatient?.id === selected.id ? <PatientDemographicDetails patient={fullPatient} /> : <LoadingState label="Cargando ficha..." />}
       <div className="patients-quick-actions" aria-label="Acciones del paciente">
         <Button className="patients-action--schedule" icon={<NavigationIcon name="calendar" />} onClick={() => onScheduleAppointment(selected)}>Agendar cita</Button>
         {canAccessClinical && <Button className="patients-action--history" icon={<NavigationIcon name="report" />} variant="outline" onClick={() => setHistoryPatient(selected)}>Historia clínica</Button>}
-        <Button className="patients-action--edit" icon={<NavigationIcon name="patient" />} variant="outline" onClick={() => { setEditing(selected); setShowForm(true); }}>Editar</Button>
+        <Button className="patients-action--edit" icon={<NavigationIcon name="patient" />} variant="outline" disabled={!fullPatient || fullPatient.id !== selected.id || Boolean(detailError)} onClick={() => { setEditing(fullPatient); setShowForm(true); }}>Editar</Button>
         <Button className="patients-action--insurance" icon={<NavigationIcon name="clinical" />} variant="outline" onClick={() => setInsurancePatient(selected)}>Seguro</Button>
       </div>
     </div>;
@@ -111,7 +122,7 @@ export default function Patients({ onBack, onPatientChanged, onScheduleAppointme
   return <section className="patients-workspace" aria-label="Gestión de pacientes">
     <PageHeader title="Pacientes" description="Gestión y seguimiento de pacientes" actions={<Button onClick={createPatient}>+ Nuevo paciente</Button>} />
     <form className="patients-search" onSubmit={(event: FormEvent) => { event.preventDefault(); void loadPatients(query); }}>
-      <FormField label="Buscar pacientes"><Input type="search" placeholder="Buscar por nombre, apellido o teléfono..." value={query} onChange={(event) => setQuery(event.target.value)} /></FormField>
+      <FormField label="Buscar pacientes"><Input type="search" placeholder="Buscar por nombre, apellido, teléfono o documento exacto..." value={query} onChange={(event) => setQuery(event.target.value)} /></FormField>
       <div className="patients-search-actions"><Button type="submit">Buscar</Button><Button variant="outline" onClick={() => { setQuery(""); void loadPatients(); }}>Limpiar</Button></div>
     </form>
     <div className="patients-layout">
@@ -123,7 +134,7 @@ export default function Patients({ onBack, onPatientChanged, onScheduleAppointme
           }}><option value="default">Orden del servidor</option>{[["name", "Nombre"], ["dateOfBirth", "Nacimiento"], ["phone", "Teléfono"], ["email", "Correo"]].flatMap(([key, label]) => [<option key={`${key}:asc`} value={`${key}:asc`}>{label} ↑</option>, <option key={`${key}:desc`} value={`${key}:desc`}>{label} ↓</option>])}</Select></FormField>
         </header>
         <div className="patients-list-scroll" aria-busy={loading}>
-          {loading ? <LoadingState label="Cargando pacientes..." /> : error ? <div className="patients-error"><Alert tone="danger" title="No se pudo cargar el listado">{error}</Alert><Button variant="outline" onClick={() => void loadPatients(appliedQuery)}>Reintentar</Button></div> : patients.length === 0 ? <EmptyState title={appliedQuery ? "No hay resultados para esta búsqueda" : "No hay pacientes registrados"} description={appliedQuery ? "Prueba con otro nombre, apellido o teléfono." : "Registra un paciente para comenzar."} action={<Button variant="outline" onClick={appliedQuery ? () => { setQuery(""); void loadPatients(); } : createPatient}>{appliedQuery ? "Limpiar búsqueda" : "+ Nuevo paciente"}</Button>} /> : <ul className="patients-list" aria-label="Pacientes encontrados">{sortedPatients.map((patient) => <li key={patient.id}>
+          {loading ? <LoadingState label="Cargando pacientes..." /> : error ? <div className="patients-error"><Alert tone="danger" title="No se pudo cargar el listado">{error}</Alert><Button variant="outline" onClick={() => void loadPatients(appliedQuery)}>Reintentar</Button></div> : patients.length === 0 ? <EmptyState title={appliedQuery ? "No hay resultados para esta búsqueda" : "No hay pacientes registrados"} description={appliedQuery ? "Prueba con otro nombre, apellido, teléfono o documento exacto." : "Registra un paciente para comenzar."} action={<Button variant="outline" onClick={appliedQuery ? () => { setQuery(""); void loadPatients(); } : createPatient}>{appliedQuery ? "Limpiar búsqueda" : "+ Nuevo paciente"}</Button>} /> : <ul className="patients-list" aria-label="Pacientes encontrados">{sortedPatients.map((patient) => <li key={patient.id}>
             <button type="button" className="patients-row" aria-pressed={selected?.id === patient.id} aria-haspopup={!desktop ? "dialog" : undefined} onClick={() => selectPatient(patient)} ref={(element) => { if (element) rowRefs.current.set(patient.id, element); else rowRefs.current.delete(patient.id); }}>
               <Avatar patient={patient} /><span className="patients-row-identity"><strong title={fullName(patient)}>{fullName(patient)}</strong><span>{ageLabel(patient)} · {birthLabel(patient.date_of_birth)}</span></span>
               <span className="patients-row-contact"><span title={patient.phone || undefined}>{patient.phone || "Sin teléfono"}</span><span title={patient.email || undefined}>{patient.email || "Sin correo"}</span></span>

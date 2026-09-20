@@ -123,7 +123,9 @@ Los accesos a identidades fuera del scope responden como paciente no encontrado.
 
 ## Límites conocidos
 
-- La prevención de duplicados es deliberadamente básica: fecha de nacimiento más teléfono o correo exacto.
-- El modelo todavía no incluye documento/cédula normalizado.
+- La prevención de duplicados por fecha de nacimiento más teléfono o correo exacto se conserva.
+- La intervención [Patient Identity & Clinical Demographics](patient-identity-clinical-demographics.md)
+  añade documento opcional normalizado con unicidad por tipo, ficha ampliada y búsqueda
+  exacta dentro del scope. Listado y selección mínima no exponen los nuevos datos.
 - No existe acceso de emergencia (`break-glass`) ni consentimiento electrónico en esta fase.
 - La política descrita es una decisión de seguridad y producto; no constituye una conclusión legal.

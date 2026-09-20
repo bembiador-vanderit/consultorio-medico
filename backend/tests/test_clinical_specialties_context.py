@@ -582,7 +582,9 @@ def test_history_access_rejects_a_specialty_mismatch_with_its_appointment(specia
     assert error.value.status_code == 403
 
 
-def test_coverage_transfer_rejects_a_substitute_without_the_appointment_specialty(specialty_context):
+def test_coverage_transfer_rejects_a_substitute_without_the_appointment_specialty(specialty_context, monkeypatch):
+    # Keep the fictional coverage active independently of the execution date.
+    monkeypatch.setattr("app.services.clinical_coverage.installation_now", lambda: datetime(2026, 9, 15, 8))
     db, patient, center, cardiology, _, internal, doctor_one, substitute, _, _ = specialty_context
     osiris, _ = create_osiris(db, center, cardiology, internal, doctor_one.roles[0])
     appointment = create_appointment(
@@ -605,7 +607,9 @@ def test_coverage_transfer_rejects_a_substitute_without_the_appointment_specialt
     assert error.value.status_code == 422
 
 
-def test_coverage_transfer_accepts_a_secondary_active_substitute_specialty(specialty_context):
+def test_coverage_transfer_accepts_a_secondary_active_substitute_specialty(specialty_context, monkeypatch):
+    # Keep the fictional coverage active independently of the execution date.
+    monkeypatch.setattr("app.services.clinical_coverage.installation_now", lambda: datetime(2026, 9, 15, 8))
     (
         db, patient, center, cardiology, pediatrics, internal,
         doctor_one, substitute, _, _,
@@ -632,7 +636,9 @@ def test_coverage_transfer_accepts_a_secondary_active_substitute_specialty(speci
     assert result["doctor_id"] == substitute.id
 
 
-def test_coverage_transfer_rejects_an_inactive_substitute_specialty(specialty_context):
+def test_coverage_transfer_rejects_an_inactive_substitute_specialty(specialty_context, monkeypatch):
+    # Keep the fictional coverage active independently of the execution date.
+    monkeypatch.setattr("app.services.clinical_coverage.installation_now", lambda: datetime(2026, 9, 15, 8))
     (
         db, patient, center, cardiology, pediatrics, internal,
         doctor_one, substitute, _, _,

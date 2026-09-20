@@ -3,7 +3,9 @@ import { Alert, Button, FormField, FormSection, Input, Modal, Radio, Select } fr
 import "../../pages/patients.css";
 import { api } from "../../services/api";
 import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
-import type { Patient } from "../../types/patient";
+import { patientAgeLabel, todayDate } from "../../services/patientAge";
+import PatientDemographicFields from "./PatientDemographicFields";
+import type { PatientDemographics, Patient } from "../../types/patient";
 import type { User } from "../../types/user";
 
 type PatientIdentity = { id: number; first_name: string; last_name: string; date_of_birth: string; phone_masked: string | null; email_masked: string | null; selection_token: string };
@@ -17,6 +19,7 @@ type Props = {
 };
 
 export default function PatientForm({ patient, onClose, onSaved, onExistingSelected, user }: Props) {
+  const [demographics, setDemographics] = useState<PatientDemographics>(() => Object.fromEntries(["document_type", "document_number", "home_phone", "registered_sex", "blood_type", "address", "province", "nationality", "occupation", "emergency_contact_name", "emergency_contact_relationship", "emergency_contact_mobile", "emergency_contact_home_phone", "guardian_name", "guardian_relationship", "guardian_mobile", "guardian_home_phone", "locality_id"].map((key) => [key, patient?.[key as keyof PatientDemographics] ?? null])));
   const [firstName, setFirstName] = useState(patient?.first_name || "");
   const [lastName, setLastName] = useState(patient?.last_name || "");
   const [dateOfBirth, setDateOfBirth] = useState(patient?.date_of_birth || "");
@@ -103,6 +106,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
     );
 
     const payload = {
+      ...demographics,
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       date_of_birth: dateOfBirth,
@@ -136,7 +140,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
         : await api.post<Patient>("/patients", payload);
       onSaved(response.data);
     } catch (err: any) {
-      console.error(err);
+      // Do not log request payloads containing patient identifiers.
       const detail = err?.response?.data?.detail;
       setError(
         Array.isArray(detail)
@@ -153,13 +157,16 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
       {error && <Alert tone="danger" title="Revise los datos del paciente">{error}</Alert>}
       {identityMatches.length > 0 && <div className="patient-identity-matches">{identityMatches.map((match) => <Button key={match.id} variant="outline" onClick={() => onExistingSelected({ id: match.id, first_name: match.first_name, last_name: match.last_name, date_of_birth: match.date_of_birth, phone: match.phone_masked, email: null, created_at: new Date().toISOString(), selection_token: match.selection_token })}><strong>Usar {match.first_name} {match.last_name}</strong><span className="atlas-help"> · {match.date_of_birth}{match.phone_masked ? ` · ${match.phone_masked}` : ""}</span></Button>)}</div>}
       {!patient && user.roles.includes("secretary") && <Alert title="Seleccionar un paciente existente">Para buscar un paciente existente, use Nueva cita y seleccione primero el centro y el médico autorizado.</Alert>}
-      <FormSection title="Datos del paciente">
+      <section aria-label="Datos personales"><h3 className="atlas-section-title">Datos personales</h3>
+      <FormSection title="Identidad y contacto">
         <FormField label="Nombre" required><Input minLength={2} maxLength={100} autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} /></FormField>
         <FormField label="Apellido" required><Input minLength={2} maxLength={100} autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} /></FormField>
-        <FormField label="Fecha de nacimiento" required><Input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></FormField>
-        <FormField label="Teléfono"><Input type="tel" maxLength={30} autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></FormField>
+        <FormField label="Fecha de nacimiento" required><Input type="date" max={todayDate()} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></FormField>
+        <FormField label="Edad calculada"><Input readOnly value={patientAgeLabel(dateOfBirth)} /></FormField>
+        <FormField label="Teléfono celular"><Input type="tel" maxLength={30} autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></FormField>
         <div className="patient-form-wide"><FormField label="Correo"><Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FormField></div>
       </FormSection>
+      <PatientDemographicFields value={demographics} onChange={setDemographics} section="personal" />
       <FormSection title="Seguro" description="Indique si el paciente tiene seguro médico.">
         {insuranceError && <div className="patient-form-wide"><Alert tone="warning" title="Seguro no disponible">{insuranceError}</Alert></div>}
         {loadingInsurance && <p role="status" className="atlas-help patient-form-wide">Cargando seguro...</p>}
@@ -171,6 +178,8 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
         </>}
         {!hasInsurance && insuranceReady && <p className="atlas-help patient-form-wide">Paciente sin Seguro</p>}
       </FormSection>
+      </section>
+      <section aria-label="Datos clínicos"><h3 className="atlas-section-title">Datos clínicos</h3><PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical" /></section>
     </form>
   </Modal>;
 }

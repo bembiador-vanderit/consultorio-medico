@@ -35,6 +35,8 @@ class ClinicalHistoryUpdate(ClinicalHistoryBase):
 
 
 class ClinicalHistoryResponse(ClinicalHistoryBase):
+    patient_date_of_birth: date
+
     id: int
     patient_id: int
     appointment_id: int | None = None
