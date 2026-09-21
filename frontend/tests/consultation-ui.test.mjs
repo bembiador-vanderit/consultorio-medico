@@ -193,6 +193,12 @@ function button(label, scope = host) {
   return [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === label);
 }
 
+function activeDialog() {
+  const dialog = document.querySelector("dialog[open]");
+  assert.ok(dialog);
+  return dialog;
+}
+
 function control(label, scope = host) {
   const wrapper = [...scope.querySelectorAll("label")].find((item) => item.textContent.trim().startsWith(label));
   assert.ok(wrapper, label);
@@ -424,6 +430,7 @@ test("dirty state protege salida, beforeunload y finalización; guardar lo limpi
   assert.equal(button("Finalizar consulta").disabled, true);
   assert.match(host.textContent, /Guarde o descarte los cambios pendientes antes de finalizar/);
   assert.equal(calls.some((item) => item.url === "/clinical-history/42/complete"), false);
+  assert.equal(document.querySelector("dialog[open]"), null);
 
   dom.window.confirm = () => { confirmCount += 1; return false; };
   await click(button("← Volver a la agenda"));
@@ -544,14 +551,53 @@ test("el panel RequestedTest heredado no se muestra cuando no hay registros", as
   assert.doesNotMatch(host.textContent, /Solicitudes heredadas/);
 });
 
-test("finalizar consulta confirma una vez, bloquea edición y conserva lectura", async () => {
+test("finalizar consulta abre el Modal Atlas sin window.confirm y cancelar no llama el API", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const trigger = button("Finalizar consulta");
+  trigger.focus();
+  await click(trigger);
+  const dialog = activeDialog();
+  assert.ok(dialog.getAttribute("aria-labelledby"));
+  assert.equal(document.activeElement, dialog.querySelector("h2"));
+  assert.match(dialog.textContent, /¿Desea finalizar esta consulta\?/);
+  assert.match(dialog.textContent, /quedará en modo de solo lectura/);
+  assert.equal(confirmCount, 0);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+  await click(button("Cancelar", dialog));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, trigger);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+});
+
+test("confirmar finalización muestra estado ocupado, llama el API y mantiene lectura", async () => {
   currentHistory = clone(clinicalHistoryInProgress);
   contextHistories = [currentHistory];
   prescriptions = [clone(prescriptionFixture)];
+  let releaseCompletion;
+  intercept = (config) => {
+    if (config.url !== "/clinical-history/42/complete" || config.method !== "post") return undefined;
+    return new Promise((resolve) => {
+      releaseCompletion = () => {
+        currentHistory = { ...currentHistory, status: "completed", revision: currentHistory.revision + 1, completed_at: "2026-09-16T10:05:00", completed_by_id: activeDoctor.id };
+        currentAppointment = { ...currentAppointment, status: "completed" };
+        resolve(ok(config, currentHistory));
+      };
+    });
+  };
   await mount();
   await click(button("Finalizar consulta"));
-  assert.equal(confirmCount, 1);
+  const dialog = activeDialog();
+  await click(button("Finalizar consulta", dialog));
+  assert.equal(confirmCount, 0);
   assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 1);
+  assert.ok(button("Finalizando...", dialog));
+  assert.equal(button("Finalizando...", dialog).disabled, true);
+  assert.equal(button("Cancelar", dialog).disabled, true);
+  await act(async () => { releaseCompletion(); });
+  await settle();
+  assert.equal(document.querySelector("dialog[open]"), null);
   assert.match(host.textContent, /Consulta finalizada y bloqueada en modo de solo lectura/);
   assert.equal(button("Finalizar consulta"), undefined);
   assert.equal(button("Guardar consulta"), undefined);
@@ -559,17 +605,34 @@ test("finalizar consulta confirma una vez, bloquea edición y conserva lectura",
 });
 
 for (const [status, detail] of [[409, "La consulta finalizada es de solo lectura"], [403, "No tiene acceso a esta historia clínica"]]) {
-  test(`finalizar conserva el error ${status} del servidor sin representar un cierre local`, async () => {
+  test(`finalizar conserva el error ${status} del servidor y mantiene el Modal`, async () => {
     currentHistory = clone(clinicalHistoryInProgress);
     contextHistories = [currentHistory];
     intercept = (config) => config.url === "/clinical-history/42/complete" && config.method === "post" ? failure(detail, status) : undefined;
     await mount();
     await click(button("Finalizar consulta"));
-    assert.equal(confirmCount, 1);
+    const dialog = activeDialog();
+    await click(button("Finalizar consulta", dialog));
+    assert.equal(confirmCount, 0);
     assert.match(host.textContent, new RegExp(detail));
+    assert.ok(document.querySelector("dialog[open]"));
     assert.ok(button("Finalizar consulta"));
   });
 }
+
+test("Escape cierra el Modal de finalización sin finalizar", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const trigger = button("Finalizar consulta");
+  trigger.focus();
+  await click(trigger);
+  const dialog = activeDialog();
+  await act(async () => dialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, trigger);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+});
 
 test("consulta completed se mantiene legible y el historial previo se abre/cierra solo con su control actual", async () => {
   currentAppointment = { ...clone(appointmentScheduled), status: "completed" };

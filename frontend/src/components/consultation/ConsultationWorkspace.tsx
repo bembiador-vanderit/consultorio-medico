@@ -39,6 +39,7 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
   const [saved, setSaved] = useState<ClinicalHistory | null>(null);
   const [error, setError] = useState("");
   const [revisionConflict, setRevisionConflict] = useState(false);
+  const [completionModalOpen, setCompletionModalOpen] = useState(false);
   const [previousDetails, setPreviousDetails] = useState<PreviousDetails | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loadingPreviousId, setLoadingPreviousId] = useState<number | null>(null);
@@ -79,6 +80,7 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
     setVitalSigns(null);
     setLoadingVitalSigns(true);
     setRevisionConflict(false);
+    setCompletionModalOpen(false);
     setError("");
     return () => {
       previousRequestGeneration.current += 1;
@@ -131,15 +133,22 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
     if (loaded) { clearDirty(); setRevisionConflict(false); }
   }
 
+  function openCompletionModal() {
+    if (!saved || isCompleted || saving || completing || hasDirtyChanges) return;
+    setError("");
+    setCompletionModalOpen(true);
+  }
+
   async function completeConsultation() {
     if (hasDirtyChanges) { setError("Guarde o descarte los cambios pendientes antes de finalizar."); return; }
-    if (!saved || isCompleted || !window.confirm("¿Finalizar esta consulta? Después quedará en modo de solo lectura.")) return;
+    if (!saved || isCompleted || completing) return;
     setCompleting(true);
     setError("");
     try {
       const data = await clinicalApi.completeHistory(saved.id);
       setSaved(data);
       setContext((current) => current ? { ...current, appointment_status: "completed", previous_consultations: current.previous_consultations.map((item) => item.id === data.id ? data : item) } : current);
+      setCompletionModalOpen(false);
     } catch (reason: unknown) {
       setError(clinicalErrorMessage(reason, "No fue posible finalizar la consulta."));
     } finally {
@@ -204,7 +213,7 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
     {revisionConflict && <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">La consulta fue modificada en otra sesión o pestaña.</p><p className="mt-1">Los cambios locales no fueron guardados y permanecen visibles. Atlas no volverá a enviarlos automáticamente.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void reloadServerVersion()} disabled={bootstrap.refreshing} className="rounded-lg bg-amber-800 px-3 py-2 font-medium text-white disabled:opacity-50">{bootstrap.refreshing ? "Recargando..." : "Recargar versión del servidor"}</button><button type="button" onClick={() => setRevisionConflict(false)} className="rounded-lg border border-amber-400 bg-white px-3 py-2 font-medium text-amber-900">Continuar revisando mis cambios</button></div></div>}
     {error && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
     {bootstrap.refreshing && <p role="status" aria-live="polite" className="mt-4 rounded-lg bg-sky-50 p-3 text-sm text-sky-800">Recargando la versión actual del servidor...</p>}
-    {saved && <div role="status" aria-live="polite" className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg p-3 text-sm ${isCompleted ? "bg-slate-200 text-slate-800" : "bg-emerald-50 text-emerald-800"}`}><span>{isCompleted ? "Consulta finalizada y bloqueada en modo de solo lectura." : hasDirtyChanges ? "Consulta en progreso · hay cambios locales pendientes." : "Consulta guardada correctamente."}</span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void downloadSummaryPdf()} disabled={downloadingSummaryPdf} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 font-medium text-emerald-800 disabled:opacity-40">{downloadingSummaryPdf ? "Generando resumen..." : "Descargar resumen PDF"}</button>{!isCompleted && <button type="button" onClick={() => void completeConsultation()} disabled={completing || saving || hasDirtyChanges} aria-describedby={hasDirtyChanges ? "consultation-pending-completion" : undefined} className="rounded-lg bg-slate-900 px-3 py-2 font-medium text-white disabled:opacity-40">{completing ? "Finalizando..." : "Finalizar consulta"}</button>}</div>{!isCompleted && hasDirtyChanges && <p id="consultation-pending-completion" className="w-full rounded-md bg-amber-100 p-2 text-amber-900">Guarde o descarte los cambios pendientes antes de finalizar.</p>}</div>}
+    {saved && <div role="status" aria-live="polite" className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg p-3 text-sm ${isCompleted ? "bg-slate-200 text-slate-800" : "bg-emerald-50 text-emerald-800"}`}><span>{isCompleted ? "Consulta finalizada y bloqueada en modo de solo lectura." : hasDirtyChanges ? "Consulta en progreso · hay cambios locales pendientes." : "Consulta guardada correctamente."}</span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void downloadSummaryPdf()} disabled={downloadingSummaryPdf} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 font-medium text-emerald-800 disabled:opacity-40">{downloadingSummaryPdf ? "Generando resumen..." : "Descargar resumen PDF"}</button>{!isCompleted && <button type="button" onClick={openCompletionModal} disabled={completing || saving || hasDirtyChanges} aria-describedby={hasDirtyChanges ? "consultation-pending-completion" : undefined} className="rounded-lg bg-slate-900 px-3 py-2 font-medium text-white disabled:opacity-40">Finalizar consulta</button>}</div>{!isCompleted && hasDirtyChanges && <p id="consultation-pending-completion" className="w-full rounded-md bg-amber-100 p-2 text-amber-900">Guarde o descarte los cambios pendientes antes de finalizar.</p>}</div>}
     <div data-consultation-layout="adaptive" className="mt-6 grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(17rem,20rem)]"><div data-consultation-modules className="min-w-0 space-y-6">
       <AnamnesisModule key={`anamnesis:${appointment.id}:${bootstrap.version}`} patientDateOfBirth={appointment.patient_date_of_birth} episodeId={appointment.id} appointmentReason={context?.appointment_reason ?? appointment.reason} history={saved} completed={isCompleted} saving={saving} onSave={saveHistory} onDirtyChange={setAnamnesisDirty} />
       <VitalSignsModule key={`vitals:${appointment.id}:${bootstrap.version}`} episodeId={appointment.id} historyId={saved?.id ?? null} vitalSigns={vitalSigns} completed={isCompleted} loading={loadingVitalSigns} onSaved={setVitalSigns} onDirtyChange={setVitalSignsDirty} />
@@ -214,6 +223,7 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
       {requestedTests.length > 0 && <section className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Solicitudes heredadas</h3><p className="text-sm text-slate-500">Solicitudes registradas con el formato anterior de Atlas.</p></div><button type="button" onClick={() => void downloadRequestedTestsPdf()} disabled={downloadingTestsPdf} className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-medium text-indigo-700 disabled:opacity-40">{downloadingTestsPdf ? "Generando PDF..." : "Descargar orden PDF"}</button></div><ul className="mt-4 space-y-2">{requestedTests.map((item) => <li key={item.id} className="break-words rounded-lg bg-slate-50 p-3 text-sm font-medium">{item.test_name}</li>)}</ul></section>}
     </div><aside data-consultation-context className="min-w-0 space-y-4"><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Contexto de atención</h3><dl className="mt-3 space-y-3 text-sm"><div><dt className="text-slate-500">Paciente</dt><dd className="break-words font-semibold">{appointment.patient_name}</dd></div><div><dt className="text-slate-500">Fecha de nacimiento</dt><dd className="font-semibold">{appointment.patient_date_of_birth}</dd></div>{context?.patient_blood_type && <div><dt className="text-slate-500">Tipo sanguíneo declarado/registrado (ficha actual)</dt><dd className="break-words">{context.patient_blood_type} · No equivale a confirmación de laboratorio</dd></div>}<div><dt className="text-slate-500">Médico</dt><dd className="break-words font-semibold">{appointment.doctor_name}</dd></div><div><dt className="text-slate-500">Centro</dt><dd className="break-words font-semibold">{appointment.center_name ? `${appointment.center_name}${appointment.center_city ? ` · ${appointment.center_city}` : ""}` : "Sin centro"}</dd></div><div><dt className="text-slate-500">Motivo</dt><dd className="break-words">{appointment.reason || "—"}</dd></div></dl></div><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Consultas anteriores</h3>{previousConsultations.length ? <div className="mt-3 space-y-3">{previousConsultations.slice(0, 5).map((item) => <div key={item.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-medium">{item.consultation_date}</p><p className="mt-1 break-words text-slate-600">{item.reason_for_visit || "Sin motivo registrado"}</p><button type="button" onClick={() => void viewPrevious(item)} disabled={loadingPreviousId === item.id} className="mt-2 font-medium text-teal-700 hover:underline disabled:opacity-50">{loadingPreviousId === item.id ? "Cargando..." : "Ver historial completo"}</button></div>)}</div> : <p className="mt-3 text-sm text-slate-500">No hay consultas anteriores.</p>}</div></aside></div>
     {previousDetails && <PreviousConsultationModal details={previousDetails} onClose={() => setPreviousDetails(null)} onDownload={() => void downloadPreviousSummary(previousDetails.consultation.id)} />}
+    {completionModalOpen && <CompletionConfirmationModal completing={completing} onClose={() => { if (!completing) setCompletionModalOpen(false); }} onConfirm={() => void completeConsultation()} />}
     <span className="sr-only" aria-live="polite">{dirtySections.size ? `${dirtySections.size} secciones con cambios sin guardar` : "Sin cambios pendientes"}</span>
   </section>;
 }
@@ -225,4 +235,12 @@ function downloadBlob(blob: Blob, filename: string) {
 function PreviousConsultationModal({ details, onClose, onDownload }: { details: PreviousDetails; onClose: () => void; onDownload: () => void }) {
   const item = details.consultation;
   return <Modal open onClose={onClose} title={`Consulta del ${item.consultation_date}`} description="Historial anterior · solo lectura" closeLabel="Cerrar historial anterior" className="!w-[min(64rem,calc(100vw-2rem))]"><HistoricalConsultationProjection history={item} details={details.details} onSummaryPdf={onDownload} /></Modal>;
+}
+
+function CompletionConfirmationModal({ completing, onClose, onConfirm }: { completing: boolean; onClose: () => void; onConfirm: () => void }) {
+  return <Modal open onClose={onClose} closeDisabled={completing} title="Finalizar consulta" closeLabel="Cerrar confirmación de finalización"
+    footer={<><button type="button" onClick={onClose} disabled={completing} className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium text-slate-700 disabled:opacity-50">Cancelar</button><button type="button" onClick={onConfirm} disabled={completing} className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white disabled:opacity-50">{completing ? "Finalizando..." : "Finalizar consulta"}</button></>}>
+    <p className="text-slate-900">¿Desea finalizar esta consulta?</p>
+    <p className="mt-2 text-sm text-slate-600">Después de finalizarla, la consulta quedará en modo de solo lectura y no podrá modificar su contenido clínico.</p>
+  </Modal>;
 }
