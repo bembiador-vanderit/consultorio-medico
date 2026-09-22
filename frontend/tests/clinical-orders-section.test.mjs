@@ -12,7 +12,7 @@ const { default: ClinicalOrdersSection } = await server.ssrLoadModule("/src/comp
 const { api } = await server.ssrLoadModule("/src/services/api.ts");
 const originalAdapter = api.defaults.adapter;
 const host = document.getElementById("root");
-let root, props, calls, laboratoryOrders, studyOrders, deferred, fail, deferredPdf, nativeAnchorClick;
+let root, props, calls, laboratoryOrders, studyOrders, deferred, fail, deferredPdf, nativeAnchorClick, dirtyStates;
 
 const tests = [
   { id: 31, code: "CBC", name: "Hemograma ficticio", category: "Hematología", is_active: true, sort_order: 1 },
@@ -66,10 +66,10 @@ async function adapter(config) {
 }
 
 beforeEach(() => {
-  root = createRoot(host); calls = []; deferred = null; deferredPdf = null; fail = null;
+  root = createRoot(host); calls = []; deferred = null; deferredPdf = null; fail = null; dirtyStates = [];
   nativeAnchorClick = dom.window.HTMLAnchorElement.prototype.click; dom.window.HTMLAnchorElement.prototype.click = () => {};
   laboratoryOrders = { 42: [labOrder(42)], 77: [labOrder(77, 777)] }; studyOrders = { 42: [studyOrder(42)], 77: [studyOrder(77, 877)] };
-  props = { historyId: 42, specialtyId: 3, completed: false, allowAdditional: false };
+  props = { historyId: 42, specialtyId: 3, completed: false, allowAdditional: false, onDirtyChange(value) { dirtyStates.push(value); } };
   api.defaults.adapter = adapter;
 });
 afterEach(async () => { await act(async () => root.unmount()); api.defaults.adapter = originalAdapter; dom.window.HTMLAnchorElement.prototype.click = nativeAnchorClick; });
@@ -87,6 +87,26 @@ test("chooser opens, cancels, and laboratory create preserves grouping, multi-se
   await click(button("Hematología")); await click(button("Química")); const choices = [...host.querySelectorAll('input[type="checkbox"]')]; await click(choices[0]); await click(choices[1]); await change(input("Observaciones generales de laboratorio"), "  Nota nueva  "); await click(button("Guardar orden"));
   const created = calls.find(item => item.method === "post" && item.url === "/clinical-history/42/laboratory-orders");
   assert.deepEqual(payload(created), { items: [{ laboratory_test_id: 31 }, { laboratory_test_id: 32 }], notes: "Nota nueva" }); assert.equal(input("Buscar pruebas de laboratorio"), null); assert.match(host.textContent, /Orden de laboratorio #900/);
+});
+
+test("composer de órdenes informa dirty mientras está abierto y conserva dirty ante error", async () => {
+  await render();
+  assert.equal(dirtyStates.at(-1), false);
+  await click(button("+ Nueva orden"));
+  assert.equal(dirtyStates.at(-1), true);
+  await click(button("Cancelar"));
+  assert.equal(dirtyStates.at(-1), false);
+  await click(button("+ Nueva orden"));
+  await click(button("Laboratorio"));
+  await click(button("Hematología"));
+  await click(host.querySelector('input[type="checkbox"]'));
+  fail = config => config.method === "post";
+  await click(button("Guardar orden"));
+  assert.equal(dirtyStates.at(-1), true);
+  assert.ok(input("Buscar pruebas de laboratorio"));
+  fail = null;
+  await click(button("Guardar orden"));
+  assert.equal(dirtyStates.at(-1), false);
 });
 
 test("laboratory categories use one viewport-independent accordion with synchronized counts, chips, and search", async () => {

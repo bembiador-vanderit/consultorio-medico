@@ -2,6 +2,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 import { createBrowser } from "./browser.mjs";
+import { appointmentScheduled } from "./fixtures/clinical.mjs";
 
 const { dom, setDesktop } = createBrowser();
 const { createElement: h, act } = await import("react");
@@ -42,8 +43,10 @@ async function mount(roles) {
   await act(async () => root.render(h(App)));
 }
 async function click(button) { assert.ok(button); await act(async () => button.click()); }
+async function change(input, value) { assert.ok(input); await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(input, value); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); }); }
 function button(text, scope = host) { return [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === text); }
 function navigation() { return host.querySelector(".atlas-sidebar nav"); }
+function activeDialog() { const dialog = document.querySelector("dialog[open]"); assert.ok(dialog); return dialog; }
 
 for (const roles of [[], ["doctor"], ["secretary"], ["admin"], ["doctor", "admin"], ["doctor", "secretary"], ["secretary", "admin"], ["doctor", "secretary", "admin"], ["unexpected"]]) {
   test(`operational navigation and reachable bodies preserve roles ${roles.join("+") || "none"}`, async () => {
@@ -171,4 +174,81 @@ test("account disclosure closes with Escape and retains accessible logout", asyn
   assert.equal(requests.length, before);
   await click(button("Cerrar sesión", menu));
   assert.equal(host.querySelector(".atlas-shell"), null);
+});
+
+async function enterDirtyConsultation() {
+  const today = new Date().toISOString().slice(0, 10);
+  const appointment = { ...structuredClone(appointmentScheduled), appointment_date: today, doctor_id: 1, doctor_name: "Personal de prueba" };
+  data.set("/appointments", [appointment]);
+  data.set(`/clinical-history/appointments/${appointment.id}/context`, {
+    appointment_id: appointment.id,
+    patient_id: appointment.patient_id,
+    doctor_id: appointment.doctor_id,
+    center_id: appointment.center_id,
+    specialty_id: appointment.specialty_id,
+    specialty_name: appointment.specialty_name,
+    appointment_date: appointment.appointment_date,
+    appointment_time: appointment.appointment_time,
+    appointment_reason: appointment.reason,
+    appointment_status: appointment.status,
+    previous_consultations: [],
+  });
+  await mount(["doctor"]);
+  await click(button("Agenda", navigation()));
+  await click(host.querySelector(".agenda-appointment-card--day"));
+  await click(button("Iniciar consulta", document));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+  const reason = [...host.querySelectorAll("label")].find((item) => item.textContent.startsWith("Motivo de consulta")).querySelector("input");
+  await change(reason, "Cambio pendiente desde navegación");
+  return reason;
+}
+
+test("la navegación lateral usa el modal Atlas y sale una sola vez al confirmar", async () => {
+  const reason = await enterDirtyConsultation();
+  let confirmations = 0;
+  dom.window.confirm = () => { confirmations += 1; return false; };
+  const dashboard = button("Dashboard", navigation());
+  dashboard.focus();
+  await click(dashboard);
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+  const discardDialog = activeDialog();
+  assert.match(discardDialog.textContent, /Hay cambios sin guardar en esta consulta/);
+  assert.equal(confirmations, 0);
+  await click(button("Continuar editando", discardDialog));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+  assert.equal(reason.value, "Cambio pendiente desde navegación");
+  assert.equal(document.activeElement, dashboard);
+  await click(dashboard);
+  await click(button("Salir sin guardar", activeDialog()));
+  assert.match(host.querySelector("main").textContent, /Hola, Personal de prueba/);
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(confirmations, 0);
+});
+
+test("navegación móvil, notificaciones y cerrar sesión respetan el modal de cambios", async () => {
+  await enterDirtyConsultation();
+  let confirmations = 0;
+  dom.window.confirm = () => { confirmations += 1; return false; };
+
+  await act(async () => setDesktop(false));
+  const mobileNavigation = host.querySelector('[aria-label="Navegación móvil"]');
+  await click(button("Inicio", mobileNavigation));
+  await click(button("Continuar editando", activeDialog()));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+
+  const notificationTrigger = host.querySelector('[aria-label^="Notificaciones"]');
+  await click(notificationTrigger);
+  await click(button("Ver en Dashboard", document));
+  await click(button("Continuar editando", activeDialog()));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+
+  const account = host.querySelector(".atlas-account-menu");
+  await click(account.querySelector("summary"));
+  await click(button("Cerrar sesión", account));
+  assert.ok(activeDialog());
+  assert.equal(requests.some((request) => request.url === "/auth/logout"), false);
+  await click(button("Salir sin guardar", activeDialog()));
+  await act(async () => { await Promise.resolve(); });
+  assert.equal(host.querySelector(".atlas-shell"), null);
+  assert.equal(confirmations, 0);
 });

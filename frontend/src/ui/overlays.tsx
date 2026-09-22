@@ -11,7 +11,9 @@ type DialogProps = {
   children: ReactNode;
   footer?: ReactNode;
   closeLabel?: string;
+  closeDisabled?: boolean;
   closeOnBackdrop?: boolean;
+  className?: string;
 };
 
 // A shared lock also supports a modal opened from a drawer without early unlock.
@@ -25,7 +27,7 @@ function lockScroll() {
   return () => { if (--scrollLocks === 0) document.body.style.overflow = previousOverflow; };
 }
 
-function Dialog({ open, onClose, title, headingIcon, description, children, footer, closeLabel = "Cerrar panel", closeOnBackdrop = false, drawer = false }: DialogProps & { drawer?: boolean }) {
+function Dialog({ open, onClose, title, headingIcon, description, children, footer, closeLabel = "Cerrar panel", closeDisabled = false, closeOnBackdrop = false, className, drawer = false }: DialogProps & { drawer?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const titleId = useId();
@@ -43,7 +45,7 @@ function Dialog({ open, onClose, title, headingIcon, description, children, foot
       if (trigger?.isConnected) trigger.focus();
     };
   }, [open]);
-  return createPortal(<dialog ref={ref} className={cx("atlas-dialog", drawer && "atlas-dialog--drawer")}
+  return createPortal(<dialog ref={ref} className={cx("atlas-dialog", drawer && "atlas-dialog--drawer", className)}
     aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined}
     onKeyDown={(event) => {
       if (event.key !== "Tab") return;
@@ -59,14 +61,14 @@ function Dialog({ open, onClose, title, headingIcon, description, children, foot
         event.preventDefault(); first.focus();
       }
     }}
-    onCancel={(event) => { event.preventDefault(); onClose(); }}
+    onCancel={(event) => { event.preventDefault(); if (!closeDisabled) onClose(); }}
     onClick={(event) => {
       if (closeOnBackdrop && event.target === event.currentTarget) onClose();
     }}>
     <header className={cx("atlas-dialog-header", Boolean(headingIcon) && "atlas-dialog-header--with-icon")}><div className="atlas-dialog-heading">{headingIcon && <span className="atlas-dialog-heading-icon" aria-hidden="true">{headingIcon}</span>}<div><h2 id={titleId} ref={titleRef} tabIndex={-1} className="atlas-section-title">{title}</h2>
       {description && <p id={descriptionId} className="atlas-muted">{description}</p>}</div>
       </div>
-      <IconButton label={closeLabel} variant="ghost" onClick={onClose}>×</IconButton>
+      <IconButton label={closeLabel} variant="ghost" onClick={onClose} disabled={closeDisabled}>×</IconButton>
     </header>
     <div className="atlas-dialog-body">{children}</div>
     {footer && <footer className="atlas-dialog-footer">{footer}</footer>}

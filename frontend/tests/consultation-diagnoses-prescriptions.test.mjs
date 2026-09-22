@@ -74,6 +74,20 @@ test("diagnoses: rerender preserves all input; episode and history changes reset
   await change(description(), "Edición B"); props = { ...props, historyId: 78, diagnoses: [] }; await render();
   assert.equal(description().value, ""); assert.equal(primary().checked, true);
 });
+test("diagnoses: el compositor informa dirty y solo queda clean después de guardar", async () => {
+  const dirtyStates = [];
+  await mount("diagnoses", [], { onDirtyChange(value) { dirtyStates.push(value); } });
+  assert.equal(dirtyStates.at(-1), false);
+  await change(description(), "Diagnóstico pendiente");
+  assert.equal(dirtyStates.at(-1), true);
+  respond = () => { throw failure(); };
+  await click(button("Agregar"));
+  assert.equal(dirtyStates.at(-1), true);
+  assert.equal(description().value, "Diagnóstico pendiente");
+  respond = config => ok(config, { ...diagnosisFixture, id: 90, ...JSON.parse(config.data) });
+  await click(button("Agregar"));
+  assert.equal(dirtyStates.at(-1), false);
+});
 test("prescriptions: canonical render and exact create payload with all eight fields", async () => {
   await mount("prescriptions", [prescriptionFixture]); assert.match(host.textContent, /Medicamento ficticio/); assert.equal(calls.length, 0);
   for (const [label, value] of [["Medicamento *", " Nuevo "], ["Presentación", " Tableta "], ["Dosis", " 1 "], ["Vía", " Oral "], ["Frecuencia", " Diaria "], ["Duración", " 2 días "], ["Cantidad", "2"], ["Indicaciones", " Con comida "]]) await change(control(label), value);
@@ -114,6 +128,25 @@ test("prescriptions: delete retains existing in-progress edit semantics", async 
   await mount("prescriptions", [prescriptionFixture]); await click(button("Editar")); await click(button("Eliminar"));
   assert.equal(calls[0].method, "delete"); assert.equal(calls[0].url, `/clinical-history/42/prescriptions/${prescriptionFixture.id}`);
   assert.equal(list.length, 0); assert.equal(control("Medicamento *").value, prescriptionFixture.medication); assert.ok(button("Guardar cambios"));
+});
+test("prescriptions: creación y edición informan dirty, conservan error y limpian al guardar o cancelar", async () => {
+  const dirtyStates = [];
+  await mount("prescriptions", [prescriptionFixture], { onDirtyChange(value) { dirtyStates.push(value); } });
+  await click(button("Editar"));
+  assert.equal(dirtyStates.at(-1), false);
+  await change(control("Dosis"), "Cambio pendiente");
+  assert.equal(dirtyStates.at(-1), true);
+  respond = () => { throw failure(); };
+  await click(button("Guardar cambios"));
+  assert.equal(dirtyStates.at(-1), true);
+  assert.equal(control("Dosis").value, "Cambio pendiente");
+  await click(button("Cancelar"));
+  assert.equal(dirtyStates.at(-1), false);
+  await change(control("Medicamento *"), "Nueva receta");
+  assert.equal(dirtyStates.at(-1), true);
+  respond = config => ok(config, { ...prescriptionFixture, id: 90, ...JSON.parse(config.data) });
+  await click(button("Agregar medicamento"));
+  assert.equal(dirtyStates.at(-1), false);
 });
 for (const kind of ["diagnoses", "prescriptions"]) {
   const fixture = kind === "diagnoses" ? diagnosisFixture : prescriptionFixture;

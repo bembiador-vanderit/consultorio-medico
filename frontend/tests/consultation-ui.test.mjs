@@ -29,6 +29,7 @@ const server = await createServer({
 });
 const { default: Consultation } = await server.ssrLoadModule("/src/pages/Consultation.tsx");
 const { api } = await server.ssrLoadModule("/src/services/api.ts");
+const { clearClinicalCatalogCacheForTests } = await server.ssrLoadModule("/src/services/clinicalApi.ts");
 const originalAdapter = api.defaults.adapter;
 const NativeDate = globalThis.Date;
 const nativeAnchorClick = dom.window.HTMLAnchorElement.prototype.click;
@@ -49,6 +50,7 @@ let intercept;
 let backCount;
 let confirmCount;
 let previousRequests;
+let registeredGuard;
 
 function clone(value) {
   return structuredClone(value);
@@ -182,13 +184,19 @@ async function settle() {
 
 async function mount(appointment = appointmentScheduled) {
   await act(async () => {
-    root.render(h(Consultation, { appointment, onBack() { backCount += 1; } }));
+    root.render(h(Consultation, { appointment, onBack() { backCount += 1; }, registerNavigationGuard(guard) { registeredGuard = guard; } }));
   });
   await settle();
 }
 
 function button(label, scope = host) {
   return [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === label);
+}
+
+function activeDialog() {
+  const dialog = document.querySelector("dialog[open]");
+  assert.ok(dialog);
+  return dialog;
 }
 
 function control(label, scope = host) {
@@ -223,6 +231,7 @@ function urls() {
 }
 
 beforeEach(() => {
+  clearClinicalCatalogCacheForTests();
   globalThis.Date = class extends NativeDate {
     constructor(...args) { super(...(args.length ? args : ["2026-09-16T12:00:00"])); }
     static now() { return new NativeDate("2026-09-16T12:00:00").getTime(); }
@@ -242,6 +251,7 @@ beforeEach(() => {
   backCount = 0;
   confirmCount = 0;
   previousRequests = [];
+  registeredGuard = null;
   dom.window.confirm = () => { confirmCount += 1; return true; };
   dom.window.HTMLAnchorElement.prototype.click = function clickDownloadFixture() {};
   api.defaults.adapter = responseAdapter;
@@ -252,6 +262,7 @@ afterEach(async () => {
   api.defaults.adapter = originalAdapter;
   dom.window.HTMLAnchorElement.prototype.click = nativeAnchorClick;
   globalThis.Date = NativeDate;
+  clearClinicalCatalogCacheForTests();
 });
 
 after(async () => {
@@ -375,8 +386,109 @@ test("409 por revisión obsoleta conserva cambios locales y muestra el conflicto
   intercept = (config) => config.url === "/clinical-history/42" && config.method === "put" ? failure(detail, 409) : undefined;
   await click(button("Actualizar consulta"));
   assert.match(host.textContent, /modificada en otra sesión o pestaña/);
+  assert.match(host.textContent, /Los cambios locales no fueron guardados y permanecen visibles/);
+  assert.ok(button("Recargar versión del servidor"));
   assert.equal(control("Motivo de consulta").value, "Cambio local pendiente");
   assert.equal(currentHistory.revision, 1);
+  await click(button("Continuar revisando mis cambios"));
+  assert.doesNotMatch(host.textContent, /Los cambios locales no fueron guardados/);
+  assert.equal(control("Motivo de consulta").value, "Cambio local pendiente");
+});
+
+test("recarga explícita tras 409 adopta la revisión del servidor sin reintento automático", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(control("Motivo de consulta"), "Borrador local no guardado");
+  intercept = (config) => config.url === "/clinical-history/42" && config.method === "put" ? failure("La consulta fue modificada en otra sesión o pestaña. Recarga la información antes de continuar.", 409) : undefined;
+  await click(button("Actualizar consulta"));
+  assert.equal(calls.filter((item) => item.method === "put" && item.url === "/clinical-history/42").length, 1);
+  currentHistory = { ...currentHistory, reason_for_visit: "Versión vigente del servidor", revision: 2, updated_at: "2026-09-16T10:10:00" };
+  contextHistories = [currentHistory];
+  intercept = null;
+  await click(button("Recargar versión del servidor"));
+  await settle();
+  assert.equal(control("Motivo de consulta").value, "Versión vigente del servidor");
+  assert.equal(calls.filter((item) => item.method === "get" && item.url === "/clinical-history/appointments/81/context").length, 2);
+  assert.doesNotMatch(host.textContent, /Los cambios locales no fueron guardados/);
+  await change(control("Motivo de consulta"), "Edición sobre revisión vigente");
+  await click(button("Actualizar consulta"));
+  const updates = calls.filter((item) => item.method === "put" && item.url === "/clinical-history/42");
+  assert.equal(payload(updates.at(-1)).expected_revision, 2);
+});
+
+test("dirty state protege salida, beforeunload y finalización; guardar lo limpia", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  assert.equal(typeof registeredGuard, "function");
+  assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), true);
+  assert.equal(button("Finalizar consulta").disabled, false);
+
+  await change(control("Motivo de consulta"), "Cambio pendiente protegido");
+  assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), false);
+  assert.equal(button("Finalizar consulta").disabled, true);
+  assert.match(host.textContent, /Guarde o descarte los cambios pendientes antes de finalizar/);
+  assert.equal(calls.some((item) => item.url === "/clinical-history/42/complete"), false);
+  assert.equal(document.querySelector("dialog[open]"), null);
+
+  const backTrigger = button("← Volver a la agenda");
+  backTrigger.focus();
+  await click(backTrigger);
+  assert.equal(backCount, 0);
+  assert.equal(control("Motivo de consulta").value, "Cambio pendiente protegido");
+  const discardDialog = activeDialog();
+  assert.match(discardDialog.textContent, /Hay cambios sin guardar en esta consulta/);
+  assert.equal(confirmCount, 0);
+  await click(button("Continuar editando", discardDialog));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, backTrigger);
+
+  await click(button("Actualizar consulta"));
+  assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), true);
+  assert.equal(button("Finalizar consulta").disabled, false);
+  let proceeded = false;
+  registeredGuard(() => { proceeded = true; });
+  assert.equal(proceeded, true);
+  assert.equal(document.querySelector("dialog[open]"), null);
+});
+
+test("Escape cancela la salida con cambios pendientes y conserva el borrador", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const backTrigger = button("← Volver a la agenda");
+  backTrigger.focus();
+  await change(control("Motivo de consulta"), "Borrador que no debe perderse");
+  await click(backTrigger);
+  const discardDialog = activeDialog();
+  await act(async () => discardDialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(backCount, 0);
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, backTrigger);
+  assert.equal(control("Motivo de consulta").value, "Borrador que no debe perderse");
+  assert.equal(confirmCount, 0);
+});
+
+test("guardar con error conserva el borrador y la protección de navegación", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(control("Motivo de consulta"), "Borrador tras error");
+  intercept = (config) => config.url === "/clinical-history/42" && config.method === "put" ? failure("Fallo de guardado", 500) : undefined;
+  await click(button("Actualizar consulta"));
+  assert.match(host.textContent, /Fallo de guardado/);
+  assert.equal(control("Motivo de consulta").value, "Borrador tras error");
+  assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), false);
+});
+
+test("volver sin cambios pendientes navega sin confirmación", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await click(button("← Volver a la agenda"));
+  assert.equal(backCount, 1);
+  assert.equal(confirmCount, 0);
 });
 
 test("diagnósticos conservan creación principal/CIE-10 y eliminación", async () => {
@@ -464,14 +576,53 @@ test("el panel RequestedTest heredado no se muestra cuando no hay registros", as
   assert.doesNotMatch(host.textContent, /Solicitudes heredadas/);
 });
 
-test("finalizar consulta confirma una vez, bloquea edición y conserva lectura", async () => {
+test("finalizar consulta abre el Modal Atlas sin window.confirm y cancelar no llama el API", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const trigger = button("Finalizar consulta");
+  trigger.focus();
+  await click(trigger);
+  const dialog = activeDialog();
+  assert.ok(dialog.getAttribute("aria-labelledby"));
+  assert.equal(document.activeElement, dialog.querySelector("h2"));
+  assert.match(dialog.textContent, /¿Desea finalizar esta consulta\?/);
+  assert.match(dialog.textContent, /quedará en modo de solo lectura/);
+  assert.equal(confirmCount, 0);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+  await click(button("Cancelar", dialog));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, trigger);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+});
+
+test("confirmar finalización muestra estado ocupado, llama el API y mantiene lectura", async () => {
   currentHistory = clone(clinicalHistoryInProgress);
   contextHistories = [currentHistory];
   prescriptions = [clone(prescriptionFixture)];
+  let releaseCompletion;
+  intercept = (config) => {
+    if (config.url !== "/clinical-history/42/complete" || config.method !== "post") return undefined;
+    return new Promise((resolve) => {
+      releaseCompletion = () => {
+        currentHistory = { ...currentHistory, status: "completed", revision: currentHistory.revision + 1, completed_at: "2026-09-16T10:05:00", completed_by_id: activeDoctor.id };
+        currentAppointment = { ...currentAppointment, status: "completed" };
+        resolve(ok(config, currentHistory));
+      };
+    });
+  };
   await mount();
   await click(button("Finalizar consulta"));
-  assert.equal(confirmCount, 1);
+  const dialog = activeDialog();
+  await click(button("Finalizar consulta", dialog));
+  assert.equal(confirmCount, 0);
   assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 1);
+  assert.ok(button("Finalizando...", dialog));
+  assert.equal(button("Finalizando...", dialog).disabled, true);
+  assert.equal(button("Cancelar", dialog).disabled, true);
+  await act(async () => { releaseCompletion(); });
+  await settle();
+  assert.equal(document.querySelector("dialog[open]"), null);
   assert.match(host.textContent, /Consulta finalizada y bloqueada en modo de solo lectura/);
   assert.equal(button("Finalizar consulta"), undefined);
   assert.equal(button("Guardar consulta"), undefined);
@@ -479,17 +630,34 @@ test("finalizar consulta confirma una vez, bloquea edición y conserva lectura",
 });
 
 for (const [status, detail] of [[409, "La consulta finalizada es de solo lectura"], [403, "No tiene acceso a esta historia clínica"]]) {
-  test(`finalizar conserva el error ${status} del servidor sin representar un cierre local`, async () => {
+  test(`finalizar conserva el error ${status} del servidor y mantiene el Modal`, async () => {
     currentHistory = clone(clinicalHistoryInProgress);
     contextHistories = [currentHistory];
     intercept = (config) => config.url === "/clinical-history/42/complete" && config.method === "post" ? failure(detail, status) : undefined;
     await mount();
     await click(button("Finalizar consulta"));
-    assert.equal(confirmCount, 1);
+    const dialog = activeDialog();
+    await click(button("Finalizar consulta", dialog));
+    assert.equal(confirmCount, 0);
     assert.match(host.textContent, new RegExp(detail));
+    assert.ok(document.querySelector("dialog[open]"));
     assert.ok(button("Finalizar consulta"));
   });
 }
+
+test("Escape cierra el Modal de finalización sin finalizar", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const trigger = button("Finalizar consulta");
+  trigger.focus();
+  await click(trigger);
+  const dialog = activeDialog();
+  await act(async () => dialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, trigger);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+});
 
 test("consulta completed se mantiene legible y el historial previo se abre/cierra solo con su control actual", async () => {
   currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
@@ -509,14 +677,19 @@ test("consulta completed se mantiene legible y el historial previo se abre/cierr
     if (config.method === "get" && config.url === "/clinical-history/18/study-orders") return ok(config, []);
     return undefined;
   };
-  await click(button("Ver historial completo"));
-  const dialog = host.querySelector('[role="dialog"]');
+  const historyTrigger = button("Ver historial completo");
+  historyTrigger.focus();
+  await click(historyTrigger);
+  const dialog = document.querySelector('dialog[open]');
   assert.ok(dialog);
+  assert.ok(dialog.getAttribute("aria-labelledby"));
+  assert.equal(document.activeElement, dialog.querySelector("h2"));
   assert.match(dialog.textContent, /Consulta del 2025-06-02/);
   await act(async () => dialog.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
-  assert.ok(host.querySelector('[role="dialog"]'));
-  await click(button("Cerrar", dialog));
-  assert.equal(host.querySelector('[role="dialog"]'), null);
+  assert.ok(document.querySelector('dialog[open]'));
+  await act(async () => dialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(document.querySelector('dialog[open]'), null);
+  assert.equal(document.activeElement, historyTrigger);
 });
 
 function historicalResponse(id, kind) {
@@ -547,7 +720,7 @@ test("historial anterior comparte la proyección clínica completa y conserva PD
   await click(button("Ver historial completo"));
   for (const request of previousRequests) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
   await settle();
-  const dialog = host.querySelector('[role="dialog"]');
+  const dialog = document.querySelector('dialog[open]');
   assert.ok(dialog);
   assert.match(dialog.textContent, /Consulta del 2025-06-02/);
   assert.match(dialog.textContent, /Diagnóstico histórico 18/);
@@ -585,13 +758,13 @@ test("historial anterior a → b ignora éxito y error tardíos, y el desmontaje
   assert.equal(requestsB.length, 7);
   for (const request of requestsA) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
   await settle();
-  assert.equal(host.querySelector('[role="dialog"]'), null);
+  assert.equal(document.querySelector('dialog[open]'), null);
   for (const request of requestsB) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
   await settle();
-  assert.match(host.querySelector('[role="dialog"]').textContent, /Consulta del 2025-07-03/);
+  assert.match(document.querySelector('dialog[open]').textContent, /Consulta del 2025-07-03/);
   assert.doesNotMatch(host.textContent, /Solicitud histórica 18/);
 
-  await click(button("Cerrar", host.querySelector('[role="dialog"]')));
+  await click(document.querySelector('dialog[open] [aria-label="Cerrar historial anterior"]'));
   previousRequests = [];
   await click(historicalButtons()[0]);
   const secondButtonAfterRetry = historicalButtons()[1];
@@ -604,16 +777,16 @@ test("historial anterior a → b ignora éxito y error tardíos, y el desmontaje
   assert.doesNotMatch(host.textContent, /stale historical error/);
   for (const request of retryRequestsB) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
   await settle();
-  assert.match(host.querySelector('[role="dialog"]').textContent, /Consulta del 2025-07-03/);
+  assert.match(document.querySelector('dialog[open]').textContent, /Consulta del 2025-07-03/);
 
-  await click(button("Cerrar", host.querySelector('[role="dialog"]')));
+  await click(document.querySelector('dialog[open] [aria-label="Cerrar historial anterior"]'));
   previousRequests = [];
   await click(historicalButtons()[0]);
   const pendingUnmountRequests = [...previousRequests];
   await act(async () => root.unmount());
   for (const request of pendingUnmountRequests) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
   await settle();
-  assert.equal(host.querySelector('[role="dialog"]'), null);
+  assert.equal(document.querySelector('dialog[open]'), null);
 });
 
 
