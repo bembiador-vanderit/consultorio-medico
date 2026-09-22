@@ -7,6 +7,7 @@ import {
   activeDoctor,
   appointmentConfirmed,
   appointmentScheduled,
+  consultationWorkspace,
   clinicalHistory,
   clinicalHistoryCompleted,
   clinicalHistoryInProgress,
@@ -51,6 +52,7 @@ let backCount;
 let confirmCount;
 let previousRequests;
 let registeredGuard;
+let currentWorkspace;
 
 function clone(value) {
   return structuredClone(value);
@@ -83,6 +85,7 @@ function context() {
     appointment_reason: currentAppointment.reason,
     appointment_status: currentAppointment.status,
     patient_blood_type: "AB+",
+    workspace: currentWorkspace,
     previous_consultations: contextHistories,
   };
 }
@@ -241,6 +244,7 @@ beforeEach(() => {
   currentAppointment = clone(appointmentScheduled);
   contextHistories = [];
   currentHistory = null;
+  currentWorkspace = consultationWorkspace();
   vitals = null;
   diagnoses = [];
   prescriptions = [];
@@ -451,6 +455,26 @@ test("dirty state protege salida, beforeunload y finalización; guardar lo limpi
   registeredGuard(() => { proceeded = true; });
   assert.equal(proceeded, true);
   assert.equal(document.querySelector("dialog[open]"), null);
+});
+
+test("workspace incompatible no renderiza módulos, ni permite finalizar o escribir", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  currentWorkspace = consultationWorkspace({
+    modules: [
+      { key: "core.anamnesis", label: "Historia de la consulta", position: 1, required: true },
+      { key: "cardiology.assessment", label: "Evaluación cardiovascular", position: 2, required: true },
+    ],
+  });
+  await mount();
+
+  assert.match(host.textContent, /esta versión de Atlas no puede interpretar/i);
+  assert.equal(host.querySelector("[data-consultation-module]"), null);
+  assert.equal(button("Finalizar consulta").disabled, true);
+  assert.match(host.textContent, /No puede finalizar mientras la configuración clínica sea incompatible/);
+  assert.equal(calls.some((item) => item.method === "post" && item.url === `/clinical-history/${currentHistory.id}/complete`), false);
+  assert.equal(calls.some((item) => ["post", "put"].includes(item.method) && item.url.startsWith(`/clinical-history/patients/${currentAppointment.patient_id}`)), false);
+  assert.equal(calls.some((item) => item.method === "put" && item.url === `/clinical-history/${currentHistory.id}`), false);
 });
 
 test("Escape cancela la salida con cambios pendientes y conserva el borrador", async () => {

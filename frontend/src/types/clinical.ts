@@ -55,7 +55,7 @@ export type ClinicalHistory = ClinicalHistoryContent & {
 
 export type ClinicalHistoryInput = Omit<
   ClinicalHistory,
-  "patient_date_of_birth" | "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "specialty_id" | "specialty_name" | "doctor_name" | "center_name" | "status" | "revision" | "completed_at" | "completed_by_id" | "created_at" | "updated_at" | "requested_tests"
+  "patient_date_of_birth" | "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "specialty_id" | "specialty_template_id" | "specialty_name" | "doctor_name" | "center_name" | "status" | "revision" | "completed_at" | "completed_by_id" | "created_at" | "updated_at" | "requested_tests"
 > & {
   appointment_id?: number | null;
   requested_tests?: string;
@@ -88,7 +88,7 @@ export type ConsultationContext = {
   appointment_reason: string | null;
   appointment_status: AppointmentStatus;
   patient_blood_type?: string | null;
-  workspace?: ConsultationWorkspaceTemplate;
+  workspace: ConsultationWorkspaceTemplate;
   previous_consultations: ClinicalHistory[];
 };
 

@@ -9,7 +9,6 @@ import type {
   Diagnosis,
   Prescription,
   VitalSigns,
-  WorkspaceModule,
 } from "../../types/clinical";
 import type { User } from "../../types/user";
 import AnamnesisModule from "./AnamnesisModule";
@@ -26,19 +25,6 @@ export const consultationModuleKeys = [
 ] as const;
 
 export type ConsultationModuleKey = typeof consultationModuleKeys[number];
-
-export const defaultWorkspaceModules: WorkspaceModule[] = consultationModuleKeys.map((key, index) => ({
-  key,
-  label: {
-    "core.anamnesis": "Historia de la consulta",
-    "core.vital-signs": "Signos vitales",
-    "core.diagnoses": "Diagnósticos",
-    "core.prescriptions": "Recetas",
-    "core.clinical-orders": "Órdenes clínicas",
-  }[key],
-  position: index + 1,
-  required: true,
-}));
 
 export type ConsultationModuleRenderContext = {
   appointment: Appointment;

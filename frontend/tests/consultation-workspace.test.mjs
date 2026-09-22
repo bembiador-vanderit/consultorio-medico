@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "vite";
 
 import { createBrowser } from "./browser.mjs";
-import { activeDoctor, appointmentScheduled, medicalStudyFixture } from "./fixtures/clinical.mjs";
+import { activeDoctor, appointmentScheduled, consultationWorkspace, medicalStudyFixture } from "./fixtures/clinical.mjs";
 
 const { dom } = createBrowser();
 const { createElement: h, act } = await import("react");
@@ -24,14 +24,14 @@ async function settle() { for (let index = 0; index < 4; index += 1) await act(a
 
 beforeEach(() => {
   root = createRoot(host);
-  workspace = null;
+  workspace = consultationWorkspace();
   clearClinicalCatalogCacheForTests();
   api.defaults.adapter = async (config) => {
     if (config.url === "/auth/me") return ok(config, activeDoctor);
     if (config.url === `/clinical-history/appointments/${appointment.id}/context`) return ok(config, {
       appointment_id: appointment.id, patient_id: appointment.patient_id, doctor_id: appointment.doctor_id, center_id: appointment.center_id,
       specialty_id: appointment.specialty_id, specialty_name: appointment.specialty_name, appointment_date: appointment.appointment_date,
-      appointment_time: appointment.appointment_time, appointment_reason: appointment.reason, appointment_status: appointment.status, workspace: workspace ?? undefined, previous_consultations: [],
+      appointment_time: appointment.appointment_time, appointment_reason: appointment.reason, appointment_status: appointment.status, workspace, previous_consultations: [],
     });
     if (config.url === "/clinical-catalog/studies") return ok(config, [medicalStudyFixture]);
     throw new Error(`Unexpected request ${config.method} ${config.url}`);
@@ -106,5 +106,25 @@ test("workspace denuncia una key desconocida sin producir una pantalla blanca", 
   await settle();
 
   assert.match(host.querySelector('[role="alert"]')?.textContent ?? "", /cardiology\.not-installed/);
-  assert.ok(host.querySelector('[data-consultation-module="core.anamnesis"]'));
+  assert.equal(host.querySelector("[data-consultation-module]"), null);
+});
+
+test("workspace ausente en runtime bloquea la edición sin reconstruir una plantilla local", async () => {
+  workspace = undefined;
+  await act(async () => root.render(h(ConsultationWorkspace, { appointment, onBack() {} })));
+  await settle();
+
+  assert.match(host.querySelector('[role="alert"]')?.textContent ?? "", /servidor no entregó la plantilla clínica requerida/i);
+  assert.equal(host.querySelector("[data-consultation-module]"), null);
+});
+
+test("workspace legacy entregado por backend conserva los módulos core", async () => {
+  workspace = consultationWorkspace({ template_id: null, template_version: null });
+  await act(async () => root.render(h(ConsultationWorkspace, { appointment, onBack() {} })));
+  await settle();
+
+  assert.deepEqual(
+    [...host.querySelectorAll("[data-consultation-module]")].map((element) => element.dataset.consultationModule),
+    ["core.anamnesis", "core.vital-signs", "core.diagnoses", "core.prescriptions", "core.clinical-orders"],
+  );
 });

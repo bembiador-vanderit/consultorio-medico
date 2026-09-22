@@ -2,7 +2,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 import { createBrowser } from "./browser.mjs";
-import { appointmentScheduled } from "./fixtures/clinical.mjs";
+import { appointmentScheduled, consultationWorkspace } from "./fixtures/clinical.mjs";
 
 const { dom, setDesktop } = createBrowser();
 const { createElement: h, act } = await import("react");
@@ -191,6 +191,7 @@ async function enterDirtyConsultation() {
     appointment_time: appointment.appointment_time,
     appointment_reason: appointment.reason,
     appointment_status: appointment.status,
+    workspace: consultationWorkspace(),
     previous_consultations: [],
   });
   await mount(["doctor"]);
