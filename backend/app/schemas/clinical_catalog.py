@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class SpecialtyResponse(BaseModel):
     id: int
     name: str
+    code: str
     is_active: bool
     model_config = {"from_attributes": True}
 
@@ -44,10 +45,12 @@ class DoctorProfileResponse(BaseModel):
 
 class SpecialtyCreate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
+    model_config = {"extra": "forbid"}
 
 
 class SpecialtyUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
+    model_config = {"extra": "forbid"}
 
 
 class SpecialtyStatusUpdate(BaseModel):
