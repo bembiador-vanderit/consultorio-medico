@@ -2,8 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 export type DirtySection = "anamnesis" | "vital-signs" | "diagnoses" | "prescriptions" | "orders";
 
-export const UNSAVED_CONSULTATION_MESSAGE = "Hay cambios sin guardar en esta consulta.\nSi sales ahora, se perderán.";
-
 export function useConsultationDirtyState(episodeId: number) {
   const [dirtySections, setDirtySections] = useState<Set<DirtySection>>(() => new Set());
 
@@ -29,8 +27,7 @@ export function useConsultationDirtyState(episodeId: number) {
     return () => window.removeEventListener("beforeunload", preventUnload);
   }, [hasDirtyChanges]);
 
-  const confirmDiscard = useCallback(() => !hasDirtyChanges || window.confirm(UNSAVED_CONSULTATION_MESSAGE), [hasDirtyChanges]);
   const clearDirty = useCallback(() => setDirtySections(new Set()), []);
 
-  return { dirtySections, hasDirtyChanges, setSectionDirty, confirmDiscard, clearDirty };
+  return { dirtySections, hasDirtyChanges, setSectionDirty, clearDirty };
 }

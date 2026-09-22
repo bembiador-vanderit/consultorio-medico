@@ -24,7 +24,7 @@ type PreviousDetails = { consultation: ClinicalHistory; details: HistoricalConsu
 
 export default function ConsultationWorkspace({ appointment, onBack, registerNavigationGuard }: Props) {
   const bootstrap = useConsultationBootstrap(appointment.id);
-  const { dirtySections, hasDirtyChanges, setSectionDirty, confirmDiscard, clearDirty } = useConsultationDirtyState(appointment.id);
+  const { dirtySections, hasDirtyChanges, setSectionDirty, clearDirty } = useConsultationDirtyState(appointment.id);
   const [context, setContext] = useState<ConsultationContext | null>(null);
   const [vitalSigns, setVitalSigns] = useState<VitalSigns | null>(null);
   const [diagnoses, setDiagnoses] = useState<Diagnosis[]>([]);
@@ -40,6 +40,7 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
   const [error, setError] = useState("");
   const [revisionConflict, setRevisionConflict] = useState(false);
   const [completionModalOpen, setCompletionModalOpen] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
   const [previousDetails, setPreviousDetails] = useState<PreviousDetails | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loadingPreviousId, setLoadingPreviousId] = useState<number | null>(null);
@@ -53,12 +54,15 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
   const setDiagnosesDirty = useCallback((dirty: boolean) => setSectionDirty("diagnoses", dirty), [setSectionDirty]);
   const setPrescriptionsDirty = useCallback((dirty: boolean) => setSectionDirty("prescriptions", dirty), [setSectionDirty]);
   const setOrdersDirty = useCallback((dirty: boolean) => setSectionDirty("orders", dirty), [setSectionDirty]);
-  const navigationGuard = useCallback(() => confirmDiscard(), [confirmDiscard]);
+  const requestLeave = useCallback((proceed: () => void) => {
+    if (!hasDirtyChanges) { proceed(); return; }
+    setPendingNavigation(() => proceed);
+  }, [hasDirtyChanges]);
 
   useEffect(() => {
-    registerNavigationGuard?.(navigationGuard);
+    registerNavigationGuard?.(requestLeave);
     return () => registerNavigationGuard?.(null);
-  }, [navigationGuard, registerNavigationGuard]);
+  }, [requestLeave, registerNavigationGuard]);
 
   useEffect(() => {
     let active = true;
@@ -81,6 +85,7 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
     setLoadingVitalSigns(true);
     setRevisionConflict(false);
     setCompletionModalOpen(false);
+    setPendingNavigation(null);
     setError("");
     return () => {
       previousRequestGeneration.current += 1;
@@ -204,7 +209,13 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
     catch (reason: unknown) { setError(clinicalErrorMessage(reason, "No fue posible generar el resumen anterior.")); }
   }
 
-  const leaveConsultation = () => { if (confirmDiscard()) onBack(); };
+  const leaveConsultation = () => requestLeave(onBack);
+
+  function discardChangesAndLeave() {
+    const proceed = pendingNavigation;
+    setPendingNavigation(null);
+    proceed?.();
+  }
 
   if (bootstrap.loading) return <section><button type="button" onClick={leaveConsultation} className="text-sm font-medium text-teal-700 hover:underline">← Volver a la agenda</button><p role="status" className="mt-6 text-slate-500">Cargando contexto de atención...</p></section>;
 
@@ -224,6 +235,7 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
     </div><aside data-consultation-context className="min-w-0 space-y-4"><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Contexto de atención</h3><dl className="mt-3 space-y-3 text-sm"><div><dt className="text-slate-500">Paciente</dt><dd className="break-words font-semibold">{appointment.patient_name}</dd></div><div><dt className="text-slate-500">Fecha de nacimiento</dt><dd className="font-semibold">{appointment.patient_date_of_birth}</dd></div>{context?.patient_blood_type && <div><dt className="text-slate-500">Tipo sanguíneo declarado/registrado (ficha actual)</dt><dd className="break-words">{context.patient_blood_type} · No equivale a confirmación de laboratorio</dd></div>}<div><dt className="text-slate-500">Médico</dt><dd className="break-words font-semibold">{appointment.doctor_name}</dd></div><div><dt className="text-slate-500">Centro</dt><dd className="break-words font-semibold">{appointment.center_name ? `${appointment.center_name}${appointment.center_city ? ` · ${appointment.center_city}` : ""}` : "Sin centro"}</dd></div><div><dt className="text-slate-500">Motivo</dt><dd className="break-words">{appointment.reason || "—"}</dd></div></dl></div><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Consultas anteriores</h3>{previousConsultations.length ? <div className="mt-3 space-y-3">{previousConsultations.slice(0, 5).map((item) => <div key={item.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-medium">{item.consultation_date}</p><p className="mt-1 break-words text-slate-600">{item.reason_for_visit || "Sin motivo registrado"}</p><button type="button" onClick={() => void viewPrevious(item)} disabled={loadingPreviousId === item.id} className="mt-2 font-medium text-teal-700 hover:underline disabled:opacity-50">{loadingPreviousId === item.id ? "Cargando..." : "Ver historial completo"}</button></div>)}</div> : <p className="mt-3 text-sm text-slate-500">No hay consultas anteriores.</p>}</div></aside></div>
     {previousDetails && <PreviousConsultationModal details={previousDetails} onClose={() => setPreviousDetails(null)} onDownload={() => void downloadPreviousSummary(previousDetails.consultation.id)} />}
     {completionModalOpen && <CompletionConfirmationModal completing={completing} onClose={() => { if (!completing) setCompletionModalOpen(false); }} onConfirm={() => void completeConsultation()} />}
+    {pendingNavigation && <UnsavedChangesModal onClose={() => setPendingNavigation(null)} onConfirm={discardChangesAndLeave} />}
     <span className="sr-only" aria-live="polite">{dirtySections.size ? `${dirtySections.size} secciones con cambios sin guardar` : "Sin cambios pendientes"}</span>
   </section>;
 }
@@ -242,5 +254,13 @@ function CompletionConfirmationModal({ completing, onClose, onConfirm }: { compl
     footer={<><button type="button" onClick={onClose} disabled={completing} className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium text-slate-700 disabled:opacity-50">Cancelar</button><button type="button" onClick={onConfirm} disabled={completing} className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white disabled:opacity-50">{completing ? "Finalizando..." : "Finalizar consulta"}</button></>}>
     <p className="text-slate-900">¿Desea finalizar esta consulta?</p>
     <p className="mt-2 text-sm text-slate-600">Después de finalizarla, la consulta quedará en modo de solo lectura y no podrá modificar su contenido clínico.</p>
+  </Modal>;
+}
+
+function UnsavedChangesModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
+  return <Modal open onClose={onClose} title="Cambios sin guardar" closeLabel="Continuar editando"
+    footer={<><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium text-slate-700">Continuar editando</button><button type="button" onClick={onConfirm} className="rounded-lg bg-slate-900 px-4 py-2 font-medium text-white">Salir sin guardar</button></>}>
+    <p className="text-slate-900">Hay cambios sin guardar en esta consulta.</p>
+    <p className="mt-2 text-sm text-slate-600">Si sale ahora, los cambios pendientes se perderán.</p>
   </Modal>;
 }

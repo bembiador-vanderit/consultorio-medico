@@ -35,7 +35,11 @@ function App() {
     navigationGuardRef.current = guard;
   }, []);
 
-  function canLeaveCurrentView() { return navigationGuardRef.current?.() ?? true; }
+  function requestNavigation(proceed: () => void) {
+    const guard = navigationGuardRef.current;
+    if (guard) guard(proceed);
+    else proceed();
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -54,7 +58,8 @@ function App() {
     setUser(await authenticate(credentials));
   }
 
-  async function signOut() { if (!canLeaveCurrentView()) return; await logoutSession(); setUser(null); setView("dashboard"); setSelectedAppointmentPatient(null); setSelectedAppointment(null); }
+  async function completeSignOut() { await logoutSession(); setUser(null); setView("dashboard"); setSelectedAppointmentPatient(null); setSelectedAppointment(null); }
+  function signOut() { requestNavigation(() => { void completeSignOut(); }); }
   function schedulePatient(patient: Patient) { setSelectedAppointmentPatient(patient); setView("appointments"); }
   function attendAppointment(appointment: Appointment) { if (!user?.roles.some((role) => role === "doctor" || role === "admin")) return; setSelectedAppointment(appointment); setView("consultation"); }
 
@@ -67,17 +72,18 @@ function App() {
   const canAccessClinical = isDoctor;
 
   function navigate(nextView: AppView) {
-    if (!canLeaveCurrentView()) return;
-    setCreateAppointment(false);
-    // Agenda from navigation starts without the patient preselected by Patients.
-    if (nextView === "appointments") setSelectedAppointmentPatient(null);
-    setView(nextView);
+    requestNavigation(() => {
+      setCreateAppointment(false);
+      // Agenda from navigation starts without the patient preselected by Patients.
+      if (nextView === "appointments") setSelectedAppointmentPatient(null);
+      setView(nextView);
+    });
   }
 
   const titles: Record<AppView, string> = { dashboard: "Inicio", patients: "Pacientes", appointments: "Agenda", reports: "Reportes de citas", "care-context": "Localidades y centros", availability: "Mi disponibilidad", users: "Usuarios y roles", "follow-ups": "Seguimientos", consultation: "Consulta", "clinical-coverages": "Cobertura clínica" };
   return <AtlasAppShell user={user} pageTitle={titles[view]}
     activeView={view === "consultation" ? "appointments" : view}
-    onNavigate={navigate} onSignOut={() => void signOut()}
+    onNavigate={navigate} onSignOut={signOut}
     notifications={<NotificationBell onOpenNotifications={() => navigate("dashboard")} />}>
     <div className={`atlas-operational-workspace${view === "appointments" ? " atlas-operational-workspace--agenda" : view === "patients" ? " atlas-operational-workspace--patients" : view === "dashboard" ? " atlas-operational-workspace--dashboard" : ""}`}>
       {view === "patients" ? <Patients user={user} onBack={() => setView("dashboard")} onPatientChanged={() => setPatientsVersion((value) => value + 1)} onScheduleAppointment={schedulePatient} /> : view === "appointments" ? <Appointments user={user} onBack={() => setView("dashboard")} initialPatient={selectedAppointmentPatient} initialCreate={createAppointment} canAccessClinical={canAccessClinical} onAttendAppointment={attendAppointment} /> : view === "consultation" && selectedAppointment && canAccessClinical ? <Consultation appointment={selectedAppointment} onBack={() => setView("appointments")} registerNavigationGuard={registerNavigationGuard} /> : view === "clinical-coverages" && (isDoctor || isSecretary) ? <ClinicalCoverages user={user} onBack={() => setView("dashboard")} /> : view === "reports" ? <AppointmentReports onBack={() => setView("dashboard")} /> : view === "care-context" ? <CareContext onBack={() => setView("dashboard")} /> : view === "availability" ? <DoctorAvailability onBack={() => setView("dashboard")} /> : view === "users" ? <Users currentUser={user} onCurrentUserChanged={setUser} onBack={() => setView("dashboard")} /> : view === "follow-ups" && isDoctor ? <FollowUps user={user} onBack={() => setView("dashboard")} /> : <Dashboard user={user} patientsVersion={patientsVersion} onNavigate={navigate} onNewAppointment={() => { setSelectedAppointmentPatient(null); setCreateAppointment(true); setView("appointments"); }} />}

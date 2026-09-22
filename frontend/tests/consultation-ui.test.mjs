@@ -432,17 +432,42 @@ test("dirty state protege salida, beforeunload y finalización; guardar lo limpi
   assert.equal(calls.some((item) => item.url === "/clinical-history/42/complete"), false);
   assert.equal(document.querySelector("dialog[open]"), null);
 
-  dom.window.confirm = () => { confirmCount += 1; return false; };
-  await click(button("← Volver a la agenda"));
+  const backTrigger = button("← Volver a la agenda");
+  backTrigger.focus();
+  await click(backTrigger);
   assert.equal(backCount, 0);
   assert.equal(control("Motivo de consulta").value, "Cambio pendiente protegido");
-  assert.equal(registeredGuard(), false);
+  const discardDialog = activeDialog();
+  assert.match(discardDialog.textContent, /Hay cambios sin guardar en esta consulta/);
+  assert.equal(confirmCount, 0);
+  await click(button("Continuar editando", discardDialog));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, backTrigger);
 
-  dom.window.confirm = () => { confirmCount += 1; return true; };
   await click(button("Actualizar consulta"));
   assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), true);
   assert.equal(button("Finalizar consulta").disabled, false);
-  assert.equal(registeredGuard(), true);
+  let proceeded = false;
+  registeredGuard(() => { proceeded = true; });
+  assert.equal(proceeded, true);
+  assert.equal(document.querySelector("dialog[open]"), null);
+});
+
+test("Escape cancela la salida con cambios pendientes y conserva el borrador", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const backTrigger = button("← Volver a la agenda");
+  backTrigger.focus();
+  await change(control("Motivo de consulta"), "Borrador que no debe perderse");
+  await click(backTrigger);
+  const discardDialog = activeDialog();
+  await act(async () => discardDialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(backCount, 0);
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, backTrigger);
+  assert.equal(control("Motivo de consulta").value, "Borrador que no debe perderse");
+  assert.equal(confirmCount, 0);
 });
 
 test("guardar con error conserva el borrador y la protección de navegación", async () => {

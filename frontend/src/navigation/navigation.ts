@@ -1,7 +1,8 @@
 import type { User } from "../types/user";
 
 export type AppView = "dashboard" | "patients" | "appointments" | "reports" | "care-context" | "availability" | "users" | "follow-ups" | "consultation" | "clinical-coverages";
-export type NavigationGuard = () => boolean;
+/** Receives the requested transition and may defer it until the current view is ready to leave. */
+export type NavigationGuard = (proceed: () => void) => void;
 export type NavigationGuardRegistrar = (guard: NavigationGuard | null) => void;
 export type NavigationIcon = "home" | "calendar" | "report" | "patient" | "bell" | "clock" | "clinical" | "users" | "center";
 export type NavigationItem = {

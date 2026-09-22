@@ -32,9 +32,9 @@ El estado no se guarda en `localStorage`, `sessionStorage`, URLs ni logs.
 
 ## Navegación segura
 
-Consulta registra temporalmente un guard genérico en `App`. La navegación principal, las notificaciones y el cierre de sesión consultan ese guard sin conocer detalles clínicos. El botón **Volver a la agenda** usa la misma decisión.
+Consulta registra temporalmente un guard genérico en `App`. La navegación principal, las notificaciones y el cierre de sesión entregan al guard su acción pendiente sin conocer detalles clínicos. El botón **Volver a la agenda** usa la misma decisión.
 
-Cuando existen cambios pendientes se ofrece permanecer o salir sin guardar mediante la confirmación del navegador. `beforeunload` se instala únicamente mientras el conjunto tenga elementos y se retira al quedar limpio o desmontarse la vista. **Finalizar consulta** permanece deshabilitado y explica que primero deben guardarse o descartarse los cambios.
+Cuando existen cambios pendientes, la navegación interna abre el `Modal` compartido de Atlas. Al confirmar **Salir sin guardar**, Consulta ejecuta una sola vez la acción pendiente; al continuar editando la descarta y conserva el borrador. `beforeunload` se instala únicamente mientras el conjunto tenga elementos y se retira al quedar limpio o desmontarse la vista: cierre de pestaña, recarga o cierre del navegador continúan usando el aviso nativo. **Finalizar consulta** permanece deshabilitado y explica que primero deben guardarse o descartarse los cambios.
 
 ## Conflicto de revisión
 
