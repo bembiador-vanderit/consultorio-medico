@@ -13,13 +13,14 @@ from app.models.communication_log import CommunicationLog
 from app.models.identity import Permission, Role, User
 from app.models.insurance import InsuranceCompany, PatientInsurance
 from app.models.locality import Locality
+from app.models.regional import Country, RegionalSettings, TerritorialLevel, TerritorialUnit
 from app.models.patient import Patient
 from app.models.prescription import Prescription
 from app.models.secretary_scope import SecretaryCenterScope
 from app.models.vital_signs import VitalSigns
 
 __all__ = [
-    "Permission", "Role", "User", "Locality", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
+    "Permission", "Role", "User", "Locality", "Country", "TerritorialLevel", "TerritorialUnit", "RegionalSettings", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
     "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "VitalSigns", "Appointment", "FollowUp", "Notification", "CommunicationLog",
     "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile", "doctor_specialties", "medical_study_specialties", "SecretaryCenterScope", "ClinicalAuditLog", "ClinicalAddendum", "ClinicalCoverage", "AppointmentCoverageTransfer",
     "LaboratoryTest", "LaboratoryOrder", "LaboratoryOrderItem", "StudyOrder", "StudyOrderItem",

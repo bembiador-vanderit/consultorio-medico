@@ -66,6 +66,7 @@ class ConsultationContextResponse(BaseModel):
     appointment_time: str
     appointment_reason: str | None
     appointment_status: str
+    patient_blood_type: str | None = None
     previous_consultations: list[ClinicalHistoryResponse]
 
 
@@ -225,6 +226,7 @@ def get_consultation_context(appointment_id: int, user: User = Depends(access), 
         appointment_time=appointment.appointment_time.isoformat(),
         appointment_reason=appointment.reason,
         appointment_status=appointment.status,
+        patient_blood_type=db.get(Patient, appointment.patient_id).blood_type,
         previous_consultations=previous_consultations,
     )
     add_clinical_audit(

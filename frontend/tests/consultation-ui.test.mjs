@@ -80,6 +80,7 @@ function context() {
     appointment_time: currentAppointment.appointment_time,
     appointment_reason: currentAppointment.reason,
     appointment_status: currentAppointment.status,
+    patient_blood_type: "AB+",
     previous_consultations: contextHistories,
   };
 }
@@ -613,4 +614,16 @@ test("historial anterior a → b ignora éxito y error tardíos, y el desmontaje
   for (const request of pendingUnmountRequests) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
   await settle();
   assert.equal(host.querySelector('[role="dialog"]'), null);
+});
+
+
+test("edad clínica sigue fecha de consulta editada y sangre se presenta como dato declarado actual", async () => {
+  currentAppointment = { ...currentAppointment, patient_date_of_birth: "2000-09-20" };
+  await mount(currentAppointment);
+  assert.match(host.textContent, /Tipo sanguíneo declarado\/registrado \(ficha actual\)/);
+  assert.match(host.textContent, /No equivale a confirmación de laboratorio/);
+  await change(control("Fecha de consulta"), "2020-09-19");
+  assert.match(host.textContent, /Edad en la consulta: 19 años/);
+  await change(control("Fecha de consulta"), "2020-09-20");
+  assert.match(host.textContent, /Edad en la consulta: 20 años/);
 });

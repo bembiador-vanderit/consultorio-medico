@@ -22,6 +22,12 @@ beforeEach(() => {
     let data;
     if (response) { const result = await response(config); if (result !== undefined) return { data: result, status: 200, statusText: "OK", headers: {}, config }; }
     if (config.url === "/patients" && config.method === "get") data = records;
+    else if (config.url === "/patients/localities") data = [{ id: 7, name: "Localidad ficticia" }];
+    else if (config.url === "/regional/countries") data = [{ code: "DO", name: "República Dominicana" }];
+    else if (config.url === "/regional/settings") data = { default_country_code: "DO" };
+    else if (config.url === "/regional/countries/DO/levels") data = [{ id: 1, position: 1, key: "province", display_label: "Provincia" }, { id: 2, position: 2, key: "municipality", display_label: "Municipio" }];
+    else if (config.url === "/regional/territories") data = config.params.level === 1 ? [{ id: 10, name: "Provincia ficticia", parent_id: null }] : [{ id: 7, name: "Municipio ficticio", parent_id: 10 }];
+    else if (/^\/patients\/\d+$/.test(config.url) && config.method === "get") data = records.find((item) => item.id === Number(config.url.split("/").at(-1)));
     else if (config.url === "/insurance/companies") data = [{ id: 3, name: "ARS ficticia", is_active: true }];
     else if (config.url.startsWith("/insurance/patients/")) data = [{ id: 4, insurance_company_id: 3, insurance_company_name: "ARS ficticia", member_number: "FICTIONAL", plan_name: null, is_primary: true, is_active: true }];
     else if (config.url.startsWith("/clinical-history/patients/")) data = [];
@@ -39,12 +45,13 @@ async function mount(roles = ["doctor"]) { await act(async () => root.render(h(P
 async function click(element) { assert.ok(element); await act(async () => { element.focus(); element.click(); }); }
 const button = (label, scope = document) => [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === label);
 const field = (label, scope = document) => { const labels = [...scope.querySelectorAll("label")]; const node = labels.find((item) => item.textContent.trim() === label) ?? labels.find((item) => item.textContent.startsWith(label)); assert.ok(node, label); return document.getElementById(node.htmlFor); };
+const fieldInSection = (sectionTitle, label, scope = document) => { const section = [...scope.querySelectorAll(".atlas-form-section")].find((item) => item.querySelector("legend")?.textContent.includes(sectionTitle)); assert.ok(section, sectionTitle); return field(label, section); };
 const panel = () => [...document.querySelectorAll("dialog[open]")].at(-1);
 async function value(control, next) { await act(async () => { Object.getOwnPropertyDescriptor(control.tagName === "SELECT" ? dom.window.HTMLSelectElement.prototype : dom.window.HTMLInputElement.prototype, "value").set.call(control, next); control.dispatchEvent(new dom.window.Event(control.tagName === "SELECT" ? "change" : "input", { bubbles: true })); }); }
 async function submit(form) { await act(async () => form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }))); }
 async function select() { await click(host.querySelector(".patients-row")); }
 const mainRequests = () => requests.filter((item) => item.url === "/patients" && item.method === "get");
-function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
+function deferred() { let resolve, reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
 
 test("initial workspace uses one main request and only real identity fields", async () => {
   await mount();
@@ -80,12 +87,53 @@ test("stale search responses do not replace newer results", async () => {
   await act(async () => fresh.resolve([b])); await act(async () => old.resolve([a]));
   assert.match(host.querySelector(".patients-row").textContent, /Bruno/); assert.doesNotMatch(host.querySelector(".patients-list").textContent, /Ana/);
 });
-test("selection reveals correct details without a new request", async () => {
+test("selection loads extended detail only for the selected patient", async () => {
   await mount(); await select();
   assert.equal(host.querySelector(".patients-row").getAttribute("aria-pressed"), "true");
   assert.match(host.querySelector(".patients-detail").textContent, /Ana Ficticia/); assert.match(host.querySelector(".patients-detail").textContent, /ana@example.test/);
-  assert.equal(requests.length, 1); await click(host.querySelectorAll(".patients-row")[1]);
+  assert.equal(requests.length, 2); await click(host.querySelectorAll(".patients-row")[1]);
   assert.match(host.querySelector(".patients-detail").textContent, /Sin teléfono registrado/); assert.doesNotMatch(host.querySelector(".patients-detail").textContent, /ana@example.test/);
+});
+test("patient quick actions stay directly below identity before extended details", async () => {
+  await mount(); await select();
+  const detail = host.querySelector(".patients-detail");
+  const fixed = detail.querySelector(".patients-detail-fixed");
+  const body = detail.querySelector(".patients-detail-body");
+  const children = [...fixed.children];
+  const identityIndex = children.findIndex((node) => node.classList.contains("patients-identity"));
+  const actionsIndex = children.findIndex((node) => node.classList.contains("patients-quick-actions"));
+  assert.equal(identityIndex, 0);
+  assert.equal(actionsIndex, 1);
+  assert.ok(body.querySelector('[aria-label="Información personal"]'));
+  assert.equal(body.querySelector(".patients-quick-actions"), null);
+  assert.deepEqual([...fixed.querySelectorAll(".patients-quick-actions button")].map((node) => node.textContent), ["Agendar cita", "Historia clínica", "Editar", "Seguro"]);
+});
+test("quick actions remain in the fixed area when full patient detail resolves", async () => {
+  const pending = deferred(); response = (config) => config.url === "/patients/1" ? pending.promise : undefined;
+  await mount(); await select();
+  const detail = host.querySelector(".patients-detail");
+  const fixed = detail.querySelector(".patients-detail-fixed");
+  const body = detail.querySelector(".patients-detail-body");
+  const actions = fixed.querySelector(".patients-quick-actions");
+  assert.deepEqual([...actions.querySelectorAll("button")].map((node) => node.textContent), ["Agendar cita", "Historia clínica", "Editar", "Seguro"]);
+  assert.ok(button("Editar").disabled); assert.match(body.textContent, /Cargando ficha/);
+  await act(async () => pending.resolve({ ...a, address: "Calle de prueba" }));
+  assert.equal(detail.querySelector(".patients-quick-actions"), actions);
+  assert.equal(actions.closest(".patients-detail-fixed"), fixed);
+  assert.equal(body.querySelector(".patients-quick-actions"), null);
+  assert.match(body.textContent, /Calle de prueba/); assert.equal(button("Editar").disabled, false);
+});
+test("quick actions remain fixed when full patient detail fails", async () => {
+  const pending = deferred(); response = (config) => config.url === "/patients/1" ? pending.promise : undefined;
+  await mount(); await select();
+  const detail = host.querySelector(".patients-detail");
+  const fixed = detail.querySelector(".patients-detail-fixed");
+  const body = detail.querySelector(".patients-detail-body");
+  const actions = fixed.querySelector(".patients-quick-actions");
+  await act(async () => pending.reject({ response: { data: { detail: "No se pudo cargar la ficha" } } }));
+  assert.equal(detail.querySelector(".patients-quick-actions"), actions);
+  assert.equal(body.querySelector(".patients-quick-actions"), null);
+  assert.ok(button("Editar").disabled); assert.match(body.querySelector('[role="alert"]').textContent, /No se pudo cargar la ficha/);
 });
 test("age is calculated correctly before/on birthday, leap dates and invalid/future DOB", () => {
   assert.equal(patientAge("1990-09-15", new Date(2026, 8, 14)), 35); assert.equal(patientAge("1990-09-15", new Date(2026, 8, 15)), 36);
@@ -97,7 +145,7 @@ for (const roles of [["doctor"], ["secretary"], ["admin"], ["doctor", "admin"], 
     await mount(roles); await select();
     for (const label of ["Agendar cita", "Editar", "Seguro"]) assert.ok(button(label));
     assert.equal(Boolean(button("Historia clínica")), roles.includes("doctor"));
-    assert.equal(requests.length, 1);
+    assert.equal(requests.length, 2);
   });
 }
 test("doctor history loads only selected patient when requested", async () => {
@@ -143,7 +191,7 @@ test("explicit opt-out preserves false meaning", async () => {
   assert.equal(JSON.parse(requests.find((item) => item.method === "put").data).has_insurance, false);
 });
 test("explicit insurance change sends a valid update object", async () => {
-  await mount(); await select(); await click(button("Editar")); await value(field("Número de afiliado", panel()), "NEW-FICTIONAL"); await submit(panel().querySelector("form"));
+  await mount(); await select(); await click(button("Editar")); await value(field("Número de póliza / Afiliado", panel()), "NEW-FICTIONAL"); await submit(panel().querySelector("form"));
   const payload = JSON.parse(requests.find((item) => item.method === "put").data);
   assert.equal(payload.has_insurance, true); assert.equal(payload.insurance.member_number, "NEW-FICTIONAL"); assert.equal(payload.insurance.insurance_company_id, 3);
 });
@@ -180,6 +228,8 @@ test("new form fields have unique labels and associated submit/cancel controls",
   assert.equal(new Set(ids).size, ids.length);
   for (const label of panel().querySelectorAll("label")) assert.ok(document.getElementById(label.htmlFor));
   const submitButton = button("Guardar paciente"); assert.equal(submitButton.getAttribute("form"), panel().querySelector("form").id);
+  assert.equal(submitButton.closest(".atlas-dialog-footer"), panel().querySelector(".atlas-dialog-footer"));
+  assert.equal(button("Cancelar").closest(".atlas-dialog-footer"), panel().querySelector(".atlas-dialog-footer"));
   await click(button("Cancelar")); assert.equal(panel(), undefined); assert.equal(document.body.style.overflow, "");
 });
 test("sorting stays local to fetched results and retains previous sortable fields", async () => {
@@ -197,7 +247,7 @@ test("long patient identity remains complete in semantic detail and contact", as
   assert.equal(heading.title, heading.textContent);
   assert.match(detail.querySelector('[aria-label="Información personal"]').textContent, /Fecha de nacimiento/);
   assert.equal([...detail.querySelectorAll('[aria-label="Contacto"] dd')].at(-1).textContent, records[0].email);
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 2);
 });
 
 test("mobile patient actions preserve clinical guard and accessible heading focus", async () => {
@@ -211,4 +261,112 @@ test("mobile patient actions preserve clinical guard and accessible heading focu
   await mount(["secretary"]); await select();
   assert.equal(button("Historia clínica", panel()), undefined);
   assert.deepEqual([...panel().querySelectorAll(".patients-quick-actions button")].map(node => node.textContent), ["Agendar cita", "Editar", "Seguro"]);
+});
+
+
+test("new form keeps the approved personal and clinical folders visible together", async () => {
+  await mount(["admin"]); await click(button("+ Nuevo paciente"));
+  const dialog = panel();
+  const folders = [...dialog.querySelectorAll(".patient-form-folder")];
+  assert.equal(folders.length, 2);
+  assert.match(folders[0].querySelector(".patient-form-folder-heading").textContent, /1.*Datos personales.*Información básica y de contacto/);
+  assert.match(folders[1].querySelector(".patient-form-folder-heading").textContent, /2.*Datos clínicos.*Información médica relevante/);
+  assert.equal(dialog.querySelector('[role="tablist"]'), null);
+
+  for (const [label, next] of [["Nombre", "Nuevo"], ["Apellido", "Ficticio"], ["Fecha de nacimiento", "2000-01-01"],
+    ["Tipo de documento", "passport"], ["Número de documento", "test-123"], ["Teléfono (Celular)", "555001"], ["Teléfono (Casa)", "555002"],
+    ["Dirección", "Calle ficticia"], ["País", "DO"], ["Provincia", "10"], ["Municipio", "7"], ["Sector / Localidad", "Sector ficticio"], ["Nacionalidad", "Ficticia"],
+    ["Ocupación / Profesión", "Profesión ficticia"], ["Sexo registrado (clínico)", "female"], ["Tipo sanguíneo", "AB-"]]) await value(field(label, dialog), next);
+  for (const [label, next] of [["Nombre completo", "Contacto ficticio"], ["Parentesco", "Familiar"], ["Teléfono (Celular)", "555003"], ["Teléfono (Casa)", "555004"]]) await value(fieldInSection("Contacto de emergencia", label, dialog), next);
+  for (const [label, next] of [["Nombre completo", "Tutor ficticio"], ["Parentesco", "Responsable"], ["Teléfono (Celular)", "555005"], ["Teléfono (Casa)", "555006"]]) await value(fieldInSection("Tutor / Responsable", label, dialog), next);
+
+  assert.ok(field("Edad", dialog).readOnly);
+  assert.match(field("Edad", dialog).value, /años/);
+  assert.match(folders[1].textContent, /Puede ser declarado por el paciente y posteriormente confirmado por laboratorio/);
+  assert.equal(dialog.querySelectorAll(".patient-form-folder-heading svg").length, 2);
+  assert.ok(dialog.querySelector(".patient-form-section-title svg"));
+
+  await submit(dialog.querySelector("form"));
+  const data = JSON.parse(requests.find((item) => item.method === "post" && item.url === "/patients").data);
+  assert.equal(data.phone, "555001"); assert.equal(data.home_phone, "555002");
+  assert.equal(data.emergency_contact_mobile, "555003"); assert.equal(data.emergency_contact_home_phone, "555004");
+  assert.equal(data.guardian_mobile, "555005"); assert.equal(data.guardian_home_phone, "555006");
+  assert.equal(data.document_type, "passport"); assert.equal(data.document_number, "test-123");
+  assert.equal(data.territorial_unit_id, 7); assert.equal(data.country_code, "DO"); assert.equal(data.blood_type, "AB-"); assert.equal(data.registered_sex, "female");
+  assert.equal(Object.hasOwn(data, "age"), false);
+});
+
+
+
+test("territorial selection defaults for new patients and clearing a province clears its municipality", async () => {
+  await mount(["admin"]); await click(button("+ Nuevo paciente")); const dialog = panel();
+  await act(async () => {});
+  assert.equal(field("País", dialog).value, "DO");
+  await value(field("Provincia", dialog), "10");
+  await value(field("Municipio", dialog), "7");
+  assert.equal(field("Municipio", dialog).value, "7");
+  await value(field("Provincia", dialog), "");
+  assert.equal(field("Municipio", dialog).value, "");
+});
+
+test("editing hydrates the territorial path and retains a legacy location without auto-migration", async () => {
+  const structured = { ...a, country_code: "DO", country_name: "República Dominicana", territorial_unit_id: 7, territorial_path: [
+    { level: 1, key: "province", label: "Provincia", unit_id: 10, name: "Provincia ficticia" },
+    { level: 2, key: "municipality", label: "Municipio", unit_id: 7, name: "Municipio ficticio" },
+  ], sector_locality: "Sector ficticio", address: "Calle ficticia" };
+  await mount(); response = (config) => config.url === "/patients/1" ? structured : undefined;
+  await select(); await click(button("Editar"));
+  assert.equal(field("País", panel()).value, "DO");
+  assert.equal(field("Provincia", panel()).value, "10");
+  assert.equal(field("Municipio", panel()).value, "7");
+  assert.equal(field("Sector / Localidad", panel()).value, "Sector ficticio");
+  await click(button("Cancelar"));
+
+  const legacy = { ...a, province: "Provincia anterior", locality_id: 7, locality_name: "Localidad anterior" };
+  response = (config) => config.url === "/patients/1" ? legacy : undefined;
+  await click(host.querySelectorAll(".patients-row")[1]); await click(host.querySelector(".patients-row")); await click(button("Editar"));
+  assert.equal(field("País", panel()).value, "");
+  assert.match(panel().textContent, /Ubicación anterior: Provincia anterior/);
+  await value(field("Teléfono (Casa)", panel()), "5550099"); await submit(panel().querySelector("form"));
+  const payload = JSON.parse(requests.filter((item) => item.method === "put").at(-1).data);
+  assert.equal(payload.province, "Provincia anterior");
+  assert.equal(payload.country_code, null);
+  assert.equal(payload.territorial_unit_id, null);
+});
+
+test("mobile patient form keeps both folders in one semantic flow", async () => {
+  setDesktop(false); await mount(["admin"]); await click(button("+ Nuevo paciente"));
+  const dialog = panel();
+  const folders = [...dialog.querySelectorAll(".patient-form-folder")];
+  assert.equal(folders.length, 2);
+  assert.match(folders[0].textContent, /Datos personales/);
+  assert.match(folders[1].textContent, /Datos clínicos/);
+  assert.ok(field("Teléfono (Celular)", dialog));
+  assert.ok(field("Teléfono (Casa)", dialog));
+  assert.ok(button("Guardar paciente", dialog));
+});
+test("extended details are fetched on demand and hydrate editing", async () => {
+  const extended = { ...a, document_type: "other", document_number: "TEST123", home_phone: "555007", address: "Calle ficticia", blood_type: "O+" };
+  await mount(); response = (config) => config.url === "/patients/1" ? extended : undefined;
+  await select(); assert.match(host.querySelector(".patients-detail").textContent, /TEST123/);
+  await click(button("Editar")); assert.equal(field("Número de documento", panel()).value, "TEST123");
+  assert.equal(field("Teléfono (Casa)", panel()).value, "555007");
+  assert.equal(field("Tipo sanguíneo", panel()).value, "O+");
+  await value(field("Teléfono (Celular)", panel()), "555008"); await submit(panel().querySelector("form"));
+  const data = JSON.parse(requests.find((item) => item.method === "put").data);
+  assert.equal(data.phone, "555008"); assert.equal(data.home_phone, "555007"); assert.equal(data.document_number, "TEST123");
+});
+test("failed detail cannot open editing and retry recovers", async () => {
+  await mount(); response = (config) => { if (config.url === "/patients/1") throw { response: { data: { detail: "Paciente no encontrado" } } }; };
+  await select(); assert.ok(button("Editar").disabled); assert.match(host.textContent, /Paciente no encontrado/);
+  response = null; await click(button("Reintentar ficha")); assert.equal(button("Editar").disabled, false);
+});
+test("stale full details never replace a newer selected patient", async () => {
+  await mount(); const delayed = deferred();
+  response = (config) => config.url === "/patients/1" ? delayed.promise : undefined;
+  await select(); assert.ok(button("Editar").disabled);
+  await click(host.querySelectorAll(".patients-row")[1]);
+  await act(async () => delayed.resolve({ ...a, document_number: "PRIVATEOLD", document_type: "other" }));
+  assert.match(host.querySelector(".patients-detail").textContent, /Bruno/);
+  assert.doesNotMatch(host.querySelector(".patients-detail").textContent, /PRIVATEOLD/);
 });

@@ -32,6 +32,10 @@ test("desktop patient detail reserves 38 percent with bounded tracks and long te
   assert.match(css, /\.patients-contact \.patients-facts\s*\{/);
   assert.match(css, /\.patients-master,.patients-detail\s*\{[^}]*min-width:0/);
   assert.match(css, /max-width:1023px[^\n]*grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(css, /\.patients-detail-scroll\s*\{[^}]*display:flex;[^}]*overflow:hidden/);
+  assert.match(css, /\.patients-detail-fixed\s*\{[^}]*flex:0 0 auto;[^}]*flex-shrink:0/);
+  assert.match(css, /\.patients-detail-body\s*\{[^}]*flex:1 1 auto;[^}]*min-height:0;[^}]*overflow-y:auto/);
+  assert.doesNotMatch(css, /patients-detail-summary/);
 });
 
 test("mobile heading stays unboxed while patient actions retain 44px and clinical hierarchy", async () => {
@@ -44,11 +48,30 @@ test("mobile heading stays unboxed while patient actions retain 44px and clinica
   assert.match(css, /patients-action--history\s*\{[^}]*--atlas-success/);
   assert.match(css, /\.atlas-dialog--drawer \.patients-quick-actions\s*\{[^}]*width:100%;[^}]*margin-inline:0;[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /\.atlas-dialog--drawer \.patients-quick-actions>\.atlas-button\s*\{[^}]*width:100%;[^}]*min-width:0;[^}]*margin:0;[^}]*justify-self:stretch/);
-  assert.match(css, /\.atlas-dialog--drawer \.patients-action--edit\s*\{\s*grid-column:1/);
-  assert.match(css, /\.atlas-dialog--drawer \.patients-action--insurance\s*\{\s*grid-column:2/);
+  assert.match(css, /\.atlas-dialog--drawer \.patients-action--schedule,.atlas-dialog--drawer \.patients-action--history\s*\{\s*grid-column:auto/);
+  assert.match(css, /max-width:359px[^}]*\.atlas-dialog--drawer \.patients-quick-actions\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
   const agenda = await read("index.css");
   assert.match(agenda, /\.agenda-event-status\s*\{[^}]*font-size:clamp\(\.8125rem,\.85vw,\.9rem\);[^}]*font-weight:700;[^}]*line-height:1\.2/);
   assert.match(agenda, /grid-template-rows:repeat\(3,minmax\(0,1fr\)\) auto/);
+});
+
+test("patient registration uses the approved wide two-folder layout without obsolete tabs", async () => {
+  const css = await read("pages/patients.css");
+  const foundation = await read("ui/foundation.css");
+  assert.match(css, /\.atlas-dialog:has\(\.patient-form\)\s*\{[^}]*width:min\(96rem,calc\(100vw - 2rem\)\);[^}]*max-height:calc\(100dvh - 2rem\)/);
+  assert.match(css, /\.patient-form-columns\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(css, /@media \(min-width:1180px\)[\s\S]*?\.patient-form-columns\s*\{\s*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.patient-form-contact-email\s*\{\s*grid-column:1\/-1/);
+  assert.match(css, /@media \(min-width:1366px\)[\s\S]*?patient-form-contact-section \.atlas-form-grid,.patient-form-contacts-section \.atlas-form-grid\s*\{\s*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.patient-form-insurance-choice-row\s*\{[^}]*display:flex;[^}]*justify-content:space-between/);
+  assert.match(css, /@media \(max-width:839px\)[\s\S]*?\.patient-form-columns\s*\{\s*grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(foundation, /\.atlas-dialog-body\s*\{[^}]*overflow-y:\s*auto/);
+  assert.doesNotMatch(css, /patient-form-tabs|patient-form-tab|section\[hidden\]/);
+});
+
+test("Vite watches the Windows bind mount so transformed modules cannot become stale", async () => {
+  const vite = await readFile(new URL("../vite.config.ts", import.meta.url), "utf8");
+  assert.match(vite, /watch:\s*\{\s*usePolling:\s*true,\s*interval:\s*300\s*\}/);
 });
 
 test("desktop dashboard scales fluidly without changing compact mobile navigation", async () => {

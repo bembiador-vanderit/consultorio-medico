@@ -50,6 +50,12 @@ class ClinicalHistory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    patient = relationship("Patient")
+
+    @property
+    def patient_date_of_birth(self) -> date:
+        return self.patient.date_of_birth
+
     specialty = relationship("Specialty")
     doctor = relationship("User", foreign_keys=[doctor_id])
     center = relationship("CareCenter")

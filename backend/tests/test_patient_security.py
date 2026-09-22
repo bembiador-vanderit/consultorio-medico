@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import current_user
-from app.api.routes import appointments, clinical_history, insurance, patients
+from app.api.routes import appointments, clinical_history, insurance, patients, regional
 from app.db import Base, get_db
 from app.models import Appointment, CareCenter, InsuranceCompany, Patient, PatientInsurance, Permission, Role, SecretaryCenterScope, Specialty, User
 from app.services.bootstrap import ROLE_PERMISSIONS
@@ -49,7 +49,7 @@ def patient_app():
     db.commit()
     active = {"user": doctor}
     app = FastAPI()
-    for module in (patients, appointments, insurance, clinical_history):
+    for module in (patients, appointments, insurance, clinical_history, regional):
         app.include_router(module.router, prefix="/api/v1")
     app.dependency_overrides[current_user] = lambda: active["user"]
     def session():

@@ -23,7 +23,8 @@ beforeEach(() => {
   api.defaults.adapter = async (config) => {
     requests.push(config);
     let data;
-    if (config.url === "/insurance/companies") data = [];
+    if (config.url === "/patients/localities") data = [];
+    else if (config.url === "/insurance/companies") data = [];
     else if (config.url === "/patients/identity-search") data = [identity];
     else if (config.url === "/appointments/doctors") data = [{ id: 2, full_name: user.full_name, center_ids: [1], specialties: [{ id: 3, name: "Especialidad ficticia" }] }];
     else if (config.url === "/appointments" && config.method === "post") data = { id: 30, ...JSON.parse(config.data) };
