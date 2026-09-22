@@ -20,6 +20,7 @@ from app.models.patient import Patient
 from app.models.prescription import Prescription
 from app.models.requested_tests import RequestedTests
 from app.models.vital_signs import VitalSigns
+from app.models.specialty_template import SpecialtyTemplate
 from app.schemas.clinical_history import (
     ClinicalAuditLogResponse,
     ClinicalHistoryCreate,
@@ -43,6 +44,12 @@ from app.services.clinical_access import (
 )
 from app.services.clinical_coverage import coverage_status
 from app.services.patient_scope import require_patient_clinical_scope
+from app.services.specialty_templates import (
+    default_module_descriptors,
+    module_descriptor,
+    resolve_specialty_template,
+    validate_template_module_keys,
+)
 
 router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
 access = require_permission("clinical:access")
@@ -53,6 +60,21 @@ STALE_REVISION_DETAIL = (
     "La consulta fue modificada en otra sesión o pestaña. "
     "Recarga la información antes de continuar."
 )
+
+
+class ConsultationWorkspaceModuleResponse(BaseModel):
+    key: str
+    label: str
+    position: int
+    required: bool
+
+
+class ConsultationWorkspaceResponse(BaseModel):
+    template_id: int | None
+    template_version: int | None
+    specialty_id: int | None
+    specialty_name: str
+    modules: list[ConsultationWorkspaceModuleResponse]
 
 
 class ConsultationContextResponse(BaseModel):
@@ -67,21 +89,35 @@ class ConsultationContextResponse(BaseModel):
     appointment_reason: str | None
     appointment_status: str
     patient_blood_type: str | None = None
+    workspace: ConsultationWorkspaceResponse
     previous_consultations: list[ClinicalHistoryResponse]
 
 
-def _appointment_context(appointment: Appointment, patient_id: int) -> dict[str, int | None]:
+def _appointment_context(
+    appointment: Appointment,
+    patient_id: int,
+    db: Session | None = None,
+    *,
+    require_template: bool = False,
+) -> dict[str, int | None]:
     if appointment.patient_id != patient_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="La cita no pertenece al paciente indicado",
         )
-    return {
+    context = {
         "appointment_id": appointment.id,
         "doctor_id": appointment.doctor_id,
         "center_id": appointment.center_id,
         "specialty_id": appointment.specialty_id,
     }
+    if not require_template:
+        return context
+    if appointment.specialty_id is None or db is None:
+        raise HTTPException(status_code=409, detail="La cita no tiene una especialidad clínica válida")
+    template = resolve_specialty_template(db, appointment.specialty_id)
+    context["specialty_template_id"] = template.id
+    return context
 
 
 def _ensure_appointment_attendable(appointment: Appointment, db: Session) -> None:
@@ -116,9 +152,11 @@ def _resolve_consultation_context(
     patient_id: int,
     db: Session,
     user: User | None = None,
+    *,
+    include_template: bool = True,
 ) -> dict[str, int | None]:
     if appointment_id is None:
-        return {"appointment_id": None, "doctor_id": None, "center_id": None, "specialty_id": None}
+        return {"appointment_id": None, "doctor_id": None, "center_id": None, "specialty_id": None, "specialty_template_id": None}
 
     appointment = db.get(Appointment, appointment_id)
     if appointment is None:
@@ -127,7 +165,42 @@ def _resolve_consultation_context(
         ensure_appointment_access(user, appointment, db)
         ensure_attending_doctor(user, appointment)
         _ensure_appointment_attendable(appointment, db)
-    return _appointment_context(appointment, patient_id)
+    return _appointment_context(
+        appointment,
+        patient_id,
+        db,
+        require_template=user is not None and include_template,
+    )
+
+
+def _workspace_for_appointment(appointment: Appointment, db: Session) -> ConsultationWorkspaceResponse:
+    history = db.scalar(
+        select(ClinicalHistory).where(ClinicalHistory.appointment_id == appointment.id)
+    )
+    if history is not None and history.specialty_template_id is None:
+        return ConsultationWorkspaceResponse(
+            template_id=None,
+            template_version=None,
+            specialty_id=history.specialty_id,
+            specialty_name=history.specialty_name,
+            modules=default_module_descriptors(),
+        )
+
+    template = (
+        db.get(SpecialtyTemplate, history.specialty_template_id)
+        if history is not None
+        else resolve_specialty_template(db, appointment.specialty_id)
+    )
+    if template is None:
+        raise HTTPException(status_code=409, detail="La plantilla histórica de la consulta no está disponible")
+    validate_template_module_keys([module.module_key for module in template.modules])
+    return ConsultationWorkspaceResponse(
+        template_id=template.id,
+        template_version=template.version,
+        specialty_id=template.specialty_id,
+        specialty_name=template.specialty.name,
+        modules=[module_descriptor(module) for module in sorted(template.modules, key=lambda item: item.position)],
+    )
 
 
 def _ensure_appointment_available(
@@ -227,6 +300,7 @@ def get_consultation_context(appointment_id: int, user: User = Depends(access), 
         appointment_reason=appointment.reason,
         appointment_status=appointment.status,
         patient_blood_type=db.get(Patient, appointment.patient_id).blood_type,
+        workspace=_workspace_for_appointment(appointment, db),
         previous_consultations=previous_consultations,
     )
     add_clinical_audit(
@@ -245,7 +319,9 @@ def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, use
         raise HTTPException(status_code=422, detail="La consulta debe iniciarse desde una cita autorizada")
 
     data = payload.model_dump()
-    context = _resolve_consultation_context(data.get("appointment_id"), patient_id, db, user)
+    context = _resolve_consultation_context(
+        data.get("appointment_id"), patient_id, db, user, include_template=False
+    )
     try:
         _ensure_appointment_available(context["appointment_id"], db)
     except HTTPException as error:
@@ -271,6 +347,9 @@ def create_clinical_history(patient_id: int, payload: ClinicalHistoryCreate, use
             )
             db.commit()
         raise
+    if context["specialty_id"] is None:
+        raise HTTPException(status_code=409, detail="La cita no tiene una especialidad clínica válida")
+    context["specialty_template_id"] = resolve_specialty_template(db, context["specialty_id"]).id
     data.update(context)
 
     history = ClinicalHistory(patient_id=patient_id, **data)

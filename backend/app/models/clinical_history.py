@@ -30,6 +30,9 @@ class ClinicalHistory(Base):
     specialty_id: Mapped[int | None] = mapped_column(
         ForeignKey("specialties.id", ondelete="RESTRICT"), nullable=True, index=True
     )
+    specialty_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("specialty_templates.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     consultation_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), default="in_progress", nullable=False, index=True)
     revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
@@ -57,6 +60,7 @@ class ClinicalHistory(Base):
         return self.patient.date_of_birth
 
     specialty = relationship("Specialty")
+    specialty_template = relationship("SpecialtyTemplate")
     doctor = relationship("User", foreign_keys=[doctor_id])
     center = relationship("CareCenter")
 

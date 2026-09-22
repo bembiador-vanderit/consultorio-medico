@@ -40,6 +40,7 @@ export type ClinicalHistory = ClinicalHistoryContent & {
   doctor_id: number | null;
   center_id: number | null;
   specialty_id: number | null;
+  specialty_template_id?: number | null;
   specialty_name: string;
   doctor_name: string | null;
   center_name: string | null;
@@ -60,6 +61,21 @@ export type ClinicalHistoryInput = Omit<
   requested_tests?: string;
 };
 
+export type WorkspaceModule = {
+  key: string;
+  label: string;
+  position: number;
+  required: boolean;
+};
+
+export type ConsultationWorkspaceTemplate = {
+  template_id: number | null;
+  template_version: number | null;
+  specialty_id: number | null;
+  specialty_name: string;
+  modules: WorkspaceModule[];
+};
+
 export type ConsultationContext = {
   appointment_id: number;
   patient_id: number;
@@ -72,6 +88,7 @@ export type ConsultationContext = {
   appointment_reason: string | null;
   appointment_status: AppointmentStatus;
   patient_blood_type?: string | null;
+  workspace?: ConsultationWorkspaceTemplate;
   previous_consultations: ClinicalHistory[];
 };
 

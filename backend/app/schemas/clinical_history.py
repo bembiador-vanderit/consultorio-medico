@@ -43,6 +43,7 @@ class ClinicalHistoryResponse(ClinicalHistoryBase):
     doctor_id: int | None = None
     center_id: int | None = None
     specialty_id: int | None
+    specialty_template_id: int | None = None
     specialty_name: str
     doctor_name: str | None = None
     center_name: str | None = None

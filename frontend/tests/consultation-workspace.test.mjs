@@ -17,19 +17,21 @@ const originalAdapter = api.defaults.adapter;
 const host = document.getElementById("root");
 const appointment = structuredClone(appointmentScheduled);
 let root;
+let workspace;
 
 function ok(config, data) { return { data, status: 200, statusText: "OK", headers: {}, config }; }
 async function settle() { for (let index = 0; index < 4; index += 1) await act(async () => { await Promise.resolve(); }); }
 
 beforeEach(() => {
   root = createRoot(host);
+  workspace = null;
   clearClinicalCatalogCacheForTests();
   api.defaults.adapter = async (config) => {
     if (config.url === "/auth/me") return ok(config, activeDoctor);
     if (config.url === `/clinical-history/appointments/${appointment.id}/context`) return ok(config, {
       appointment_id: appointment.id, patient_id: appointment.patient_id, doctor_id: appointment.doctor_id, center_id: appointment.center_id,
       specialty_id: appointment.specialty_id, specialty_name: appointment.specialty_name, appointment_date: appointment.appointment_date,
-      appointment_time: appointment.appointment_time, appointment_reason: appointment.reason, appointment_status: appointment.status, previous_consultations: [],
+      appointment_time: appointment.appointment_time, appointment_reason: appointment.reason, appointment_status: appointment.status, workspace: workspace ?? undefined, previous_consultations: [],
     });
     if (config.url === "/clinical-catalog/studies") return ok(config, [medicalStudyFixture]);
     throw new Error(`Unexpected request ${config.method} ${config.url}`);
@@ -64,4 +66,45 @@ test("workspace mantiene módulos y contexto en una estructura adaptativa sin an
   assert.match(layout.className, /min-w-0/);
   assert.match(layout.className, /xl:grid-cols/);
   assert.doesNotMatch(host.textContent, /appointment_id:|doctor_id:|center_id:/);
+});
+
+test("workspace renderiza módulos conocidos en el orden definido por la plantilla", async () => {
+  workspace = {
+    template_id: 42,
+    template_version: 2,
+    specialty_id: appointment.specialty_id,
+    specialty_name: appointment.specialty_name,
+    modules: [
+      { key: "core.prescriptions", label: "Recetas", position: 1, required: true },
+      { key: "core.anamnesis", label: "Historia de la consulta", position: 2, required: true },
+      { key: "core.clinical-orders", label: "Órdenes clínicas", position: 3, required: true },
+      { key: "core.vital-signs", label: "Signos vitales", position: 4, required: true },
+      { key: "core.diagnoses", label: "Diagnósticos", position: 5, required: true },
+    ],
+  };
+  await act(async () => root.render(h(ConsultationWorkspace, { appointment, onBack() {} })));
+  await settle();
+
+  assert.deepEqual(
+    [...host.querySelectorAll("[data-consultation-module]")].map((element) => element.dataset.consultationModule),
+    ["core.prescriptions", "core.anamnesis", "core.clinical-orders", "core.vital-signs", "core.diagnoses"],
+  );
+});
+
+test("workspace denuncia una key desconocida sin producir una pantalla blanca", async () => {
+  workspace = {
+    template_id: 43,
+    template_version: 3,
+    specialty_id: appointment.specialty_id,
+    specialty_name: appointment.specialty_name,
+    modules: [
+      { key: "core.anamnesis", label: "Historia de la consulta", position: 1, required: true },
+      { key: "cardiology.not-installed", label: "Módulo no instalado", position: 2, required: true },
+    ],
+  };
+  await act(async () => root.render(h(ConsultationWorkspace, { appointment, onBack() {} })));
+  await settle();
+
+  assert.match(host.querySelector('[role="alert"]')?.textContent ?? "", /cardiology\.not-installed/);
+  assert.ok(host.querySelector('[data-consultation-module="core.anamnesis"]'));
 });
