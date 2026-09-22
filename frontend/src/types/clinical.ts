@@ -40,6 +40,7 @@ export type ClinicalHistory = ClinicalHistoryContent & {
   doctor_id: number | null;
   center_id: number | null;
   specialty_id: number | null;
+  specialty_template_id?: number | null;
   specialty_name: string;
   doctor_name: string | null;
   center_name: string | null;
@@ -54,10 +55,25 @@ export type ClinicalHistory = ClinicalHistoryContent & {
 
 export type ClinicalHistoryInput = Omit<
   ClinicalHistory,
-  "patient_date_of_birth" | "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "specialty_id" | "specialty_name" | "doctor_name" | "center_name" | "status" | "revision" | "completed_at" | "completed_by_id" | "created_at" | "updated_at" | "requested_tests"
+  "patient_date_of_birth" | "id" | "patient_id" | "appointment_id" | "doctor_id" | "center_id" | "specialty_id" | "specialty_template_id" | "specialty_name" | "doctor_name" | "center_name" | "status" | "revision" | "completed_at" | "completed_by_id" | "created_at" | "updated_at" | "requested_tests"
 > & {
   appointment_id?: number | null;
   requested_tests?: string;
+};
+
+export type WorkspaceModule = {
+  key: string;
+  label: string;
+  position: number;
+  required: boolean;
+};
+
+export type ConsultationWorkspaceTemplate = {
+  template_id: number | null;
+  template_version: number | null;
+  specialty_id: number | null;
+  specialty_name: string;
+  modules: WorkspaceModule[];
 };
 
 export type ConsultationContext = {
@@ -72,6 +88,7 @@ export type ConsultationContext = {
   appointment_reason: string | null;
   appointment_status: AppointmentStatus;
   patient_blood_type?: string | null;
+  workspace: ConsultationWorkspaceTemplate;
   previous_consultations: ClinicalHistory[];
 };
 

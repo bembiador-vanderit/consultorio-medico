@@ -31,6 +31,7 @@ class Specialty(Base):
 
     regions: Mapped[list["AnatomicalRegion"]] = relationship(back_populates="specialty", cascade="all, delete-orphan")
     studies: Mapped[list["MedicalStudy"]] = relationship(back_populates="specialty", cascade="all, delete-orphan")
+    templates: Mapped[list["SpecialtyTemplate"]] = relationship(back_populates="specialty")
 
 
 class AnatomicalRegion(Base):

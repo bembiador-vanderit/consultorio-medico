@@ -2,6 +2,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 import { createBrowser } from "./browser.mjs";
+import { consultationWorkspace } from "./fixtures/clinical.mjs";
 
 const { dom } = createBrowser();
 const { createElement: h, act } = await import("react");
@@ -13,7 +14,7 @@ const { clearClinicalCatalogCacheForTests } = await server.ssrLoadModule("/src/s
 const originalAdapter = api.defaults.adapter;
 const host = document.getElementById("root");
 let root; let deferredA; let signalA; let mode; let reloadBootstrap;
-const context = (id) => ({ appointment_id: id, patient_id: id, doctor_id: 12, center_id: 7, specialty_id: 3, specialty_name: "Cardiología", appointment_date: "2026-09-16", appointment_time: "09:00", appointment_reason: null, appointment_status: "scheduled", previous_consultations: [] });
+const context = (id) => ({ appointment_id: id, patient_id: id, doctor_id: 12, center_id: 7, specialty_id: 3, specialty_name: "Cardiología", appointment_date: "2026-09-16", appointment_time: "09:00", appointment_reason: null, appointment_status: "scheduled", workspace: consultationWorkspace({ specialty_id: 3, specialty_name: "Cardiología" }), previous_consultations: [] });
 function Probe({ appointmentId }) { const state = useConsultationBootstrap(appointmentId); reloadBootstrap = state.reload; return h("output", { "data-error": state.error, "data-loading": String(state.loading), "data-refreshing": String(state.refreshing), "data-version": String(state.version), "data-reason": state.context?.appointment_reason || "" }, state.context?.appointment_id ?? "none"); }
 function settle() { return act(async () => { await Promise.resolve(); await Promise.resolve(); }); }
 

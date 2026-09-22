@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import ClinicalOrdersSection from "../clinical/ClinicalOrdersSection";
 import { Modal } from "../../ui";
 import HistoricalConsultationProjection from "./HistoricalConsultationProjection";
 import ConsultationHeader from "./ConsultationHeader";
-import AnamnesisModule from "./AnamnesisModule";
-import DiagnosesModule from "./DiagnosesModule";
-import PrescriptionsModule from "./PrescriptionsModule";
-import VitalSignsModule from "./VitalSignsModule";
+import { consultationModuleRegistry, isKnownConsultationModule } from "./consultationModuleRegistry";
 import { api } from "../../services/api";
 import { clinicalApi, clinicalErrorMessage, isReadAborted, isRevisionConflict } from "../../services/clinicalApi";
 import { loadHistoricalConsultationDetails } from "../../services/historicalConsultation";
@@ -48,6 +44,10 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
   const previousRequestController = useRef<AbortController | null>(null);
   const isCompleted = saved?.status === "completed";
   const previousConsultations = context?.previous_consultations.filter((item) => item.appointment_id !== context.appointment_id) || [];
+  const workspace = context?.workspace;
+  const workspaceModules = workspace ? [...workspace.modules].sort((left, right) => left.position - right.position) : [];
+  const unknownModuleKeys = workspaceModules.filter((module) => !isKnownConsultationModule(module.key)).map((module) => module.key);
+  const workspaceIncompatible = !workspace || unknownModuleKeys.length > 0;
 
   const setAnamnesisDirty = useCallback((dirty: boolean) => setSectionDirty("anamnesis", dirty), [setSectionDirty]);
   const setVitalSignsDirty = useCallback((dirty: boolean) => setSectionDirty("vital-signs", dirty), [setSectionDirty]);
@@ -108,7 +108,7 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
   }, [bootstrap.loading, bootstrap.error, bootstrap.context, bootstrap.history, bootstrap.diagnoses, bootstrap.prescriptions, bootstrap.requestedTests, bootstrap.vitalSigns, bootstrap.version]);
 
   async function saveHistory(form: ClinicalHistoryContent) {
-    if (!context || isCompleted) return;
+    if (!context || workspaceIncompatible || isCompleted) return;
     setSaving(true);
     setError("");
     try {
@@ -139,12 +139,13 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
   }
 
   function openCompletionModal() {
-    if (!saved || isCompleted || saving || completing || hasDirtyChanges) return;
+    if (!saved || workspaceIncompatible || isCompleted || saving || completing || hasDirtyChanges) return;
     setError("");
     setCompletionModalOpen(true);
   }
 
   async function completeConsultation() {
+    if (workspaceIncompatible) { setError("No puede finalizar una consulta con una configuración clínica incompatible."); return; }
     if (hasDirtyChanges) { setError("Guarde o descarte los cambios pendientes antes de finalizar."); return; }
     if (!saved || isCompleted || completing) return;
     setCompleting(true);
@@ -224,19 +225,23 @@ export default function ConsultationWorkspace({ appointment, onBack, registerNav
     {revisionConflict && <div role="alert" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><p className="font-semibold">La consulta fue modificada en otra sesión o pestaña.</p><p className="mt-1">Los cambios locales no fueron guardados y permanecen visibles. Atlas no volverá a enviarlos automáticamente.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void reloadServerVersion()} disabled={bootstrap.refreshing} className="rounded-lg bg-amber-800 px-3 py-2 font-medium text-white disabled:opacity-50">{bootstrap.refreshing ? "Recargando..." : "Recargar versión del servidor"}</button><button type="button" onClick={() => setRevisionConflict(false)} className="rounded-lg border border-amber-400 bg-white px-3 py-2 font-medium text-amber-900">Continuar revisando mis cambios</button></div></div>}
     {error && <div role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
     {bootstrap.refreshing && <p role="status" aria-live="polite" className="mt-4 rounded-lg bg-sky-50 p-3 text-sm text-sky-800">Recargando la versión actual del servidor...</p>}
-    {saved && <div role="status" aria-live="polite" className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg p-3 text-sm ${isCompleted ? "bg-slate-200 text-slate-800" : "bg-emerald-50 text-emerald-800"}`}><span>{isCompleted ? "Consulta finalizada y bloqueada en modo de solo lectura." : hasDirtyChanges ? "Consulta en progreso · hay cambios locales pendientes." : "Consulta guardada correctamente."}</span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void downloadSummaryPdf()} disabled={downloadingSummaryPdf} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 font-medium text-emerald-800 disabled:opacity-40">{downloadingSummaryPdf ? "Generando resumen..." : "Descargar resumen PDF"}</button>{!isCompleted && <button type="button" onClick={openCompletionModal} disabled={completing || saving || hasDirtyChanges} aria-describedby={hasDirtyChanges ? "consultation-pending-completion" : undefined} className="rounded-lg bg-slate-900 px-3 py-2 font-medium text-white disabled:opacity-40">Finalizar consulta</button>}</div>{!isCompleted && hasDirtyChanges && <p id="consultation-pending-completion" className="w-full rounded-md bg-amber-100 p-2 text-amber-900">Guarde o descarte los cambios pendientes antes de finalizar.</p>}</div>}
+    {saved && <div role="status" aria-live="polite" className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg p-3 text-sm ${isCompleted ? "bg-slate-200 text-slate-800" : "bg-emerald-50 text-emerald-800"}`}><span>{isCompleted ? "Consulta finalizada y bloqueada en modo de solo lectura." : hasDirtyChanges ? "Consulta en progreso · hay cambios locales pendientes." : "Consulta guardada correctamente."}</span><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void downloadSummaryPdf()} disabled={downloadingSummaryPdf} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 font-medium text-emerald-800 disabled:opacity-40">{downloadingSummaryPdf ? "Generando resumen..." : "Descargar resumen PDF"}</button>{!isCompleted && <button type="button" onClick={openCompletionModal} disabled={completing || saving || hasDirtyChanges || workspaceIncompatible} aria-describedby={workspaceIncompatible ? "consultation-workspace-incompatible" : hasDirtyChanges ? "consultation-pending-completion" : undefined} className="rounded-lg bg-slate-900 px-3 py-2 font-medium text-white disabled:opacity-40">Finalizar consulta</button>}</div>{!isCompleted && workspaceIncompatible && <p id="consultation-workspace-incompatible" className="w-full rounded-md bg-red-100 p-2 text-red-900">No puede finalizar mientras la configuración clínica sea incompatible.</p>}{!isCompleted && !workspaceIncompatible && hasDirtyChanges && <p id="consultation-pending-completion" className="w-full rounded-md bg-amber-100 p-2 text-amber-900">Guarde o descarte los cambios pendientes antes de finalizar.</p>}</div>}
     <div data-consultation-layout="adaptive" className="mt-6 grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(17rem,20rem)]"><div data-consultation-modules className="min-w-0 space-y-6">
-      <AnamnesisModule key={`anamnesis:${appointment.id}:${bootstrap.version}`} patientDateOfBirth={appointment.patient_date_of_birth} episodeId={appointment.id} appointmentReason={context?.appointment_reason ?? appointment.reason} history={saved} completed={isCompleted} saving={saving} onSave={saveHistory} onDirtyChange={setAnamnesisDirty} />
-      <VitalSignsModule key={`vitals:${appointment.id}:${bootstrap.version}`} episodeId={appointment.id} historyId={saved?.id ?? null} vitalSigns={vitalSigns} completed={isCompleted} loading={loadingVitalSigns} onSaved={setVitalSigns} onDirtyChange={setVitalSignsDirty} />
-      <DiagnosesModule key={`diagnoses:${appointment.id}:${saved?.id ?? "new"}:${bootstrap.version}`} episodeId={appointment.id} historyId={saved?.id ?? null} diagnoses={diagnoses} completed={isCompleted} onChange={setDiagnoses} onError={setError} onDirtyChange={setDiagnosesDirty} />
-      <PrescriptionsModule key={`prescriptions:${appointment.id}:${saved?.id ?? "new"}:${bootstrap.version}`} episodeId={appointment.id} historyId={saved?.id ?? null} prescriptions={prescriptions} completed={isCompleted} onChange={setPrescriptions} onError={setError} downloadingPrescriptionPdf={downloadingPrescriptionPdf} downloadPrescriptionPdf={downloadPrescriptionPdf} onDirtyChange={setPrescriptionsDirty} />
-      {saved ? <ClinicalOrdersSection key={`orders:${saved.id}:${bootstrap.version}`} historyId={saved.id} specialtyId={saved.specialty_id} completed={isCompleted} allowAdditional={Boolean(isCompleted && currentUser?.is_active && currentUser.roles.includes("doctor") && saved.doctor_id === currentUser.id)} onDirtyChange={setOrdersDirty} /> : <div className="rounded-xl border border-dashed bg-white p-6 text-sm text-slate-600 shadow-sm">Guarda primero la consulta para crear órdenes estructuradas de laboratorio, estudios o procedimientos.</div>}
+      {workspaceIncompatible ? <IncompatibleWorkspace workspaceMissing={!workspace} unknownModuleKeys={unknownModuleKeys} /> : context && workspaceModules.map((module) => <div key={`${workspace.template_id ?? "legacy"}:${module.key}`} data-consultation-module={module.key}>{consultationModuleRegistry[module.key as keyof typeof consultationModuleRegistry].render({ appointment, bootstrapVersion: bootstrap.version, context, saved, completed: Boolean(isCompleted), saving, vitalSigns, loadingVitalSigns, setVitalSigns, diagnoses, setDiagnoses, prescriptions, setPrescriptions, setError, currentUser, downloadingPrescriptionPdf, downloadPrescriptionPdf, saveHistory, onAnamnesisDirty: setAnamnesisDirty, onVitalSignsDirty: setVitalSignsDirty, onDiagnosesDirty: setDiagnosesDirty, onPrescriptionsDirty: setPrescriptionsDirty, onOrdersDirty: setOrdersDirty })}</div>)}
       {requestedTests.length > 0 && <section className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Solicitudes heredadas</h3><p className="text-sm text-slate-500">Solicitudes registradas con el formato anterior de Atlas.</p></div><button type="button" onClick={() => void downloadRequestedTestsPdf()} disabled={downloadingTestsPdf} className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-medium text-indigo-700 disabled:opacity-40">{downloadingTestsPdf ? "Generando PDF..." : "Descargar orden PDF"}</button></div><ul className="mt-4 space-y-2">{requestedTests.map((item) => <li key={item.id} className="break-words rounded-lg bg-slate-50 p-3 text-sm font-medium">{item.test_name}</li>)}</ul></section>}
     </div><aside data-consultation-context className="min-w-0 space-y-4"><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Contexto de atención</h3><dl className="mt-3 space-y-3 text-sm"><div><dt className="text-slate-500">Paciente</dt><dd className="break-words font-semibold">{appointment.patient_name}</dd></div><div><dt className="text-slate-500">Fecha de nacimiento</dt><dd className="font-semibold">{appointment.patient_date_of_birth}</dd></div>{context?.patient_blood_type && <div><dt className="text-slate-500">Tipo sanguíneo declarado/registrado (ficha actual)</dt><dd className="break-words">{context.patient_blood_type} · No equivale a confirmación de laboratorio</dd></div>}<div><dt className="text-slate-500">Médico</dt><dd className="break-words font-semibold">{appointment.doctor_name}</dd></div><div><dt className="text-slate-500">Centro</dt><dd className="break-words font-semibold">{appointment.center_name ? `${appointment.center_name}${appointment.center_city ? ` · ${appointment.center_city}` : ""}` : "Sin centro"}</dd></div><div><dt className="text-slate-500">Motivo</dt><dd className="break-words">{appointment.reason || "—"}</dd></div></dl></div><div className="rounded-xl border bg-white p-5 shadow-sm"><h3 className="font-semibold">Consultas anteriores</h3>{previousConsultations.length ? <div className="mt-3 space-y-3">{previousConsultations.slice(0, 5).map((item) => <div key={item.id} className="rounded-lg bg-slate-50 p-3 text-sm"><p className="font-medium">{item.consultation_date}</p><p className="mt-1 break-words text-slate-600">{item.reason_for_visit || "Sin motivo registrado"}</p><button type="button" onClick={() => void viewPrevious(item)} disabled={loadingPreviousId === item.id} className="mt-2 font-medium text-teal-700 hover:underline disabled:opacity-50">{loadingPreviousId === item.id ? "Cargando..." : "Ver historial completo"}</button></div>)}</div> : <p className="mt-3 text-sm text-slate-500">No hay consultas anteriores.</p>}</div></aside></div>
     {previousDetails && <PreviousConsultationModal details={previousDetails} onClose={() => setPreviousDetails(null)} onDownload={() => void downloadPreviousSummary(previousDetails.consultation.id)} />}
     {completionModalOpen && <CompletionConfirmationModal completing={completing} onClose={() => { if (!completing) setCompletionModalOpen(false); }} onConfirm={() => void completeConsultation()} />}
     {pendingNavigation && <UnsavedChangesModal onClose={() => setPendingNavigation(null)} onConfirm={discardChangesAndLeave} />}
     <span className="sr-only" aria-live="polite">{dirtySections.size ? `${dirtySections.size} secciones con cambios sin guardar` : "Sin cambios pendientes"}</span>
+  </section>;
+}
+
+function IncompatibleWorkspace({ workspaceMissing, unknownModuleKeys }: { workspaceMissing: boolean; unknownModuleKeys: string[] }) {
+  return <section role="alert" className="rounded-xl border border-red-300 bg-red-50 p-5 text-sm text-red-900">
+    <h3 className="font-semibold">Esta consulta utiliza una configuración clínica que esta versión de Atlas no puede interpretar.</h3>
+    <p className="mt-2">Actualice Atlas o contacte al administrador antes de continuar. La consulta no fue modificada.</p>
+    {workspaceMissing ? <p className="mt-2">El servidor no entregó la plantilla clínica requerida.</p> : <p className="mt-2 break-words text-xs">Módulos no compatibles: {unknownModuleKeys.join(", ")}</p>}
   </section>;
 }
 

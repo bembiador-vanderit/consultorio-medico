@@ -16,6 +16,7 @@ from app.schemas.clinical_catalog import (
     SpecialtyUpdate,
 )
 from app.services.clinical_specialties import set_doctor_specialties
+from app.services.specialty_templates import create_specialty_with_base_template
 
 router = APIRouter(prefix="/clinical-catalog", tags=["Catálogo clínico"])
 manage = require_permission("users:manage")
@@ -69,8 +70,7 @@ def create_specialty(payload: SpecialtyCreate, _: User = Depends(manage), db: Se
     if name.casefold() == HISTORICAL_SPECIALTY_NAME.casefold():
         raise HTTPException(status_code=422, detail="Ese nombre está reservado para registros históricos")
     ensure_unique_name(db, name)
-    specialty = Specialty(name=name, is_active=True)
-    db.add(specialty)
+    specialty = create_specialty_with_base_template(db, name)
     db.commit()
     db.refresh(specialty)
     return specialty

@@ -43,6 +43,23 @@ export const appointmentConfirmed = {
   status: "confirmed",
 };
 
+export function consultationWorkspace(overrides = {}) {
+  return {
+    template_id: 1,
+    template_version: 1,
+    specialty_id: 4,
+    specialty_name: "Cardiología ficticia",
+    modules: [
+      { key: "core.anamnesis", label: "Historia de la consulta", position: 1, required: true },
+      { key: "core.vital-signs", label: "Signos vitales", position: 2, required: true },
+      { key: "core.diagnoses", label: "Diagnósticos", position: 3, required: true },
+      { key: "core.prescriptions", label: "Recetas", position: 4, required: true },
+      { key: "core.clinical-orders", label: "Órdenes clínicas", position: 5, required: true },
+    ],
+    ...overrides,
+  };
+}
+
 export function clinicalHistory(overrides = {}) {
   return {
     id: 42,
