@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.specialty_codes import MAX_SPECIALTY_CODE_LENGTH, specialty_code_default
 from app.db import Base
 
 
@@ -23,9 +24,16 @@ medical_study_specialties = Table(
 
 class Specialty(Base):
     __tablename__ = "specialties"
+    __table_args__ = (UniqueConstraint("code", name="uq_specialties_code"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    code: Mapped[str] = mapped_column(
+        String(MAX_SPECIALTY_CODE_LENGTH),
+        nullable=False,
+        index=True,
+        default=specialty_code_default,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

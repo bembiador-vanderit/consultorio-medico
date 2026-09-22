@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.specialty_codes import allocate_specialty_code
 from app.models import Specialty, SpecialtyTemplate, SpecialtyTemplateModule
 
 
@@ -62,7 +63,12 @@ def create_base_specialty_template(db: Session, specialty: Specialty) -> Special
 
 
 def create_specialty_with_base_template(db: Session, name: str) -> Specialty:
-    specialty = Specialty(name=name, is_active=True)
+    existing_codes = db.scalars(select(Specialty.code)).all()
+    specialty = Specialty(
+        name=name,
+        code=allocate_specialty_code(name, existing_codes),
+        is_active=True,
+    )
     db.add(specialty)
     db.flush()
     create_base_specialty_template(db, specialty)

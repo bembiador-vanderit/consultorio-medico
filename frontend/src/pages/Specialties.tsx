@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { api } from "../services/api";
 
 type Props = { onBack: () => void };
-type Specialty = { id: number; name: string; is_active: boolean };
+type Specialty = { id: number; name: string; code: string; is_active: boolean };
 
 function apiError(reason: any, fallback: string) {
   const detail = reason?.response?.data?.detail;

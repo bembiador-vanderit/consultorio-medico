@@ -11,7 +11,7 @@ type Props = {
 };
 type RoleCode = "admin" | "doctor" | "secretary";
 type SecretaryScope = { center_id: number; manage_all_doctors: boolean; doctor_ids: number[] };
-type Specialty = { id: number; name: string; is_active: boolean };
+type Specialty = { id: number; name: string; code: string; is_active: boolean };
 type AdminUser = User & { center_ids: number[]; primary_center_id: number | null; secretary_scopes: SecretaryScope[]; primary_specialty_id: number | null; specialty_ids: number[]; specialty_names: string[] };
 type Center = { id: number; name: string; city: string; is_active: boolean };
 type EditForm = {
