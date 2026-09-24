@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
+from app.services.administration import effective_permissions
 from app.core.config import get_settings
 from app.core.security import create_access_token, verify_password
 from app.db import get_db
@@ -24,16 +25,18 @@ def serialize(user: User) -> UserResponse:
     return UserResponse(
         id=user.id, email=user.email, full_name=user.full_name, is_active=user.is_active,
         roles=[r.code for r in user.roles],
+        permissions=sorted(effective_permissions(user)),
+        denied_permissions=user.denied_permissions or [],
         primary_specialty_id=profile.specialty_id if profile else None,
         specialty_ids=[specialty.id for specialty in specialties],
         specialty_names=[specialty.name for specialty in specialties],
     )
 
 
-def create_refresh_token(subject: str) -> str:
+def create_refresh_token(subject: str, session_version: int = 0, user_id: int | None = None) -> str:
     settings = get_settings()
     expires = datetime.now(timezone.utc) + timedelta(days=REFRESH_DAYS)
-    return jwt.encode({"sub": subject, "type": "refresh", "exp": expires}, settings.secret_key, algorithm="HS256")
+    return jwt.encode({"sub": subject, "type": "refresh", "uid": user_id, "sv": session_version, "exp": expires}, settings.secret_key, algorithm="HS256")
 
 
 def set_refresh_cookie(response: Response, token: str) -> None:
@@ -54,8 +57,8 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    set_refresh_cookie(response, create_refresh_token(user.email))
-    return TokenResponse(access_token=create_access_token(user.email))
+    set_refresh_cookie(response, create_refresh_token(user.email, user.session_version, user.id))
+    return TokenResponse(access_token=create_access_token(user.email, user.session_version, user.id))
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -63,16 +66,16 @@ def refresh(refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKI
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Sesión expirada")
     try:
-        payload = jwt.decode(refresh_token, get_settings().secret_key, algorithms=["HS256"])
+        payload = jwt.decode(refresh_token, get_settings().secret_key, algorithms=["HS256"], options={"require": ["sub", "exp", "type", "sv", "uid"]})
         if payload.get("type") != "refresh":
             raise jwt.InvalidTokenError()
         email = payload["sub"]
     except (jwt.InvalidTokenError, KeyError, TypeError):
         raise HTTPException(status_code=401, detail="Sesión expirada")
-    user = db.scalar(select(User).where(User.email == email))
-    if not user or not user.is_active:
+    user = db.scalar(select(User).where(User.email == email, User.id == payload["uid"]))
+    if not user or not user.is_active or payload.get("sv") != user.session_version:
         raise HTTPException(status_code=401, detail="Usuario no disponible")
-    return TokenResponse(access_token=create_access_token(user.email))
+    return TokenResponse(access_token=create_access_token(user.email, user.session_version, user.id))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

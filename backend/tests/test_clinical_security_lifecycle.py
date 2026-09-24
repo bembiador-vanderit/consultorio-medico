@@ -27,6 +27,7 @@ from app.models import (
     Notification,
     Patient,
     Prescription,
+    Permission,
     Role,
     SecretaryCenterScope,
     Specialty,
@@ -52,7 +53,7 @@ def clinical_app():
     Base.metadata.create_all(engine)
     db = Session(engine)
 
-    doctor_role = Role(code="doctor", name="Doctor")
+    doctor_role = Role(code="doctor", name="Doctor", permissions=[Permission(code="clinical:access", description="Clinical access")])
     admin_role = Role(code="admin", name="Administrador")
     center = CareCenter(name="Centro Seguro", city="Santo Domingo", is_active=True)
     specialty = Specialty(name="Medicina familiar", is_active=True)

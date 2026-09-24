@@ -27,3 +27,5 @@ __all__ = [
     "LaboratoryTest", "LaboratoryOrder", "LaboratoryOrderItem", "StudyOrder", "StudyOrderItem",
     "SpecialtyTemplate", "SpecialtyTemplateModule",
 ]
+
+from app.models.administration import AdminTransfer, ReauthenticationGrant, SecurityAudit

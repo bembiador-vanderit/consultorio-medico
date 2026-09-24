@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Table, Column
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Table, Column, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
 
@@ -13,6 +13,10 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(150))
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    session_version: Mapped[int] = mapped_column(default=0, server_default="0")
+    denied_permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    reauth_failures: Mapped[int] = mapped_column(default=0, server_default="0")
+    reauth_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     roles: Mapped[list["Role"]] = relationship(secondary=user_roles, back_populates="users")
     centers: Mapped[list["CareCenter"]] = relationship(secondary="user_centers", back_populates="users")

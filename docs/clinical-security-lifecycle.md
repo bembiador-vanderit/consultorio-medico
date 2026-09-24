@@ -4,7 +4,7 @@
 
 La autorización clínica se resuelve en `app/services/clinical_access.py` y se aplica antes de leer o modificar una historia o cualquiera de sus recursos hijos.
 
-- Administrador: puede consultar las historias de la instalación.
+- Administrador: gestiona la instalación, pero requiere además rol médico y alcance del episodio para acceder a historias.
 - Médico: solo puede acceder a historias cuyo `doctor_id` sea el suyo y cuyo centro permanezca entre sus centros asignados.
 - Cuando existe `appointment_id`, paciente, médico y centro de la cita deben coincidir con el contexto inmutable almacenado en la historia.
 - Otros roles no tienen alcance clínico. Las secretarias conservan su alcance de Agenda y Reportes, pero no reciben acceso al expediente clínico.

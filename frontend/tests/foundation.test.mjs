@@ -24,10 +24,11 @@ test("navigation preserves baseline visibility for every combination of roles", 
     if (selected.includes("doctor")) expected.push("follow-ups", "availability");
     if (selected.includes("doctor") || selected.includes("secretary")) expected.push("clinical-coverages");
     if (selected.includes("admin")) expected.push("users", "care-context");
+    expected.push("security");
     assert.deepEqual(navigation.getNavigationItems({ roles: selected }).map((item) => item.view), expected);
   }
   assert.deepEqual(navigation.getNavigationItems(null), []);
-  assert.equal(navigation.getNavigationItems({ roles: ["unknown"] }).length, 4);
+  assert.equal(navigation.getNavigationItems({ roles: ["unknown"] }).length, 5);
   assert.ok(!navigation.navigationItems.some((item) => item.view === "consultation"));
 });
 

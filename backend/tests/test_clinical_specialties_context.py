@@ -339,9 +339,11 @@ def test_admin_creates_and_edits_doctor_specialties(specialty_context):
 
 def test_only_admin_permission_can_manage_specialty_catalog(specialty_context):
     _, _, _, _, _, _, doctor, _, _, admin = specialty_context
-    assert manage_specialties(admin) is admin
+    from starlette.requests import Request
+    request = Request({"type": "http", "method": "GET"})
+    assert manage_specialties(request, user=admin) is admin
     with pytest.raises(HTTPException) as error:
-        manage_specialties(doctor)
+        manage_specialties(request, user=doctor)
     assert error.value.status_code == 403
 
 

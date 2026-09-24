@@ -80,7 +80,7 @@ def communication_history(
 
 
 @router.post("/email", response_model=CommunicationResponse)
-def deliver_email(payload: EmailSendRequest, _: User = Depends(current_user)):
+def deliver_email(payload: EmailSendRequest, _: User = Depends(require_permission("patients:access"))):
     try:
         send_email(str(payload.to), payload.subject, payload.body)
     except RuntimeError as exc:
@@ -91,7 +91,7 @@ def deliver_email(payload: EmailSendRequest, _: User = Depends(current_user)):
 
 
 @router.post("/whatsapp", response_model=CommunicationResponse)
-def deliver_whatsapp(payload: WhatsAppSendRequest, _: User = Depends(current_user)):
+def deliver_whatsapp(payload: WhatsAppSendRequest, _: User = Depends(require_permission("patients:access"))):
     settings = get_settings()
     action_url = build_whatsapp_link(payload.phone, payload.message)
     try:

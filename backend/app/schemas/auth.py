@@ -11,6 +11,8 @@ class UserResponse(BaseModel):
     full_name: str
     is_active: bool
     roles: list[str]
+    permissions: list[str] = Field(default_factory=list)
+    denied_permissions: list[str] = Field(default_factory=list)
     primary_specialty_id: int | None = None
     specialty_ids: list[int] = Field(default_factory=list)
     specialty_names: list[str] = Field(default_factory=list)

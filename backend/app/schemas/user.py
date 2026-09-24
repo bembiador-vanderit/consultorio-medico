@@ -44,3 +44,7 @@ class UserSpecialtiesUpdate(BaseModel):
 class UserCentersUpdate(BaseModel):
     center_ids: list[int]
     primary_center_id: int | None = None
+
+
+class UserPermissionsUpdate(BaseModel):
+    denied_permissions: list[str] = Field(default_factory=list, max_length=2)

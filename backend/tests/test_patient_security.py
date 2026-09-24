@@ -207,7 +207,7 @@ def test_admin_can_schedule_global_identity_without_clinical_authority(patient_a
     ctx = patient_app
     ctx["active"]["user"] = ctx["admin"]
     assert ctx["client"].post("/api/v1/appointments", json=appointment_payload(ctx, ctx["b"].id)).status_code == 201
-    assert ctx["client"].get(f"/api/v1/clinical-history/patients/{ctx['b'].id}").status_code == 404
+    assert ctx["client"].get(f"/api/v1/clinical-history/patients/{ctx['b'].id}").status_code == 403
 
 
 @pytest.mark.parametrize("extra_role,allowed", [("admin", True), ("secretary", False)])
