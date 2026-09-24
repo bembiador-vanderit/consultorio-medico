@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -181,7 +181,8 @@ def test_proof_is_not_a_session_token(patient_app):
     from fastapi.security import HTTPAuthorizationCredentials
     proof = search_foreign(patient_app)
     with pytest.raises(HTTPException) as rejected:
-        authenticate(HTTPAuthorizationCredentials(scheme="Bearer", credentials=proof), patient_app["db"])
+        authenticate(Request({"type": "http", "method": "GET", "path": "/api/v1/auth/me"}),
+                     HTTPAuthorizationCredentials(scheme="Bearer", credentials=proof), patient_app["db"])
     assert rejected.value.status_code == 401
 
 

@@ -4,12 +4,14 @@ from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+from app.models.organization import TenantOwned
 
 
-class ClinicalAuditLog(Base):
+class ClinicalAuditLog(TenantOwned, Base):
     __tablename__ = "clinical_audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    center_id: Mapped[int | None] = mapped_column(ForeignKey("care_centers.id"), nullable=True)
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )

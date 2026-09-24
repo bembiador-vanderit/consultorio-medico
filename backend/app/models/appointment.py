@@ -2,8 +2,8 @@ from datetime import date, datetime, time
 from sqlalchemy import Date, DateTime, ForeignKey, String, Text, Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
-
-class Appointment(Base):
+from app.models.organization import TenantOwned
+class Appointment(TenantOwned, Base):
     __tablename__ = "appointments"
     id: Mapped[int] = mapped_column(primary_key=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id", ondelete="CASCADE"), index=True)

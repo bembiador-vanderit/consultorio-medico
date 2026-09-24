@@ -1,3 +1,4 @@
+from app.models.organization import Organization, OrganizationMembership
 from app.models.appointment import Appointment
 from app.models.center import CareCenter
 from app.models.clinical_catalog import AnatomicalRegion, DoctorProfile, MedicalStudy, Specialty, doctor_specialties, medical_study_specialties
@@ -21,6 +22,7 @@ from app.models.specialty_template import SpecialtyTemplate, SpecialtyTemplateMo
 from app.models.vital_signs import VitalSigns
 
 __all__ = [
+    "Organization", "OrganizationMembership",
     "Permission", "Role", "User", "Locality", "Country", "TerritorialLevel", "TerritorialUnit", "RegionalSettings", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
     "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "VitalSigns", "Appointment", "FollowUp", "Notification", "CommunicationLog",
     "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile", "doctor_specialties", "medical_study_specialties", "SecretaryCenterScope", "ClinicalAuditLog", "ClinicalAddendum", "ClinicalCoverage", "AppointmentCoverageTransfer",
@@ -29,3 +31,16 @@ __all__ = [
 ]
 
 from app.models.administration import AdminTransfer, ReauthenticationGrant, SecurityAudit
+
+from app.services import tenancy  # Register session boundary enforcement.
+
+# Tenant-owned catalogs can use the same human labels in different organizations.
+from sqlalchemy import Index
+for _model, _columns in (
+    (Locality, ("name",)), (InsuranceCompany, ("name",)), (InsuranceCompany, ("code",)),
+    (Specialty, ("name",)), (MedicalStudy, ("canonical_key",)),
+    (LaboratoryTest, ("code",)), (LaboratoryTest, ("name",)), (DoctorProfile, ("user_id",)),
+    (RegionalSettings, ()),
+):
+    Index("uq_tenant_" + _model.__tablename__ + "_" + ("_".join(_columns) or "singleton"),
+          _model.__table__.c.organization_id, *[_model.__table__.c[name] for name in _columns], unique=True)

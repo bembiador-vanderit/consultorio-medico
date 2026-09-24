@@ -3,6 +3,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from app.api.deps import current_user, require_permission
+from app.db import get_db
 from app.models import Permission, Role, User
 from app.services.bootstrap import ROLE_PERMISSIONS
 
@@ -54,6 +55,7 @@ def test_secretary_receives_http_403_from_a_clinical_endpoint():
         return {"ok": True}
 
     app.dependency_overrides[current_user] = lambda: secretary
+    app.dependency_overrides[get_db] = lambda: None
 
     response = TestClient(app).get("/clinical")
 

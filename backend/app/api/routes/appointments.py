@@ -119,6 +119,8 @@ def list_available_doctors(center_id: int, appointment_date: date, user: User = 
         else None
     )
     for doctor in db.scalars(select(User).where(User.is_active.is_(True))).all():
+        if not doctor.is_active:
+            continue
         if is_role(user, "doctor") and not is_role(user, "admin") and not is_role(user, "secretary") and doctor.id != user.id:
             continue
         if not is_role(doctor, "doctor") or center not in doctor.centers:

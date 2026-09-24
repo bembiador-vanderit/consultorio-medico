@@ -1,13 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
-
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Numeric, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-
 from app.db import Base
+from app.models.organization import TenantOwned
 
-
-class VitalSigns(Base):
+class VitalSigns(TenantOwned, Base):
     __tablename__ = "vital_signs"
     __table_args__ = (
         UniqueConstraint("clinical_history_id", name="uq_vital_signs_clinical_history_id"),
@@ -24,7 +22,6 @@ class VitalSigns(Base):
             name="ck_vital_signs_pressure_order",
         ),
     )
-
     id: Mapped[int] = mapped_column(primary_key=True)
     clinical_history_id: Mapped[int] = mapped_column(
         ForeignKey("clinical_histories.id", ondelete="CASCADE"), nullable=False, index=True

@@ -20,11 +20,12 @@ def _recipient_ids(db: Session, coverage: ClinicalCoverage) -> set[int]:
     secretaries = db.scalars(
         select(User).where(
             User.is_active.is_(True),
-            User.roles.any(Role.code == "secretary"),
             User.centers.any(CareCenter.id == coverage.center_id),
         )
     ).unique().all()
     for secretary in secretaries:
+        if not secretary.is_active or not any(role.code == "secretary" for role in secretary.roles):
+            continue
         if secretary_can_manage(secretary, coverage.center_id, coverage.substitute_doctor_id, db) or secretary_can_manage(
             secretary, coverage.center_id, coverage.principal_doctor_id, db
         ):
