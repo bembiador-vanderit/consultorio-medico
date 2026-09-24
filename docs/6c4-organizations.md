@@ -38,3 +38,13 @@ El aislamiento en esta fase se aplica a las sesiones de la aplicación. Mantenim
 ## Validación
 
 La suite `test_organization_isolation.py` comprueba hosts permitidos, tokens de plataforma/tenant, membresía, roles distintos, lectura de pacientes y centros, y rechazo de referencias cruzadas. Se mantienen las pruebas de seguridad administrativa anteriores. La validación de migración usa PostgreSQL desechable con un paciente y un usuario sintéticos antes de `0035`, y comprueba upgrade, downgrade y nuevo upgrade.
+
+## Revisión de integración (2026-09-24)
+
+PR #48 integrado en `feat/complete-care-context` mediante el merge `4dd10d05724355cc7750cc39fc9427e8397630ba`. La rama de #49 incorpora esa base sin conflictos mediante `682050f3d1a22f598b516a339c9470e26a6d9b5f`, conservando el historial previo.
+
+La autoridad denominada `platform_superadmin` en los requisitos se representa mediante `User.is_platform_admin`; no es un rol local ni concede permisos dentro del tenant. La revisión confirmó que `get_db` resuelve el host configurado antes de autenticar, `validate_context` exige coincidencia entre sesión y JWT, y las consultas ORM filtran organizaciones y membresías por el contexto ligado a la sesión.
+
+Se añadieron dos regresiones explícitas: el administrador de plataforma con membresía local no puede listar ni descubrir otras organizaciones desde ese tenant, tampoco con parámetros de organización/scope o cabeceras de tenant, forwarded host y Origin manipuladas; el privilegio de plataforma tampoco permite iniciar sesión en un tenant sin membresía. Se comprueba además el rechazo de tokens entre hosts de plataforma/tenant y que la persistencia oculta organizaciones y membresías ajenas. La suite focalizada ejecutada en Docker pasa 9/9 pruebas.
+
+La CI del nuevo HEAD debe completar backend, concurrencia PostgreSQL, migraciones y frontend antes de integrar #49. No se despliega la aplicación. `main` permanece fuera de las fusiones; Cardiología continúa pausada y no se implementan horarios, Seguros ni Caja.

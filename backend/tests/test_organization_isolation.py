@@ -125,6 +125,49 @@ def test_membership_suspension_and_scoped_write(tenant_api):
         assert two.get("/api/v1/auth/me", headers=sign_in(two)).status_code == 200
 
 
+def test_platform_admin_cannot_discover_other_organizations_from_tenant(tenant_api):
+    app, engine, _ = tenant_api
+    with TestClient(app, base_url="http://one.example.test") as one, TestClient(app, base_url="http://admin.example.test") as platform:
+        tenant_headers, platform_headers = sign_in(one), sign_in(platform)
+        spoofed = {**tenant_headers, "X-Tenant": "second", "X-Organization-ID": "2",
+                   "X-Forwarded-Host": "admin.example.test", "Origin": "http://admin.example.test"}
+        listing = one.get("/api/v1/platform/organizations?organization_id=2&scope=platform", headers=spoofed)
+        assert listing.status_code == 404
+        assert listing.json() == {"detail": "Recurso no disponible"}
+        current = one.get("/api/v1/organization?organization_id=2&slug=second", headers=spoofed)
+        assert current.status_code == 200
+        assert current.json()["id"] == 1
+        me = one.get("/api/v1/auth/me", headers=spoofed)
+        assert me.status_code == 200
+        assert me.json()["access_scope"] == "tenant"
+        assert me.json()["organization"]["id"] == 1
+        assert "memberships" not in me.json()
+        assert "Organización de prueba" not in current.text + me.text + listing.text
+        # Moving a tenant token to the platform host cannot unlock the inventory.
+        assert platform.get("/api/v1/platform/organizations", headers=tenant_headers).status_code == 401
+        assert one.get("/api/v1/platform/organizations", headers=platform_headers).status_code == 401
+    # The persistence boundary also hides foreign organizations and memberships.
+    with Session(engine) as db:
+        bind_scope(db, "tenant", 1)
+        actor = db.scalar(select(User).where(User.email == "shared@example.com"))
+        assert actor.is_platform_admin
+        assert [row.id for row in db.scalars(select(Organization))] == [1]
+        assert db.get(Organization, 2) is None
+        assert db.scalar(select(Organization).where(Organization.slug == "second")) is None
+        assert [member.organization_id for member in actor.memberships] == [1]
+
+
+def test_platform_authority_does_not_replace_tenant_membership(tenant_api):
+    app, engine, _ = tenant_api
+    with Session(engine) as db:
+        actor = db.scalar(select(User).where(User.email == "shared@example.com"))
+        actor.memberships = [member for member in actor.memberships if member.organization_id == 1]
+        db.commit()
+    with TestClient(app, base_url="http://two.example.test") as two, TestClient(app, base_url="http://admin.example.test") as platform:
+        assert two.post("/api/v1/auth/login", json={"email": "shared@example.com", "password": PASSWORD}).status_code == 401
+        assert platform.get("/api/v1/platform/organizations", headers=sign_in(platform)).status_code == 200
+
+
 def test_unknown_host_and_untrusted_tenant_header(tenant_api):
     app, _, _ = tenant_api
     with TestClient(app, base_url="http://unknown.example.test") as unknown:
