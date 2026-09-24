@@ -1,5 +1,5 @@
 import pytest
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from app.api.deps import current_user, require_permission
@@ -12,7 +12,7 @@ def user_with_permissions(*permission_codes: str) -> User:
         Permission(code=code, description=code)
         for code in permission_codes
     ]
-    role = Role(code="test-role", name="Rol de prueba", permissions=permissions)
+    role = Role(code="doctor", name="Rol de prueba", permissions=permissions)
     return User(
         email="usuario-prueba@example.com",
         full_name="Usuario de prueba",
@@ -21,8 +21,8 @@ def user_with_permissions(*permission_codes: str) -> User:
     )
 
 
-def test_clinical_permission_is_reserved_for_doctors_and_admins():
-    assert "clinical:access" in ROLE_PERMISSIONS["admin"][1]
+def test_clinical_permission_is_reserved_for_doctors():
+    assert "clinical:access" not in ROLE_PERMISSIONS["admin"][1]
     assert "clinical:access" in ROLE_PERMISSIONS["doctor"][1]
     assert "clinical:access" not in ROLE_PERMISSIONS["secretary"][1]
     assert "patients:access" in ROLE_PERMISSIONS["secretary"][1]
@@ -31,14 +31,14 @@ def test_clinical_permission_is_reserved_for_doctors_and_admins():
 def test_clinical_access_accepts_an_authorized_user():
     user = user_with_permissions("patients:access", "clinical:access")
 
-    assert require_permission("clinical:access")(user) is user
+    assert require_permission("clinical:access")(Request({"type": "http", "method": "GET"}), user=user) is user
 
 
 def test_clinical_access_rejects_a_secretary_permission_set():
     user = user_with_permissions("patients:access", "centers:access")
 
     with pytest.raises(HTTPException) as error:
-        require_permission("clinical:access")(user)
+        require_permission("clinical:access")(Request({"type": "http", "method": "GET"}), user=user)
 
     assert error.value.status_code == 403
     assert error.value.detail == "No tiene permiso para esta operación"

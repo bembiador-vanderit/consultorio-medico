@@ -5,7 +5,7 @@ from app.core.security import hash_password
 from app.models import Permission, Role, User
 
 ROLE_PERMISSIONS = {
-    "admin": ("Administrador", ["users:manage", "patients:access", "clinical:access", "centers:access", "centers:manage"]),
+    "admin": ("Administrador", ["users:manage", "patients:access", "centers:access", "centers:manage"]),
     "doctor": ("Doctor", ["patients:access", "clinical:access", "centers:access"]),
     "secretary": ("Secretaria", ["patients:access", "centers:access"]),
 }
@@ -33,7 +33,7 @@ def seed_identity(db: Session) -> None:
     if (
         settings.initial_admin_email
         and settings.initial_admin_password
-        and db.scalar(select(User).where(User.email == settings.initial_admin_email.lower())) is None
+        and db.scalar(select(User.id).limit(1)) is None
     ):
         db.add(
             User(

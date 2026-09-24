@@ -154,7 +154,16 @@ def test_regional_settings_requires_manage_permission(patient_app):
     assert client.get("/api/v1/regional/settings").json()["default_country_code"] == "DO"
     assert client.put("/api/v1/regional/settings", json={"default_country_code": "DO"}).status_code == 403
     ctx["active"]["user"] = ctx["admin"]
-    response = client.put("/api/v1/regional/settings", json={"default_country_code": "do"})
+    assert client.put("/api/v1/regional/settings", json={"default_country_code": "do"}).status_code == 428
+    # Fixture supplies identity directly; create a real, actor/action-bound proof.
+    from datetime import datetime, timedelta
+    from hashlib import sha256
+    from app.models.administration import ReauthenticationGrant
+    ctx["db"].add(ReauthenticationGrant(id=sha256(b"fixture-proof").hexdigest(), user_id=ctx["admin"].id,
+        session_version=ctx["admin"].session_version, action="PUT /api/v1/regional/settings",
+        expires_at=datetime.utcnow() + timedelta(minutes=1)))
+    ctx["db"].commit()
+    response = client.put("/api/v1/regional/settings", json={"default_country_code": "do"}, headers={"X-Reauthentication": "fixture-proof"})
     assert response.status_code == 200 and response.json()["default_country_code"] == "DO"
 
 

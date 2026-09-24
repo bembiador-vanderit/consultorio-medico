@@ -10,6 +10,7 @@ from app.models.center import user_centers
 from app.schemas.auth import UserCreate
 from app.schemas.user import (
     UserAdminResponse,
+    UserPermissionsUpdate,
     UserCentersUpdate,
     SecretaryDoctorScopesUpdate,
     UserPasswordUpdate,
@@ -19,6 +20,7 @@ from app.schemas.user import (
     UserSpecialtiesUpdate,
 )
 from app.services.appointment_scope import remove_center_membership_from_scopes
+from app.services.administration import RESTRICTABLE, audit, effective_permissions, lock_administration
 from app.services.clinical_specialties import set_doctor_specialties
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
@@ -66,6 +68,8 @@ def serialize(user: User, db: Session) -> UserAdminResponse:
         full_name=user.full_name,
         is_active=user.is_active,
         roles=[role.code for role in user.roles],
+        permissions=sorted(effective_permissions(user)),
+        denied_permissions=user.denied_permissions or [],
         center_ids=[row.center_id for row in assignments],
         primary_center_id=next((row.center_id for row in assignments if row.is_primary), None),
         secretary_scopes=[
@@ -104,13 +108,15 @@ def list_users(_: User = Depends(manage), db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=UserAdminResponse, status_code=status.HTTP_201_CREATED)
-def create_user(payload: UserCreate, _: User = Depends(manage), db: Session = Depends(get_db)):
+def create_user(payload: UserCreate, admin: User = Depends(manage), db: Session = Depends(get_db)):
     email = str(payload.email).strip().lower()
     full_name = payload.full_name.strip()
     if len(full_name) < 2:
         raise HTTPException(status_code=422, detail="El nombre completo es obligatorio")
     if db.scalar(select(User).where(func.lower(User.email) == email)):
         raise HTTPException(status_code=409, detail="El correo ya está registrado")
+    if "admin" in payload.role_codes:
+        raise HTTPException(422, "Nombre administradores mediante una solicitud con aceptación")
     roles = validate_roles(db, payload.role_codes)
     validate_password_strength(payload.password)
     is_doctor = any(role.code == "doctor" for role in roles)
@@ -126,6 +132,7 @@ def create_user(payload: UserCreate, _: User = Depends(manage), db: Session = De
     )
     db.add(user)
     db.flush()
+    audit(db, admin, f"users.create:{user.id}")
     if is_doctor:
         set_doctor_specialties(db, user, payload.primary_specialty_id, payload.specialty_ids)
     db.commit()
@@ -164,6 +171,7 @@ def update_user_password(user_id: int, payload: UserPasswordUpdate, _: User = De
 
 @router.put("/{user_id}/status", response_model=UserAdminResponse)
 def update_user_status(user_id: int, payload: UserStatusUpdate, admin: User = Depends(manage), db: Session = Depends(get_db)):
+    lock_administration(db)
     user = require_user(db, user_id)
     if not payload.is_active and user.is_active and is_role(user, "admin") and active_admin_count(db) <= 1:
         raise HTTPException(status_code=409, detail="No se puede desactivar al último administrador activo")
@@ -177,7 +185,10 @@ def update_user_status(user_id: int, payload: UserStatusUpdate, admin: User = De
 
 @router.put("/{user_id}/roles", response_model=UserAdminResponse)
 def update_user_roles(user_id: int, payload: UserRolesUpdate, admin: User = Depends(manage), db: Session = Depends(get_db)):
+    lock_administration(db)
     user = require_user(db, user_id)
+    if "admin" in payload.role_codes and not is_role(user, "admin"):
+        raise HTTPException(422, "Nombre administradores mediante una solicitud con aceptación")
     roles = validate_roles(db, payload.role_codes)
     removing_admin = is_role(user, "admin") and not any(role.code == "admin" for role in roles)
     if removing_admin and user.is_active and active_admin_count(db) <= 1:
@@ -231,6 +242,7 @@ def update_user_centers(user_id: int, payload: UserCentersUpdate, _: User = Depe
     if removed_ids:
         remove_center_membership_from_scopes(db, user, removed_ids)
 
+    user.session_version += 1
     db.execute(delete(user_centers).where(user_centers.c.user_id == user.id))
     if center_ids:
         db.execute(insert(user_centers), [
@@ -278,6 +290,7 @@ def update_secretary_scopes(
             raise HTTPException(status_code=422, detail="Todos los médicos deben estar activos y asignados al centro")
         prepared.append((center.id, requested.manage_all_doctors, doctors))
 
+    secretary.session_version += 1
     delete_secretary_scopes(db, secretary.id)
     db.flush()
     for center_id, manage_all_doctors, doctors in prepared:
@@ -289,3 +302,14 @@ def update_secretary_scopes(
         ))
     db.commit()
     return serialize(secretary, db)
+
+@router.put("/{user_id}/permissions", response_model=UserAdminResponse)
+def update_user_permissions(user_id: int, payload: UserPermissionsUpdate,
+                            admin: User = Depends(manage), db: Session = Depends(get_db)):
+    user = require_user(db, user_id)
+    if not set(payload.denied_permissions).issubset(RESTRICTABLE):
+        raise HTTPException(422, "Solo puede restringir capacidades operativas; no otorgar administración")
+    user.denied_permissions = sorted(set(payload.denied_permissions))
+    db.commit()
+    db.refresh(user)
+    return serialize(user, db)

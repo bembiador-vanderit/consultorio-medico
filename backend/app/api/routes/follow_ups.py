@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_user
+from app.api.deps import current_user, require_permission
 from app.db import get_db
 from app.models import Appointment, FollowUp, Notification, User
 from app.schemas.follow_up import FollowUpCreate, FollowUpRead, NotificationRead
@@ -20,6 +20,16 @@ def _is_doctor(user: User) -> bool:
     return any(role.code == "doctor" for role in user.roles)
 
 
+def _notification_allowed(user: User, notification: Notification) -> bool:
+    denied = set(user.denied_permissions or [])
+    roles = {role.code for role in user.roles}
+    if notification.follow_up_id and ("doctor" not in roles or "clinical:access" in denied):
+        return False
+    if notification.appointment_id and (not roles.intersection({"doctor", "secretary", "admin"}) or "patients:access" in denied):
+        return False
+    return True
+
+
 def _doctor_for_request(payload: FollowUpCreate, user: User) -> int:
     if not _is_doctor(user):
         raise HTTPException(status_code=403, detail="Solo un médico puede crear seguimientos clínicos")
@@ -33,7 +43,7 @@ def _doctor_for_request(payload: FollowUpCreate, user: User) -> int:
 
 
 @router.get("", response_model=list[FollowUpRead])
-def list_follow_ups(db: Session = Depends(get_db), user: User = Depends(current_user)):
+def list_follow_ups(db: Session = Depends(get_db), user: User = Depends(require_permission("clinical:access"))):
     stmt = select(FollowUp).order_by(FollowUp.due_at.asc())
     if not _is_doctor(user):
         return []
@@ -42,7 +52,7 @@ def list_follow_ups(db: Session = Depends(get_db), user: User = Depends(current_
 
 
 @router.post("", response_model=FollowUpRead, status_code=201)
-def create_follow_up(payload: FollowUpCreate, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def create_follow_up(payload: FollowUpCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("clinical:access"))):
     doctor_id = _doctor_for_request(payload, user)
     require_patient_clinical_scope(db, user, payload.patient_id)
     if payload.clinical_history_id is not None:
@@ -74,7 +84,7 @@ def create_follow_up(payload: FollowUpCreate, db: Session = Depends(get_db), use
 
 
 @router.post("/{follow_up_id}/complete", response_model=FollowUpRead)
-def complete_follow_up(follow_up_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def complete_follow_up(follow_up_id: int, db: Session = Depends(get_db), user: User = Depends(require_permission("clinical:access"))):
     follow_up = db.get(FollowUp, follow_up_id)
     if not follow_up:
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
@@ -169,6 +179,7 @@ def list_notifications(
     if unread_only:
         stmt = stmt.where(Notification.is_read.is_(False))
     notifications = list(db.scalars(stmt.order_by(Notification.created_at.desc())).all())
+    notifications = [item for item in notifications if _notification_allowed(user, item)]
 
     appointment_due_ids = {
         item.appointment_id
@@ -210,7 +221,7 @@ def list_notifications(
 @router.post("/notifications/{notification_id}/read", response_model=NotificationRead)
 def mark_notification_read(notification_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
     notification = db.get(Notification, notification_id)
-    if not notification or notification.user_id != user.id:
+    if not notification or notification.user_id != user.id or not _notification_allowed(user, notification):
         raise HTTPException(status_code=404, detail="Notificación no encontrada")
     notification.is_read = True
     notification.read_at = datetime.utcnow()
