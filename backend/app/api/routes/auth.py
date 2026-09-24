@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, object_session
 from app.services.tenancy import context_claims, validate_context
 from app.api.deps import current_user
 from app.services.administration import effective_permissions
+from app.services.access_schedule import enforce_schedule
 from app.core.config import get_settings
 from app.core.security import create_access_token, verify_password
 from app.db import get_db
@@ -65,9 +66,9 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     check_membership(db, user)
-    set_refresh_cookie(response, create_refresh_token(user.email, user.session_version, user.id, context_claims(db)))
-    check_membership(db, user)
-    return TokenResponse(access_token=create_access_token(user.email, user.session_version, user.id, context_claims(db)))
+    claims = {**context_claims(db), **enforce_schedule(db, user)}
+    set_refresh_cookie(response, create_refresh_token(user.email, user.session_version, user.id, claims))
+    return TokenResponse(access_token=create_access_token(user.email, user.session_version, user.id, claims))
 
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKIE), db: Session = Depends(get_db)):
@@ -85,7 +86,8 @@ def refresh(refresh_token: str | None = Cookie(default=None, alias=REFRESH_COOKI
     if not user or not user.is_active or payload.get("sv") != user.session_version:
         raise HTTPException(status_code=401, detail="Usuario no disponible")
     check_membership(db, user)
-    return TokenResponse(access_token=create_access_token(user.email, user.session_version, user.id, context_claims(db)))
+    claims = {**context_claims(db), **enforce_schedule(db, user, payload)}
+    return TokenResponse(access_token=create_access_token(user.email, user.session_version, user.id, claims))
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(response: Response):
