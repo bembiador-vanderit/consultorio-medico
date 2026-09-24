@@ -127,3 +127,7 @@ Las garantías de una consulta por cita, revisión optimista y serialización de
 ## Seguridad administrativa pre-piloto (6C3)
 
 La prioridad actual es [6C3 — Seguridad y Administración](docs/6c3-security-administration.md), con auditoría del estado anterior, matriz de roles, transferencia protegida, reautenticación, restricciones individuales, revocación de sesiones y procedimiento de actualización. 6C2B/Cardiología queda pausada. Esta fase mantiene un administrador de toda la instalación; no representa aislamiento entre organizaciones.
+
+## Organizaciones (6C4)
+
+La [fase 6C4](docs/6c4-organizations.md) introduce organizaciones, membresías con roles y estado propios, y aislamiento por host en el backend. El piloto se migra a la organización inicial `pilot` conservando centros e historiales. Configure `TENANT_HOSTS_JSON` y, si se prepara un host de plataforma, `PLATFORM_HOSTS_JSON` según la documentación antes de publicar nuevos hosts. Se requiere un nuevo inicio de sesión tras la migración. Este cambio depende de 6C3/PR #48 y se integra hacia `feat/complete-care-context`; Cardiología permanece pausada.
