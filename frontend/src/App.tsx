@@ -26,6 +26,7 @@ import "./layouts/operational-shell.css";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [sessionMessage, setSessionMessage] = useState("");
   const [view, setView] = useState<AppView>("dashboard");
   const [patientsVersion, setPatientsVersion] = useState(0);
   const [selectedAppointmentPatient, setSelectedAppointmentPatient] = useState<Patient | null>(null);
@@ -45,7 +46,7 @@ function App() {
   }
 
   useEffect(() => {
-    const expired = () => { setAccessToken(null); setUser(null); setView("dashboard"); };
+    const expired = (event: Event) => { setSessionMessage((event as CustomEvent<string>).detail || "Su sesión terminó. Vuelva a iniciar sesión."); setAccessToken(null); setUser(null); setView("dashboard"); setSelectedAppointment(null); setSelectedAppointmentPatient(null); navigationGuardRef.current = null; };
     window.addEventListener("atlas-session-expired", expired);
     return () => window.removeEventListener("atlas-session-expired", expired);
   }, []);
@@ -65,6 +66,7 @@ function App() {
 
   async function signIn(credentials: LoginCredentials) {
     setUser(await authenticate(credentials));
+    setSessionMessage("");
   }
 
   async function completeSignOut() { await logoutSession(); setUser(null); setView("dashboard"); setSelectedAppointmentPatient(null); setSelectedAppointment(null); }
@@ -73,7 +75,7 @@ function App() {
   function attendAppointment(appointment: Appointment) { if (!user?.roles.some((role) => role === "doctor")) return; setSelectedAppointment(appointment); setView("consultation"); }
 
   if (loading) return <SessionLoading />;
-  if (!user) return <Login onSignIn={signIn} />;
+  if (!user) return <Login onSignIn={signIn} sessionMessage={sessionMessage} />;
   if (user.access_scope === "platform") return <Platform user={user} onSignOut={signOut} />;
 
   const isDoctor = user.roles.includes("doctor");

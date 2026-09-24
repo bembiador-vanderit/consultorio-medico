@@ -19,6 +19,7 @@ export async function authenticate(credentials: LoginCredentials): Promise<User>
 }
 
 export function loginErrorMessage(reason: unknown): string {
+  if (reason instanceof AxiosError && reason.response?.status === 403 && reason.response.headers?.["x-access-schedule"] === "denied" && typeof reason.response.data?.detail === "string") return reason.response.data.detail;
   // The API deliberately returns the same 401 for invalid and inactive accounts.
   return reason instanceof AxiosError && reason.response?.status === 401
     ? "Correo o contraseña incorrectos."
