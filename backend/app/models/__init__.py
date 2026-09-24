@@ -17,6 +17,7 @@ from app.models.locality import Locality
 from app.models.regional import Country, RegionalSettings, TerritorialLevel, TerritorialUnit
 from app.models.patient import Patient
 from app.models.prescription import Prescription
+from app.models.requested_tests import RequestedTests
 from app.models.secretary_scope import SecretaryCenterScope
 from app.models.specialty_template import SpecialtyTemplate, SpecialtyTemplateModule
 from app.models.vital_signs import VitalSigns
@@ -24,7 +25,7 @@ from app.models.vital_signs import VitalSigns
 __all__ = [
     "Organization", "OrganizationMembership",
     "Permission", "Role", "User", "Locality", "Country", "TerritorialLevel", "TerritorialUnit", "RegionalSettings", "CareCenter", "DoctorAvailability", "Patient", "InsuranceCompany",
-    "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "VitalSigns", "Appointment", "FollowUp", "Notification", "CommunicationLog",
+    "PatientInsurance", "ClinicalHistory", "Diagnosis", "Prescription", "RequestedTests", "VitalSigns", "Appointment", "FollowUp", "Notification", "CommunicationLog",
     "Specialty", "AnatomicalRegion", "MedicalStudy", "DoctorProfile", "doctor_specialties", "medical_study_specialties", "SecretaryCenterScope", "ClinicalAuditLog", "ClinicalAddendum", "ClinicalCoverage", "AppointmentCoverageTransfer",
     "LaboratoryTest", "LaboratoryOrder", "LaboratoryOrderItem", "StudyOrder", "StudyOrderItem",
     "SpecialtyTemplate", "SpecialtyTemplateModule",
