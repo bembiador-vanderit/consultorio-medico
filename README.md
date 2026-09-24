@@ -126,7 +126,7 @@ Las garantías de una consulta por cita, revisión optimista y serialización de
 
 ## Seguridad administrativa pre-piloto (6C3)
 
-La prioridad actual es [6C3 — Seguridad y Administración](docs/6c3-security-administration.md), con auditoría del estado anterior, matriz de roles, transferencia protegida, reautenticación, restricciones individuales, revocación de sesiones y procedimiento de actualización. 6C2B/Cardiología queda pausada. Esta fase mantiene un administrador de toda la instalación; no representa aislamiento entre organizaciones.
+[6C3 — Seguridad y Administración](docs/6c3-security-administration.md) estableció la matriz de roles, transferencia protegida, reautenticación, restricciones individuales, revocación de sesiones y procedimiento de actualización. En esa fase el administrador cubría toda la instalación; 6C4 añade el aislamiento entre organizaciones. 6C2B/Cardiología queda pausada.
 
 ## Organizaciones (6C4)
 
