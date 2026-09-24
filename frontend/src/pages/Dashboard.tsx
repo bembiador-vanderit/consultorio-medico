@@ -25,16 +25,19 @@ export default function Dashboard({ user, patientsVersion, onNavigate, onNewAppo
   const [notifications, setNotifications] = useState<Loadable<Notification[]>>(() => initial([]));
   const [followUps, setFollowUps] = useState<Loadable<FollowUp[]>>(() => initial([]));
   const [administration, setAdministration] = useState<Loadable<{ users: AdminUser[]; centers: Center[] }>>(() => initial({ users: [], centers: [] }));
-  const isDoctor = user.roles.includes("doctor");
+  const canManagePatients = !user.permissions || user.permissions.includes("patients:access");
+  const isDoctor = user.roles.includes("doctor") && (!user.permissions || user.permissions.includes("clinical:access"));
   const isAdmin = user.roles.includes("admin");
 
   async function loadPatients() {
+    if (!canManagePatients) { setPatients({ loading: false, data: null, error: "Sin permiso de pacientes" }); return; }
     setPatients((current) => ({ ...current, loading: true, error: null }));
     try { const { data } = await api.get<{ count: number }>("/patients/count"); setPatients({ loading: false, data: data.count, error: null }); }
     catch { setPatients({ loading: false, data: null, error: "No fue posible cargar los pacientes disponibles." }); }
   }
 
   async function loadAppointments() {
+    if (!canManagePatients) { setAppointments({ loading: false, data: [], error: "Sin permiso de agenda" }); return; }
     setAppointments((current) => ({ ...current, loading: true, error: null }));
     try { const date = today(); const { data } = await api.get<Appointment[]>("/appointments", { params: { start: date, end: date } }); setAppointments({ loading: false, data, error: null }); }
     catch { setAppointments({ loading: false, data: [], error: "No fue posible cargar las citas de hoy. Puede continuar usando las demás herramientas." }); }

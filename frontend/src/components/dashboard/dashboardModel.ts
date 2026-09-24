@@ -1,4 +1,4 @@
-import type { AppView } from "../../navigation/navigation";
+import { getNavigationItems, type AppView } from "../../navigation/navigation";
 import type { User } from "../../types/user";
 import type { NavigationIcon } from "../../navigation/navigation";
 
@@ -43,8 +43,9 @@ function hasRole(user: Pick<User, "roles">, role: DashboardRole) {
   return user.roles.includes(role);
 }
 
-export function getDashboardActions(user: Pick<User, "roles">): DashboardAction[] {
-  const actions = quickActions.filter((action) => !action.roles || action.roles.some((role) => hasRole(user, role)));
+export function getDashboardActions(user: Pick<User, "roles" | "permissions">): DashboardAction[] {
+  const visible = new Set(getNavigationItems(user).map(item => item.view));
+  const actions = quickActions.filter((action) => visible.has(action.view) && (!action.roles || action.roles.some((role) => hasRole(user, role))));
   return hasRole(user, "admin") && !hasRole(user, "doctor") && !hasRole(user, "secretary")
     ? [...actions.filter((action) => action.id === "users" || action.id === "centers"), ...actions.filter((action) => action.id !== "users" && action.id !== "centers")]
     : actions;

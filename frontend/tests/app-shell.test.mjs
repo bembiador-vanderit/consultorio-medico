@@ -14,8 +14,8 @@ const originalAdapter = api.defaults.adapter;
 const host = document.getElementById("root");
 let root, requests, data;
 const baseLabels = ["Dashboard", "Agenda", "Reportes de citas", "Pacientes"];
-const headings = { Dashboard: "Hola, Personal de prueba", Agenda: "Agenda", "Reportes de citas": "Reportes de citas", Pacientes: "Pacientes", Seguimientos: "Seguimiento de pacientes", "Mi disponibilidad": "Mi disponibilidad", "Cobertura clínica": "Cobertura clínica", "Usuarios y roles": "Usuarios y roles", "Localidades y centros": "Localidades y centros" };
-const listEndpoints = ["/patients", "/appointments", "/centers/mine", "/follow-ups", "/doctor-availability", "/clinical-coverages", "/users", "/centers", "/localities/all", "/clinical-catalog/specialties", "/appointments/doctors"];
+const headings = { Seguridad: "Seguridad y administración", Dashboard: "Hola, Personal de prueba", Agenda: "Agenda", "Reportes de citas": "Reportes de citas", Pacientes: "Pacientes", Seguimientos: "Seguimiento de pacientes", "Mi disponibilidad": "Mi disponibilidad", "Cobertura clínica": "Cobertura clínica", "Usuarios y roles": "Usuarios y roles", "Localidades y centros": "Localidades y centros" };
+const listEndpoints = ["/administration/transfers", "/administration/audit?offset=0&limit=20","/patients", "/appointments", "/centers/mine", "/follow-ups", "/doctor-availability", "/clinical-coverages", "/users", "/centers", "/localities/all", "/clinical-catalog/specialties", "/appointments/doctors"];
 
 beforeEach(() => {
   root = createRoot(host);
@@ -57,6 +57,7 @@ for (const roles of [[], ["doctor"], ["secretary"], ["admin"], ["doctor", "admin
     if (roles.includes("doctor")) expected.push("Seguimientos", "Mi disponibilidad");
     if (roles.includes("doctor") || roles.includes("secretary")) expected.push("Cobertura clínica");
     if (roles.includes("admin")) expected.push("Usuarios y roles", "Localidades y centros");
+    expected.push("Seguridad");
     assert.deepEqual([...navigation().querySelectorAll("button")].map((item) => item.textContent), expected);
     for (const label of expected) {
       await click(button(label, navigation()));
