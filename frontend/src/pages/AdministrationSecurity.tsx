@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, logoutSession } from "../services/api";
 import type { User } from "../types/user";
+import AccessSchedules from "../components/AccessSchedules";
 
 type Transfer = { id: number; initiator_id: number; target_id: number; initiator_name?: string; target_name?: string; replace_initiator: boolean; expires_at: string };
 type Audit = { id: number; actor_id: number; action: string; outcome: string; created_at: string };
@@ -36,6 +37,7 @@ export default function AdministrationSecurity({ user }: { user: User }) {
   const name = (id: number) => users.find(person => person.id === id)?.full_name || `Usuario ${id}`;
   return <section className="space-y-5">
     <h2 className="text-2xl font-bold">Seguridad y administración</h2>
+    {admin && <AccessSchedules users={users} />}
     <p>El administrador gestiona todos los centros de esta instalación. El acceso clínico requiere un rol médico y una relación asistencial autorizada.</p>
     <p>La verificación en dos pasos (MFA) y la recuperación automática de cuenta todavía no están habilitadas.</p>
     {error && <p role="alert" className="text-red-700">{error}</p>}{message && <p role="status" className="text-teal-800">{message}</p>}

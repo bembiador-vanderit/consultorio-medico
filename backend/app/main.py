@@ -12,6 +12,7 @@ from app.services.tenancy import bind_scope
 from app.models import Organization
 from sqlalchemy import select
 from app.api.routes import organizations
+from app.api.routes import access_schedule
 from app.services.reminders import sync_appointment_reminders
 
 
@@ -57,12 +58,14 @@ async def lifespan(_: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.9.0", lifespan=lifespan)
+app.include_router(access_schedule.router, prefix="/api/v1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
+    expose_headers=["X-Access-Schedule"],
 )
 
 for router in (organizations.router, administration.router, health.router, auth.router, users.router, localities.router, centers.router, regional.router, patients.router, insurance.router, clinical_history.router, clinical_addenda.router, clinical_orders.router, diagnoses.router, prescriptions.router, vital_signs.router, appointments.router, clinical_coverages.router, doctor_availability.router, follow_ups.router, communications.router, clinical_catalog.router, reports.router, report_communications.router):

@@ -1,4 +1,5 @@
 from app.models.organization import Organization, OrganizationMembership
+from app.models.access_schedule import AccessException, AccessBlockedDate
 from app.models.appointment import Appointment
 from app.models.center import CareCenter
 from app.models.clinical_catalog import AnatomicalRegion, DoctorProfile, MedicalStudy, Specialty, doctor_specialties, medical_study_specialties

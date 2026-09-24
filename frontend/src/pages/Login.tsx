@@ -14,7 +14,7 @@ export function SessionLoading() {
   return <LoginLayout><Card className="atlas-login-card"><LoadingState label="Comprobando sesión…" /></Card></LoginLayout>;
 }
 
-export default function Login({ onSignIn }: { onSignIn: (credentials: LoginCredentials) => Promise<void> }) {
+export default function Login({ onSignIn, sessionMessage }: { onSignIn: (credentials: LoginCredentials) => Promise<void>; sessionMessage?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -45,6 +45,7 @@ export default function Login({ onSignIn }: { onSignIn: (credentials: LoginCrede
     <Card className="atlas-login-card">
       <h1 className="atlas-page-title atlas-login-heading">Bienvenido a Atlas</h1>
       <p className="atlas-muted">Inicia sesión para continuar.</p>
+      {sessionMessage && <p role="alert">{sessionMessage}</p>}
       <form className="atlas-login-form" onSubmit={submit} aria-label="Iniciar sesión">
         {error && <div className="atlas-login-feedback"><Alert tone="danger" title="No se pudo iniciar sesión">{error}</Alert></div>}
         <FormField label="Correo electrónico" required>

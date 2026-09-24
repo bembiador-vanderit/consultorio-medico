@@ -105,7 +105,9 @@ def scope_writes(db, _context, _instances):
             obj.legacy_roles = []
             obj.memberships.append(membership)
     for obj in list(db.new) + list(db.dirty) + list(db.deleted):
-        if isinstance(obj, (Role, Permission, Organization)) and (obj in db.new or obj in db.deleted or db.is_modified(obj, include_collections=False)):
+        timezone_only = (isinstance(obj, Organization) and obj.id == org_id and obj not in db.new and obj not in db.deleted
+                         and all(not attr.history.has_changes() or attr.key == "timezone" for attr in inspect(obj).attrs))
+        if isinstance(obj, (Role, Permission, Organization)) and not timezone_only and (obj in db.new or obj in db.deleted or db.is_modified(obj, include_collections=False)):
             _not_found()  # Catalog authority/provisioning has no tenant HTTP write path.
         if isinstance(obj, TenantOwned):
             if not org_id:

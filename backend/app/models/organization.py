@@ -16,6 +16,7 @@ class Organization(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(63), unique=True)
     name: Mapped[str] = mapped_column(String(150))
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC", server_default="UTC")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -37,6 +38,10 @@ class OrganizationMembership(TenantOwned, Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
     state: Mapped[str] = mapped_column(String(20), default="active")
     denied_permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    restrict_outside_schedule: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    weekly_schedule: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    schedule_version: Mapped[int] = mapped_column(default=0, server_default="0")
+    schedule_denied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     roles: Mapped[list["Role"]] = relationship(secondary=membership_roles)
     user: Mapped["User"] = relationship(back_populates="memberships")

@@ -27,6 +27,8 @@ def current_user(request: Request, credentials: HTTPAuthorizationCredentials = D
     membership = user.tenant_membership()
     if db.info.get("access_scope") == "tenant" and (membership is None or membership.state != "active"):
         raise HTTPException(401, "Membresía no disponible")
+    from app.services.access_schedule import enforce_schedule
+    enforce_schedule(db, user, payload)
     return user
 def require_permission(code: str):
     def dependency(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)) -> User:

@@ -13,7 +13,7 @@ ROLE_PERMISSIONS = {
 
 def seed_identity(db: Session) -> None:
     if db.get(Organization, 1) is None:
-        db.add(Organization(id=1, slug="pilot", name="Organización inicial"))
+        db.add(Organization(id=1, slug="pilot", name="Organización inicial", timezone="America/Santo_Domingo"))
         db.flush()
     permissions = {}
     for code in {item for _, values in ROLE_PERMISSIONS.items() for item in values[1]}:
