@@ -17,3 +17,5 @@ El modelo todavía no conserva un campo `created_by` independiente. Por tanto, e
 ## Autoedición administrativa
 
 Un administrador puede modificar su propio nombre, contraseña, roles adicionales y centros. Para evitar invalidar silenciosamente la sesión actual o perder acceso administrativo, no puede cambiar su propio correo, desactivar su propia cuenta ni retirarse el rol `admin`; esas operaciones deben ser realizadas por otro administrador. Independientemente del usuario que ejecute el cambio, el backend impide desactivar o retirar el rol al último administrador activo.
+
+Desde 6C3, las escrituras administrativas exigen reautenticación y quedan auditadas. El nombramiento de administradores requiere aceptación del destinatario; una transferencia puede retirar el rol al solicitante de forma atómica al aceptarse. Las sesiones afectadas por cambios de seguridad se invalidan. La administración es global para una organización por instalación, no por pertenencia a centros. Véase [6C3](6c3-security-administration.md).
