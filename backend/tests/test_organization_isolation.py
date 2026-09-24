@@ -14,6 +14,7 @@ from app.core.security import hash_password
 from app.db import Base, get_db
 from app.models import CareCenter, FollowUp, Locality, Organization, OrganizationMembership, Patient, Role, User
 from app.models.administration import SecurityAudit
+from app.models.center import user_centers
 from app.services.administration import audit
 from app.services.bootstrap import seed_identity
 from app.services.tenancy import bind_scope, resolve_request
@@ -40,13 +41,14 @@ def tenant_api(monkeypatch):
         locality_two = Locality(organization_id=2, name="Place two")
         db.add_all([locality_one, locality_two])
         db.flush()
+        center_one = CareCenter(organization_id=1, name="One", city="Test", locality_id=locality_one.id)
+        center_two = CareCenter(organization_id=2, name="Two", city="Test", locality_id=locality_two.id)
+        shared.centers = [center_one, center_two]
         db.add_all([
             Patient(organization_id=1, first_name="One", last_name="Patient", date_of_birth=date(1990, 1, 1),
                     document_type="cedula", document_number="00000000000"),
             Patient(organization_id=2, first_name="Two", last_name="Patient", date_of_birth=date(1990, 1, 1),
                     document_type="cedula", document_number="00000000000"),
-            CareCenter(organization_id=1, name="One", city="Test", locality_id=locality_one.id),
-            CareCenter(organization_id=2, name="Two", city="Test", locality_id=locality_two.id),
         ])
         db.commit()
         ids = {p.organization_id: p.id for p in db.scalars(select(Patient)).all()}
@@ -82,6 +84,10 @@ def test_two_hosts_isolate_records_roles_and_platform_scope(tenant_api):
         assert [item["first_name"] for item in two.get("/api/v1/patients", headers=h2).json()] == ["Two"]
         assert one.get(f"/api/v1/patients/{ids[2]}", headers=h1).status_code == 404
         assert [item["name"] for item in one.get("/api/v1/centers", headers=h1).json()] == ["One"]
+        one_user = next(item for item in one.get("/api/v1/users", headers=h1).json() if item["email"] == "shared@example.com")
+        two_user = next(item for item in two.get("/api/v1/users", headers=h2).json() if item["email"] == "shared@example.com")
+        assert one_user["center_ids"] != two_user["center_ids"]
+        assert len(one_user["center_ids"]) == len(two_user["center_ids"]) == 1
         assert one.get("/api/v1/platform/organizations", headers=h1).status_code == 404
         assert len(platform.get("/api/v1/platform/organizations", headers=hp).json()) == 2
         assert platform.get("/api/v1/patients", headers=hp).status_code == 403
@@ -187,3 +193,5 @@ def test_administrative_center_write_checks_tenant(tenant_api):
         valid = one.put(path, headers=authorized(), json={"center_ids": [centers_by_org[1]], "primary_center_id": centers_by_org[1]})
         assert valid.status_code == 200, valid.text
         assert valid.json()["center_ids"] == [centers_by_org[1]]
+    with Session(engine) as db:
+        assert set(db.scalars(select(user_centers.c.center_id).where(user_centers.c.user_id == user_id))) == set(centers_by_org.values())
