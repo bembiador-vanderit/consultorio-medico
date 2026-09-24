@@ -119,8 +119,10 @@ def add_clinical_audit(
     outcome: str = "success",
     context: dict | None = None,
 ) -> None:
+    history = db.get(ClinicalHistory, history_id) if history_id is not None else None
     db.add(ClinicalAuditLog(
         user_id=user.id,
+        center_id=history.center_id if history else None,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,

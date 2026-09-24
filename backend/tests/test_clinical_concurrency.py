@@ -20,6 +20,7 @@ from app.models import (
     Diagnosis,
     Patient,
     Role,
+    Organization,
     Specialty,
     User,
     VitalSigns,
@@ -37,6 +38,9 @@ def postgres():
     engine = create_engine(url, pool_pre_ping=True)
     assert engine.url.database == "clinical_concurrency_test"
     Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(Organization(id=1, slug="pilot", name="Organización inicial"))
+        db.commit()
     try:
         yield engine
     finally:

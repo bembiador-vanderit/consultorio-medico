@@ -9,4 +9,7 @@ export type User = {
   primary_specialty_id?: number | null;
   specialty_ids?: number[];
   specialty_names?: string[];
+  access_scope?: "tenant" | "platform";
+  organization?: { id: number; name: string } | null;
+  membership_state?: "active" | "suspended" | "invited" | null;
 };

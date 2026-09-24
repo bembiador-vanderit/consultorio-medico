@@ -50,7 +50,7 @@ def _in_app_recipient_ids(db: Session, appointment: Appointment) -> set[int]:
             User.centers.any(id=appointment.center_id)
         )
     ).all():
-        if not any(role.code == "secretary" for role in user.roles):
+        if not user.is_active or not any(role.code == "secretary" for role in user.roles):
             continue
         transfer = appointment.coverage_transfer
         if secretary_can_manage(user, appointment.center_id, appointment.doctor_id, db) or (

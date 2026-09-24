@@ -34,11 +34,11 @@ function AccountMenu({ user, onSignOut }: { user: TopbarProps["user"]; onSignOut
   </details>;
 }
 
-type TopbarProps = { pageTitle: string; user: Pick<User, "full_name" | "roles" | "specialty_names">; activeCenterName?: string; notifications?: ReactNode; onOpenMenu: () => void; onSignOut: () => void; menuOpen: boolean; onOpenPatients?: () => void };
+type TopbarProps = { pageTitle: string; user: Pick<User, "full_name" | "roles" | "specialty_names" | "organization">; activeCenterName?: string; notifications?: ReactNode; onOpenMenu: () => void; onSignOut: () => void; menuOpen: boolean; onOpenPatients?: () => void };
 const roleLabels: Record<string, string> = { doctor: "Médico", secretary: "Secretaría", admin: "Administrador" };
 export function Topbar({ pageTitle, user, activeCenterName, notifications, onOpenMenu, onSignOut, menuOpen, onOpenPatients }: TopbarProps) {
   return <header className="atlas-topbar"><div className="atlas-topbar-context"><IconButton label="Abrir navegación" variant="outline" className="atlas-mobile-menu" onClick={onOpenMenu} aria-expanded={menuOpen} aria-haspopup="dialog">☰</IconButton>
-    <div className="atlas-topbar-title"><p className="atlas-card-title">{pageTitle}</p>{activeCenterName && <p className="atlas-help">{activeCenterName}</p>}</div><span className="atlas-mobile-brand"><AtlasMark /><strong>Atlas</strong></span>{onOpenPatients && <Button className="atlas-topbar-search" variant="outline" onClick={onOpenPatients}><NavigationIcon name="patient" />Buscar paciente</Button>}</div>
+    <div className="atlas-topbar-title"><p className="atlas-card-title">{pageTitle}</p>{user.organization?.name && <p className="atlas-help">{user.organization.name}</p>}{activeCenterName && <p className="atlas-help">{activeCenterName}</p>}</div><span className="atlas-mobile-brand"><AtlasMark /><strong>Atlas</strong></span>{onOpenPatients && <Button className="atlas-topbar-search" variant="outline" onClick={onOpenPatients}><NavigationIcon name="patient" />Buscar paciente</Button>}</div>
     <div className="atlas-topbar-account">{notifications}<AccountMenu user={user} onSignOut={onSignOut} /></div>
   </header>;
 }

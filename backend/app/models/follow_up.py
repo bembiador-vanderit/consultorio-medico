@@ -2,11 +2,10 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
+from app.models.organization import TenantOwned
 
-
-class FollowUp(Base):
+class FollowUp(TenantOwned, Base):
     __tablename__ = "follow_ups"
-
     id: Mapped[int] = mapped_column(primary_key=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id", ondelete="CASCADE"), index=True)
     doctor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
@@ -19,14 +18,12 @@ class FollowUp(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
     patient = relationship("Patient")
     doctor = relationship("User")
     clinical_history = relationship("ClinicalHistory")
     center = relationship("CareCenter")
 
-
-class Notification(Base):
+class Notification(TenantOwned, Base):
     __tablename__ = "notifications"
     __table_args__ = (
         UniqueConstraint(
@@ -38,7 +35,6 @@ class Notification(Base):
             name="uq_notifications_user_follow_up_type",
         ),
     )
-
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     follow_up_id: Mapped[int | None] = mapped_column(ForeignKey("follow_ups.id", ondelete="CASCADE"), nullable=True, index=True)
@@ -49,7 +45,6 @@ class Notification(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
     user = relationship("User")
     follow_up = relationship("FollowUp")
     appointment = relationship("Appointment")

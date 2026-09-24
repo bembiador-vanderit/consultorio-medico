@@ -1,14 +1,11 @@
 from datetime import datetime
-
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
-
 from app.db import Base
+from app.models.organization import TenantOwned
 
-
-class Prescription(Base):
+class Prescription(TenantOwned, Base):
     __tablename__ = "prescriptions"
-
     id: Mapped[int] = mapped_column(primary_key=True)
     clinical_history_id: Mapped[int] = mapped_column(
         ForeignKey("clinical_histories.id", ondelete="CASCADE"), nullable=False, index=True

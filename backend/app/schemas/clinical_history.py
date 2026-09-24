@@ -60,6 +60,8 @@ class ClinicalHistoryResponse(ClinicalHistoryBase):
 
 class ClinicalAuditLogResponse(BaseModel):
     id: int
+    organization_id: int
+    center_id: int | None
     user_id: int | None
     action: str
     resource_type: str

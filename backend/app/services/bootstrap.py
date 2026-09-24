@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import hash_password
-from app.models import Permission, Role, User
+from app.models import Permission, Role, User, Organization, OrganizationMembership
 
 ROLE_PERMISSIONS = {
     "admin": ("Administrador", ["users:manage", "patients:access", "centers:access", "centers:manage"]),
@@ -12,6 +12,9 @@ ROLE_PERMISSIONS = {
 
 
 def seed_identity(db: Session) -> None:
+    if db.get(Organization, 1) is None:
+        db.add(Organization(id=1, slug="pilot", name="Organización inicial"))
+        db.flush()
     permissions = {}
     for code in {item for _, values in ROLE_PERMISSIONS.items() for item in values[1]}:
         permission = db.scalar(select(Permission).where(Permission.code == code))
@@ -41,6 +44,7 @@ def seed_identity(db: Session) -> None:
                 full_name=settings.initial_admin_name,
                 password_hash=hash_password(settings.initial_admin_password),
                 roles=[roles["admin"]],
+                memberships=[OrganizationMembership(organization_id=1, state="active", roles=[roles["admin"]])],
             )
         )
     db.commit()

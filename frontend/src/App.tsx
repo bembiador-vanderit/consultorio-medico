@@ -18,6 +18,7 @@ import NotificationBell from "./components/NotificationBell";
 import type { Patient } from "./types/patient";
 import type { Appointment } from "./types/appointment";
 import type { User } from "./types/user";
+import Platform from "./pages/Platform";
 
 import { AtlasAppShell } from "./layouts/AtlasAppShell";
 import type { AppView, NavigationGuard, NavigationGuardRegistrar } from "./navigation/navigation";
@@ -73,6 +74,7 @@ function App() {
 
   if (loading) return <SessionLoading />;
   if (!user) return <Login onSignIn={signIn} />;
+  if (user.access_scope === "platform") return <Platform user={user} onSignOut={signOut} />;
 
   const isDoctor = user.roles.includes("doctor");
   const isAdmin = user.roles.includes("admin");

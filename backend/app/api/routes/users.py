@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-
 from app.api.deps import require_permission
 from app.core.security import hash_password
 from app.db import get_db
@@ -21,15 +21,13 @@ from app.schemas.user import (
 )
 from app.services.appointment_scope import remove_center_membership_from_scopes
 from app.services.administration import RESTRICTABLE, audit, effective_permissions, lock_administration
+from app.services.tenancy import protect_shared_identity
 from app.services.clinical_specialties import set_doctor_specialties
-
 router = APIRouter(prefix="/users", tags=["Usuarios"])
 manage = require_permission("users:manage")
 
-
 def is_role(user: User, code: str) -> bool:
     return any(role.code == code for role in user.roles)
-
 
 def require_user(db: Session, user_id: int) -> User:
     user = db.get(User, user_id)
@@ -37,19 +35,12 @@ def require_user(db: Session, user_id: int) -> User:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
 
-
 def validate_password_strength(password: str) -> None:
     if not any(character.isalpha() for character in password) or not any(character.isdigit() for character in password):
         raise HTTPException(status_code=422, detail="La contraseña debe contener al menos una letra y un número")
 
-
 def active_admin_count(db: Session) -> int:
-    return db.scalar(
-        select(func.count(User.id))
-        .join(User.roles)
-        .where(User.is_active.is_(True), Role.code == "admin")
-    ) or 0
-
+    return sum(1 for user in db.scalars(select(User)).all() if user.is_active and is_role(user, "admin"))
 
 def serialize(user: User, db: Session) -> UserAdminResponse:
     assignments = db.execute(
@@ -85,14 +76,12 @@ def serialize(user: User, db: Session) -> UserAdminResponse:
         specialty_names=[specialty.name for specialty in sorted(user.specialties, key=lambda item: (item.name.lower(), item.id))],
     )
 
-
 def delete_secretary_scopes(db: Session, user_id: int, center_ids: set[int] | None = None) -> None:
     query = select(SecretaryCenterScope).where(SecretaryCenterScope.secretary_id == user_id)
     if center_ids is not None:
         query = query.where(SecretaryCenterScope.center_id.in_(center_ids))
     for scope in db.scalars(query).all():
         db.delete(scope)
-
 
 def validate_roles(db: Session, role_codes: list[str]) -> list[Role]:
     unique_codes = set(role_codes)
@@ -101,11 +90,9 @@ def validate_roles(db: Session, role_codes: list[str]) -> list[Role]:
         raise HTTPException(status_code=422, detail="Rol inválido")
     return roles
 
-
 @router.get("", response_model=list[UserAdminResponse])
 def list_users(_: User = Depends(manage), db: Session = Depends(get_db)):
     return [serialize(user, db) for user in db.scalars(select(User).order_by(User.full_name)).all()]
-
 
 @router.post("", response_model=UserAdminResponse, status_code=status.HTTP_201_CREATED)
 def create_user(payload: UserCreate, admin: User = Depends(manage), db: Session = Depends(get_db)):
@@ -131,18 +118,22 @@ def create_user(payload: UserCreate, admin: User = Depends(manage), db: Session 
         roles=roles,
     )
     db.add(user)
-    db.flush()
-    audit(db, admin, f"users.create:{user.id}")
-    if is_doctor:
-        set_doctor_specialties(db, user, payload.primary_specialty_id, payload.specialty_ids)
-    db.commit()
+    try:
+        db.flush()
+        audit(db, admin, f"users.create:{user.id}")
+        if is_doctor:
+            set_doctor_specialties(db, user, payload.primary_specialty_id, payload.specialty_ids)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "No se pudo crear la identidad con ese correo") from None
     db.refresh(user)
     return serialize(user, db)
-
 
 @router.patch("/{user_id}/profile", response_model=UserAdminResponse)
 def update_user_profile(user_id: int, payload: UserProfileUpdate, admin: User = Depends(manage), db: Session = Depends(get_db)):
     user = require_user(db, user_id)
+    protect_shared_identity(db, user)
     email = str(payload.email).strip().lower()
     full_name = payload.full_name.strip()
     if len(full_name) < 2:
@@ -158,16 +149,15 @@ def update_user_profile(user_id: int, payload: UserProfileUpdate, admin: User = 
     db.refresh(user)
     return serialize(user, db)
 
-
 @router.put("/{user_id}/password", response_model=UserAdminResponse)
 def update_user_password(user_id: int, payload: UserPasswordUpdate, _: User = Depends(manage), db: Session = Depends(get_db)):
     user = require_user(db, user_id)
+    protect_shared_identity(db, user)
     validate_password_strength(payload.new_password)
     user.password_hash = hash_password(payload.new_password)
     db.commit()
     db.refresh(user)
     return serialize(user, db)
-
 
 @router.put("/{user_id}/status", response_model=UserAdminResponse)
 def update_user_status(user_id: int, payload: UserStatusUpdate, admin: User = Depends(manage), db: Session = Depends(get_db)):
@@ -181,7 +171,6 @@ def update_user_status(user_id: int, payload: UserStatusUpdate, admin: User = De
     db.commit()
     db.refresh(user)
     return serialize(user, db)
-
 
 @router.put("/{user_id}/roles", response_model=UserAdminResponse)
 def update_user_roles(user_id: int, payload: UserRolesUpdate, admin: User = Depends(manage), db: Session = Depends(get_db)):
@@ -208,7 +197,6 @@ def update_user_roles(user_id: int, payload: UserRolesUpdate, admin: User = Depe
     db.refresh(user)
     return serialize(user, db)
 
-
 @router.put("/{user_id}/specialties", response_model=UserAdminResponse)
 def update_user_specialties(user_id: int, payload: UserSpecialtiesUpdate, _: User = Depends(manage), db: Session = Depends(get_db)):
     user = require_user(db, user_id)
@@ -219,7 +207,6 @@ def update_user_specialties(user_id: int, payload: UserSpecialtiesUpdate, _: Use
     db.refresh(user)
     return serialize(user, db)
 
-
 @router.put("/{user_id}/centers", response_model=UserAdminResponse)
 def update_user_centers(user_id: int, payload: UserCentersUpdate, _: User = Depends(manage), db: Session = Depends(get_db)):
     user = require_user(db, user_id)
@@ -228,7 +215,6 @@ def update_user_centers(user_id: int, payload: UserCentersUpdate, _: User = Depe
         raise HTTPException(status_code=422, detail="Los centros no pueden repetirse")
     if payload.primary_center_id is not None and payload.primary_center_id not in center_ids:
         raise HTTPException(status_code=422, detail="El centro principal debe estar asignado al usuario")
-
     current_ids = set(db.scalars(select(user_centers.c.center_id).where(user_centers.c.user_id == user.id)).all())
     centers = list(db.scalars(select(CareCenter).where(CareCenter.id.in_(center_ids))).all()) if center_ids else []
     if len(centers) != len(center_ids):
@@ -237,11 +223,9 @@ def update_user_centers(user_id: int, payload: UserCentersUpdate, _: User = Depe
         raise HTTPException(status_code=422, detail="No se puede asignar un centro inactivo")
     if not user.is_active and not center_ids.issubset(current_ids):
         raise HTTPException(status_code=422, detail="No se pueden agregar centros a un usuario inactivo")
-
     removed_ids = current_ids - center_ids
     if removed_ids:
         remove_center_membership_from_scopes(db, user, removed_ids)
-
     user.session_version += 1
     db.execute(delete(user_centers).where(user_centers.c.user_id == user.id))
     if center_ids:
@@ -251,7 +235,6 @@ def update_user_centers(user_id: int, payload: UserCentersUpdate, _: User = Depe
         ])
     db.commit()
     return serialize(user, db)
-
 
 @router.put("/{user_id}/secretary-scopes", response_model=UserAdminResponse)
 def update_secretary_scopes(
@@ -263,7 +246,6 @@ def update_secretary_scopes(
     secretary = require_user(db, user_id)
     if not is_role(secretary, "secretary"):
         raise HTTPException(status_code=422, detail="El usuario no tiene rol de secretaria")
-
     assigned_ids = set(db.scalars(
         select(user_centers.c.center_id).where(user_centers.c.user_id == secretary.id)
     ).all())
@@ -272,7 +254,6 @@ def update_secretary_scopes(
         raise HTTPException(status_code=422, detail="El alcance de un centro no puede repetirse")
     if not set(requested_center_ids).issubset(assigned_ids):
         raise HTTPException(status_code=422, detail="La secretaria debe estar asignada a cada centro configurado")
-
     prepared: list[tuple[int, bool, list[User]]] = []
     for requested in payload.scopes:
         center = db.get(CareCenter, requested.center_id)
@@ -282,14 +263,12 @@ def update_secretary_scopes(
             raise HTTPException(status_code=422, detail="No indique médicos específicos al seleccionar todos los médicos")
         if len(set(requested.doctor_ids)) != len(requested.doctor_ids):
             raise HTTPException(status_code=422, detail="Los médicos no pueden repetirse")
-
         doctors = list(db.scalars(select(User).where(User.id.in_(set(requested.doctor_ids)))).all()) if requested.doctor_ids else []
         if len(doctors) != len(set(requested.doctor_ids)):
             raise HTTPException(status_code=422, detail="Médico inválido")
         if any(not doctor.is_active or not is_role(doctor, "doctor") or center not in doctor.centers for doctor in doctors):
             raise HTTPException(status_code=422, detail="Todos los médicos deben estar activos y asignados al centro")
         prepared.append((center.id, requested.manage_all_doctors, doctors))
-
     secretary.session_version += 1
     delete_secretary_scopes(db, secretary.id)
     db.flush()
@@ -302,7 +281,6 @@ def update_secretary_scopes(
         ))
     db.commit()
     return serialize(secretary, db)
-
 @router.put("/{user_id}/permissions", response_model=UserAdminResponse)
 def update_user_permissions(user_id: int, payload: UserPermissionsUpdate,
                             admin: User = Depends(manage), db: Session = Depends(get_db)):

@@ -6,6 +6,9 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 class UserResponse(BaseModel):
+    access_scope: str = "tenant"
+    organization: dict | None = None
+    membership_state: str | None = None
     id: int
     email: EmailStr
     full_name: str

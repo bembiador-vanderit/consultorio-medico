@@ -8,6 +8,10 @@ from app.api.routes import administration, appointments, auth, centers, clinical
 from app.core.config import get_settings
 from app.db import SessionLocal
 from app.services.bootstrap import seed_identity
+from app.services.tenancy import bind_scope
+from app.models import Organization
+from sqlalchemy import select
+from app.api.routes import organizations
 from app.services.reminders import sync_appointment_reminders
 
 
@@ -19,8 +23,12 @@ async def _reminder_worker(stop_event: asyncio.Event) -> None:
     """
     while not stop_event.is_set():
         try:
-            with SessionLocal() as session:
-                sync_appointment_reminders(session)
+            with SessionLocal() as directory:
+                organization_ids = list(directory.scalars(select(Organization.id).where(Organization.is_active.is_(True))))
+            for organization_id in organization_ids:
+                with SessionLocal() as session:
+                    bind_scope(session, "tenant", organization_id)
+                    sync_appointment_reminders(session)
         except Exception:
             # Reminder failures must not take down the API process. The next
             # scheduled cycle will retry the synchronization.
@@ -57,5 +65,5 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-for router in (administration.router, health.router, auth.router, users.router, localities.router, centers.router, regional.router, patients.router, insurance.router, clinical_history.router, clinical_addenda.router, clinical_orders.router, diagnoses.router, prescriptions.router, vital_signs.router, appointments.router, clinical_coverages.router, doctor_availability.router, follow_ups.router, communications.router, clinical_catalog.router, reports.router, report_communications.router):
+for router in (organizations.router, administration.router, health.router, auth.router, users.router, localities.router, centers.router, regional.router, patients.router, insurance.router, clinical_history.router, clinical_addenda.router, clinical_orders.router, diagnoses.router, prescriptions.router, vital_signs.router, appointments.router, clinical_coverages.router, doctor_availability.router, follow_ups.router, communications.router, clinical_catalog.router, reports.router, report_communications.router):
     app.include_router(router, prefix="/api/v1")
