@@ -47,7 +47,7 @@ jobs:
           import psycopg
           from psycopg import sql
           with psycopg.connect('postgresql://postgres:disposable-ci-password@localhost/postgres', autocommit=True) as db:
-              for name in ('patient_security_test', 'clinical_concurrency_test', 'administration_migration_test'):
+              for name in ('patient_security_test', 'clinical_concurrency_test', 'administration_migration_test', 'access_schedule_migration_test'):
                   db.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
           PY
       - name: Check migration upgrade and rollback
@@ -58,6 +58,12 @@ jobs:
           alembic upgrade head
           alembic downgrade 0033_specialty_codes
           alembic upgrade head
+      - name: Check opt-in schedule backfill on PostgreSQL
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/access_schedule_migration_test
+          PYTHONPATH: .
+        run: python scripts/check_access_schedule_migration.py
       - name: Backend and PostgreSQL concurrency tests
         working-directory: backend
         run: python -m pytest -q
