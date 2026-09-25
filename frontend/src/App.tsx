@@ -1,5 +1,5 @@
 import InsuranceCatalog from "./pages/InsuranceCatalog";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { authenticate, type LoginCredentials } from "./services/login";
 import Login, { SessionLoading } from "./pages/Login";
 import { api, logoutSession, refreshAccessToken, setAccessToken } from "./services/api";
@@ -24,6 +24,8 @@ import Platform from "./pages/Platform";
 import { AtlasAppShell } from "./layouts/AtlasAppShell";
 import type { AppView, NavigationGuard, NavigationGuardRegistrar } from "./navigation/navigation";
 import "./layouts/operational-shell.css";
+
+const Finance = lazy(() => import("./pages/Finance"));
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -93,14 +95,14 @@ function App() {
     });
   }
 
-  const titles: Record<AppView, string> = { insurance: "Aseguradoras / ARS", security: "Seguridad", dashboard: "Inicio", patients: "Pacientes", appointments: "Agenda", reports: "Reportes de citas", "care-context": "Localidades y centros", availability: "Mi disponibilidad", users: "Usuarios y roles", "follow-ups": "Seguimientos", consultation: "Consulta", "clinical-coverages": "Cobertura clínica" };
+  const titles: Record<AppView, string> = { finance: "Finanzas", insurance: "Aseguradoras / ARS", security: "Seguridad", dashboard: "Inicio", patients: "Pacientes", appointments: "Agenda", reports: "Reportes de citas", "care-context": "Localidades y centros", availability: "Mi disponibilidad", users: "Usuarios y roles", "follow-ups": "Seguimientos", consultation: "Consulta", "clinical-coverages": "Cobertura clínica" };
   return <AtlasAppShell user={user} pageTitle={titles[view]}
     activeView={view === "consultation" ? "appointments" : view}
     onNavigate={navigate} onSignOut={signOut}
     notifications={<NotificationBell onOpenNotifications={() => navigate("dashboard")} />}>
     <ReauthenticationDialog />
     <div className={`atlas-operational-workspace${view === "appointments" ? " atlas-operational-workspace--agenda" : view === "patients" ? " atlas-operational-workspace--patients" : view === "dashboard" ? " atlas-operational-workspace--dashboard" : ""}`}>
-      {view === "insurance" && user.permissions?.includes("users:manage") ? <InsuranceCatalog /> : view === "security" ? <AdministrationSecurity user={user} /> : view === "patients" ? <Patients user={user} onBack={() => setView("dashboard")} onPatientChanged={() => setPatientsVersion((value) => value + 1)} onScheduleAppointment={schedulePatient} /> : view === "appointments" ? <Appointments user={user} onBack={() => setView("dashboard")} initialPatient={selectedAppointmentPatient} initialCreate={createAppointment} canAccessClinical={canAccessClinical} onAttendAppointment={attendAppointment} /> : view === "consultation" && selectedAppointment && canAccessClinical ? <Consultation appointment={selectedAppointment} onBack={() => setView("appointments")} registerNavigationGuard={registerNavigationGuard} /> : view === "clinical-coverages" && (isDoctor || isSecretary) ? <ClinicalCoverages user={user} onBack={() => setView("dashboard")} /> : view === "reports" ? <AppointmentReports onBack={() => setView("dashboard")} /> : view === "care-context" ? <CareContext onBack={() => setView("dashboard")} /> : view === "availability" ? <DoctorAvailability onBack={() => setView("dashboard")} /> : view === "users" ? <Users currentUser={user} onCurrentUserChanged={setUser} onBack={() => setView("dashboard")} /> : view === "follow-ups" && isDoctor ? <FollowUps user={user} onBack={() => setView("dashboard")} /> : <Dashboard user={user} patientsVersion={patientsVersion} onNavigate={navigate} onNewAppointment={() => { setSelectedAppointmentPatient(null); setCreateAppointment(true); setView("appointments"); }} />}
+      {view === "finance" ? <Suspense fallback={<p role="status">Cargando Finanzas…</p>}><Finance user={user} /></Suspense> : view === "insurance" && user.permissions?.includes("users:manage") ? <InsuranceCatalog /> : view === "security" ? <AdministrationSecurity user={user} /> : view === "patients" ? <Patients user={user} onBack={() => setView("dashboard")} onPatientChanged={() => setPatientsVersion((value) => value + 1)} onScheduleAppointment={schedulePatient} /> : view === "appointments" ? <Appointments user={user} onBack={() => setView("dashboard")} initialPatient={selectedAppointmentPatient} initialCreate={createAppointment} canAccessClinical={canAccessClinical} onAttendAppointment={attendAppointment} /> : view === "consultation" && selectedAppointment && canAccessClinical ? <Consultation appointment={selectedAppointment} onBack={() => setView("appointments")} registerNavigationGuard={registerNavigationGuard} /> : view === "clinical-coverages" && (isDoctor || isSecretary) ? <ClinicalCoverages user={user} onBack={() => setView("dashboard")} /> : view === "reports" ? <AppointmentReports onBack={() => setView("dashboard")} /> : view === "care-context" ? <CareContext onBack={() => setView("dashboard")} /> : view === "availability" ? <DoctorAvailability onBack={() => setView("dashboard")} /> : view === "users" ? <Users currentUser={user} onCurrentUserChanged={setUser} onBack={() => setView("dashboard")} /> : view === "follow-ups" && isDoctor ? <FollowUps user={user} onBack={() => setView("dashboard")} /> : <Dashboard user={user} patientsVersion={patientsVersion} onNavigate={navigate} onNewAppointment={() => { setSelectedAppointmentPatient(null); setCreateAppointment(true); setView("appointments"); }} />}
     </div>
   </AtlasAppShell>;
 }

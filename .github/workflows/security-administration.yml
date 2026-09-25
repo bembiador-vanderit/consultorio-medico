@@ -30,6 +30,7 @@ jobs:
       SECRET_KEY: disposable-ci-signing-key-not-for-production
       ADMIN_SECURITY_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/administration_security_test
       PATIENT_SECURITY_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/patient_security_test
+      FINANCE_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/finance_concurrency_test
       INSURANCE_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/insurance_concurrency_test
       CLINICAL_CONCURRENCY_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/clinical_concurrency_test
     steps:
@@ -48,7 +49,7 @@ jobs:
           import psycopg
           from psycopg import sql
           with psycopg.connect('postgresql://postgres:disposable-ci-password@localhost/postgres', autocommit=True) as db:
-              for name in ('patient_security_test', 'clinical_concurrency_test', 'administration_migration_test', 'access_schedule_migration_test', 'insurance_migration_test', 'insurance_concurrency_test'):
+              for name in ('patient_security_test', 'clinical_concurrency_test', 'administration_migration_test', 'access_schedule_migration_test', 'insurance_migration_test', 'insurance_concurrency_test', 'finance_concurrency_test', 'finance_migration_test'):
                   db.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
           PY
       - name: Check migration upgrade and rollback
@@ -71,6 +72,12 @@ jobs:
           DATABASE_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/insurance_migration_test
           PYTHONPATH: .
         run: python scripts/check_insurance_migration.py
+      - name: Check financial migration preservation on PostgreSQL
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/finance_migration_test
+          PYTHONPATH: .
+        run: python scripts/check_finance_migration.py
       - name: Backend and PostgreSQL concurrency tests
         working-directory: backend
         run: python -m pytest -q
