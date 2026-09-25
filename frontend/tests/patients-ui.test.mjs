@@ -28,7 +28,8 @@ beforeEach(() => {
     else if (config.url === "/regional/countries/DO/levels") data = [{ id: 1, position: 1, key: "province", display_label: "Provincia" }, { id: 2, position: 2, key: "municipality", display_label: "Municipio" }];
     else if (config.url === "/regional/territories") data = config.params.level === 1 ? [{ id: 10, name: "Provincia ficticia", parent_id: null }] : [{ id: 7, name: "Municipio ficticio", parent_id: 10 }];
     else if (/^\/patients\/\d+$/.test(config.url) && config.method === "get") data = records.find((item) => item.id === Number(config.url.split("/").at(-1)));
-    else if (config.url === "/insurance/companies") data = [{ id: 3, name: "ARS ficticia", is_active: true }];
+    else if (config.url.startsWith("/insurance/companies")) data = [{ id: 3, name: "ARS ficticia", is_active: true }];
+    else if (config.url.startsWith("/insurance/plans")) data = [];
     else if (config.url.startsWith("/insurance/patients/")) data = [{ id: 4, insurance_company_id: 3, insurance_company_name: "ARS ficticia", member_number: "FICTIONAL", plan_name: null, is_primary: true, is_active: true }];
     else if (config.url.startsWith("/clinical-history/patients/")) data = [];
     else if (config.url === "/patients/identity-search") data = [];
@@ -41,7 +42,7 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); api.defaults.adapter = adapter; });
 after(async () => { await server.close(); dom.window.close(); });
 
-async function mount(roles = ["doctor"]) { await act(async () => root.render(h(Patients, { user: { id: 9, full_name: "Personal ficticio", roles, is_active: true }, onBack() {}, onPatientChanged() { changed++; }, onScheduleAppointment(value) { scheduled = value; } }))); }
+async function mount(roles = ["doctor"]) { await act(async () => root.render(h(Patients, { user: { id: 9, full_name: "Personal ficticio", roles, permissions: ["patients:access", ...(roles.some(r => ["admin", "secretary"].includes(r)) ? ["insurance:manage"] : [])], is_active: true }, onBack() {}, onPatientChanged() { changed++; }, onScheduleAppointment(value) { scheduled = value; } }))); }
 async function click(element) { assert.ok(element); await act(async () => { element.focus(); element.click(); }); }
 const button = (label, scope = document) => [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === label);
 const field = (label, scope = document) => { const labels = [...scope.querySelectorAll("label")]; const node = labels.find((item) => item.textContent.trim() === label) ?? labels.find((item) => item.textContent.startsWith(label)); assert.ok(node, label); return document.getElementById(node.htmlFor); };
@@ -157,12 +158,12 @@ test("doctor history loads only selected patient when requested", async () => {
 });
 test("insurance loads selected patient only and preserves existing panel flow", async () => {
   await mount(["secretary"]); await select(); await click(button("Seguro"));
-  assert.match(panel().textContent, /FICTIONAL/); assert.ok(button("Agregar seguro")); assert.ok(button("Desactivar"));
+  assert.match(panel().textContent, /FICTIONAL/); assert.ok(button("Guardar seguro")); assert.ok(button("Desactivar"));
   assert.equal(requests.filter((item) => item.url.startsWith("/insurance/patients/")).length, 1);
   assert.equal(button("Nueva ARS"), undefined);
 });
-test("admin insurance retains company management and accessible fields", async () => {
-  await mount(["admin"]); await select(); await click(button("Seguro")); assert.ok(button("Nueva ARS")); assert.ok(field("Nombre de la ARS"));
+test("admin manages affiliations while catalog has its own navigation", async () => {
+  await mount(["admin"]); await select(); await click(button("Seguro")); assert.ok(button("Guardar seguro")); assert.equal(button("Nueva ARS"), undefined); assert.ok(field("Aseguradora / ARS"));
 });
 test("schedule callback preserves full patient and selection proof", async () => { await mount(); await select(); await click(button("Agendar cita")); assert.equal(scheduled.id, a.id); assert.equal(scheduled.selection_token, a.selection_token); });
 test("new registration keeps first appointment proof and saving state", async () => {
@@ -187,11 +188,11 @@ test("insurance load failure allows identity edit with insurance omitted", async
   const payload = JSON.parse(requests.find((item) => item.method === "put").data); assert.equal(Object.hasOwn(payload, "has_insurance"), false);
 });
 test("explicit opt-out preserves false meaning", async () => {
-  await mount(); await select(); await click(button("Editar")); await click(field("No", panel())); await submit(panel().querySelector("form"));
+  await mount(["secretary"]); await select(); await click(button("Editar")); await click(field("No", panel())); await submit(panel().querySelector("form"));
   assert.equal(JSON.parse(requests.find((item) => item.method === "put").data).has_insurance, false);
 });
 test("explicit insurance change sends a valid update object", async () => {
-  await mount(); await select(); await click(button("Editar")); await value(field("Número de póliza / Afiliado", panel()), "NEW-FICTIONAL"); await submit(panel().querySelector("form"));
+  await mount(["secretary"]); await select(); await click(button("Editar")); await value(field("Número de póliza / Afiliado", panel()), "NEW-FICTIONAL"); await submit(panel().querySelector("form"));
   const payload = JSON.parse(requests.find((item) => item.method === "put").data);
   assert.equal(payload.has_insurance, true); assert.equal(payload.insurance.member_number, "NEW-FICTIONAL"); assert.equal(payload.insurance.insurance_company_id, 3);
 });

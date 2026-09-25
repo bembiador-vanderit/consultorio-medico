@@ -5,7 +5,7 @@ import AccessSchedules from "../components/AccessSchedules";
 
 type Transfer = { id: number; initiator_id: number; target_id: number; initiator_name?: string; target_name?: string; replace_initiator: boolean; expires_at: string };
 type Audit = { id: number; actor_id: number; action: string; outcome: string; created_at: string };
-const capabilities = [{ code: "patients:access", label: "Pacientes, agenda y reportes" }, { code: "clinical:access", label: "Trabajo clínico (requiere rol médico)" }];
+const capabilities = [{ code: "insurance:manage", label: "Seguros y coberturas administrativas" }, { code: "patients:access", label: "Pacientes, agenda y reportes" }, { code: "clinical:access", label: "Trabajo clínico (requiere rol médico)" }];
 
 export default function AdministrationSecurity({ user }: { user: User }) {
   const admin = user.roles.includes("admin");

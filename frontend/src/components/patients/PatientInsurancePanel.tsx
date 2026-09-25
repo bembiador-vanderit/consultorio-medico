@@ -1,136 +1,69 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Alert, Button, Card, Checkbox, EmptyState, FormField, FormSection, Input, LoadingState, Modal, Select, StatusBadge } from "../../ui";
+import { Alert, Button, Card, Checkbox, EmptyState, FormField, Input, LoadingState, Modal, Select, StatusBadge } from "../../ui";
 import "../../pages/patients.css";
 import { api } from "../../services/api";
-import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
+import type { InsuranceCompany, InsurancePlan, PatientInsurance } from "../../types/insurance";
 import type { User } from "../../types/user";
+import { insuranceError } from "../../services/insurance";
 
-type Props = {
-  patientId: number;
-  patientName: string;
-  user: User;
-  onClose: () => void;
-};
-
+type Props = { patientId: number; patientName: string; user: User; onClose: () => void };
+const empty = { insurance_company_id: "", plan_id: "", plan_name: "", member_number: "", policy_holder: "", relationship_to_holder: "", valid_from: "", valid_until: "", administrative_notes: "", is_primary: true, is_active: true };
 export default function PatientInsurancePanel({ patientId, patientName, user, onClose }: Props) {
   const [items, setItems] = useState<PatientInsurance[]>([]);
   const [companies, setCompanies] = useState<InsuranceCompany[]>([]);
-  const [companyId, setCompanyId] = useState("");
-  const [memberNumber, setMemberNumber] = useState("");
-  const [planName, setPlanName] = useState("");
-  const [isPrimary, setIsPrimary] = useState(true);
-  const [newCompany, setNewCompany] = useState("");
-  const [newCode, setNewCode] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const canManageCompanies = user.roles.includes("admin");
-
+  const [plans, setPlans] = useState<InsurancePlan[]>([]);
+  const [form, setForm] = useState(empty);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const canWrite = !!user.permissions?.includes("insurance:manage") && !!user.permissions?.includes("patients:access");
   async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      const [{ data: patientInsurances }, { data: insuranceCompanies }] = await Promise.all([
-        api.get<PatientInsurance[]>(`/insurance/patients/${patientId}`),
-        api.get<InsuranceCompany[]>("/insurance/companies"),
-      ]);
-      setItems(patientInsurances);
-      setCompanies(insuranceCompanies);
-      if (!companyId && insuranceCompanies.length > 0) setCompanyId(String(insuranceCompanies[0].id));
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "No fue posible cargar los seguros del paciente.");
-    } finally {
-      setLoading(false);
-    }
+    const [i, c, p] = await Promise.all([api.get(`/insurance/patients/${patientId}`), api.get("/insurance/companies?include_inactive=true"), api.get("/insurance/plans?include_inactive=true")]);
+    setItems(i.data); setCompanies(c.data); setPlans(p.data);
   }
-
-  useEffect(() => { void load(); }, [patientId]);
-
-  async function addInsurance(event: FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    setError("");
+  useEffect(() => { setLoading(true); setForm(empty); setEditing(null); load().catch(e => setError(insuranceError(e))).finally(() => setLoading(false)); }, [patientId]);
+  async function save(e: FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    const payload = { ...form, insurance_company_id: Number(form.insurance_company_id), plan_id: form.plan_id ? Number(form.plan_id) : null,
+      plan_name: form.plan_name || null, policy_holder: form.policy_holder || null, relationship_to_holder: form.relationship_to_holder || null,
+      valid_from: form.valid_from || null, valid_until: form.valid_until || null, administrative_notes: form.administrative_notes || null };
     try {
-      await api.post(`/insurance/patients/${patientId}`, {
-        insurance_company_id: Number(companyId),
-        member_number: memberNumber.trim(),
-        plan_name: planName.trim() || null,
-        is_primary: isPrimary,
-      });
-      setMemberNumber("");
-      setPlanName("");
-      await load();
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      setError(Array.isArray(detail) ? detail.map((item: any) => item.msg).join(", ") : detail || "No fue posible registrar el seguro.");
-    } finally {
-      setSaving(false);
-    }
+      if (editing) await api.put(`/insurance/patients/${patientId}/${editing}`, payload);
+      else await api.post(`/insurance/patients/${patientId}`, payload);
+      setForm(empty); setEditing(null); await load();
+    } catch (e) { setError(insuranceError(e)); } finally { setSaving(false); }
   }
-
-  async function deactivateInsurance(item: PatientInsurance) {
-    if (!window.confirm(`¿Desea desactivar el seguro ${item.insurance_company_name} del paciente? El registro se conservará en el historial.`)) return;
-    setSaving(true);
-    setError("");
-    try {
-      await api.delete(`/insurance/patients/${patientId}/${item.id}`);
-      await load();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "No fue posible desactivar el seguro.");
-    } finally {
-      setSaving(false);
-    }
+  function edit(i: PatientInsurance) {
+    setEditing(i.id); setForm({ insurance_company_id: String(i.insurance_company_id), plan_id: i.plan_id ? String(i.plan_id) : "", plan_name: i.plan_name || "",
+      member_number: i.member_number, policy_holder: i.policy_holder || "", relationship_to_holder: i.relationship_to_holder || "", valid_from: i.valid_from || "",
+      valid_until: i.valid_until || "", administrative_notes: i.administrative_notes || "", is_primary: i.is_primary, is_active: i.is_active });
   }
-
-  async function createCompany(event: FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    setError("");
-    try {
-      const { data } = await api.post<InsuranceCompany>("/insurance/companies", {
-        name: newCompany.trim(),
-        code: newCode.trim() || null,
-      });
-      setNewCompany("");
-      setNewCode("");
-      setCompanies((current) => [...current, data].sort((a, b) => a.name.localeCompare(b.name)));
-      setCompanyId(String(data.id));
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "No fue posible registrar la ARS.");
-    } finally {
-      setSaving(false);
-    }
+  async function deactivate(i: PatientInsurance) {
+    setSaving(true); setError("");
+    try { await api.delete(`/insurance/patients/${patientId}/${i.id}`); await load(); } catch (e) { setError(insuranceError(e)); } finally { setSaving(false); }
   }
-
-  const activeItems = items.filter((item) => item.is_active);
-
-  return <Modal title="Seguro médico" description={patientName} open onClose={() => { if (!saving) onClose(); }} closeLabel="Cerrar seguro médico">
+  return <Modal title="Seguros" description={patientName} open onClose={() => { if (!saving) onClose(); }} closeLabel="Cerrar seguros">
     <div className="patient-form">
-      {error && <Alert tone="danger" title="No se pudo completar la operación">{error}</Alert>}
+      {error && <Alert tone="danger" title="No se pudo guardar">{error}</Alert>}
       {loading ? <LoadingState label="Cargando seguros..." /> : <>
-        <section aria-label="Seguros registrados">
-          <h2 className="atlas-card-title">Seguros registrados</h2>
-          {items.length === 0 ? <EmptyState title="Paciente sin Seguro" description="No hay afiliaciones registradas." /> : <ul className="patient-insurance-list">{items.map((item) => <li key={item.id}><Card compact>
-            <header><h3 className="atlas-card-title">{item.insurance_company_name}</h3><StatusBadge tone={item.is_active ? "success" : "neutral"}>{item.is_active ? item.is_primary ? "Activo · Principal" : "Activo" : "Inactivo"}</StatusBadge></header>
-            <dl className="patients-facts"><div><dt>Número de afiliado</dt><dd>{item.member_number}</dd></div><div><dt>Plan</dt><dd>{item.plan_name || "Sin plan registrado"}</dd></div></dl>
-            {item.is_active ? <Button variant="outline" disabled={saving} onClick={() => void deactivateInsurance(item)}>Desactivar</Button> : <p className="atlas-help">Registro conservado en el historial</p>}
-          </Card></li>)}</ul>}
-          {items.length > 0 && activeItems.length === 0 && <p className="atlas-help">Paciente sin Seguro activo.</p>}
-        </section>
-        {companies.length === 0 ? <Alert title="No hay compañías de seguros registradas">Un administrador debe crear la primera ARS.</Alert> : <form onSubmit={addInsurance} className="patient-form">
-          <FormSection title="Registrar seguro del paciente">
-            <FormField label="Compañía / ARS" required><Select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}</Select></FormField>
-            <FormField label="Número de afiliado" required><Input maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} /></FormField>
-            <FormField label="Plan"><Input maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} /></FormField>
-            <Checkbox label="Seguro principal" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} />
-          </FormSection><Button type="submit" loading={saving} loadingLabel="Guardando...">Agregar seguro</Button>
-        </form>}
-        {canManageCompanies && <form onSubmit={createCompany} className="patient-form">
-          <FormSection title="Administrar compañías de seguros">
-            <FormField label="Nombre de la ARS" required><Input minLength={2} maxLength={150} value={newCompany} onChange={(e) => setNewCompany(e.target.value)} /></FormField>
-            <FormField label="Código opcional"><Input maxLength={50} value={newCode} onChange={(e) => setNewCode(e.target.value)} /></FormField>
-          </FormSection><Button type="submit" variant="outline" disabled={saving}>Nueva ARS</Button>
+        <p className="atlas-help">Las coberturas ya registradas en citas conservan sus datos aunque cambie esta afiliación.</p>
+        {!items.length && <EmptyState title="Sin seguros registrados" description="Puede registrar una afiliación cuando disponga de los datos." />}
+        {items.map(i => <Card key={i.id} compact><h3>{i.insurance_company_name}</h3><StatusBadge tone={i.is_active ? "success" : "neutral"}>{i.is_active ? i.is_primary ? "Activo · Principal" : "Activo" : "Inactivo"}</StatusBadge>
+          <p>{i.plan_name || "Sin plan"} · Afiliado / póliza: {i.member_number}</p>
+          <p>Titular: {i.policy_holder || "No registrado"} · Relación: {i.relationship_to_holder || "No registrada"}</p>
+          <p>Vigencia: {i.valid_from || "Sin fecha inicial"} — {i.valid_until || "Sin fecha final"}</p>
+          {i.administrative_notes && <p>{i.administrative_notes}</p>}
+          {canWrite && <><Button variant="outline" disabled={saving} onClick={() => edit(i)}>Editar seguro</Button>{i.is_active && <Button variant="outline" disabled={saving} onClick={() => void deactivate(i)}>Desactivar</Button>}</>}
+        </Card>)}
+        {canWrite && <form className="patient-form" onSubmit={save}>
+          <h3>{editing ? "Editar afiliación" : "Registrar seguro"}</h3>
+          <FormField label="Aseguradora / ARS" required><Select value={form.insurance_company_id} onChange={e => setForm({ ...form, insurance_company_id: e.target.value, plan_id: "", plan_name: "" })}><option value="">Seleccione</option>{companies.filter(c => c.is_active || String(c.id) === form.insurance_company_id).map(c => <option key={c.id} value={c.id}>{c.name}{!c.is_active && " (inactiva)"}</option>)}</Select></FormField>
+          <FormField label="Plan"><Select value={form.plan_id} onChange={e => setForm({ ...form, plan_id: e.target.value, plan_name: "" })}><option value="">Sin plan de catálogo</option>{plans.filter(p => p.insurance_company_id === Number(form.insurance_company_id) && (p.is_active || String(p.id) === form.plan_id)).map(p => <option key={p.id} value={p.id}>{p.name}{!p.is_active && " (inactivo)"}</option>)}</Select></FormField>
+          {form.plan_name && !form.plan_id && <p>Plan anterior: {form.plan_name}</p>}
+          {([['member_number', 'Número de afiliado / póliza'], ['policy_holder', 'Titular'], ['relationship_to_holder', 'Relación con el titular'], ['valid_from', 'Vigente desde'], ['valid_until', 'Vigente hasta'], ['administrative_notes', 'Observaciones administrativas']] as const).map(([key, label]) => <FormField key={key} label={label} required={key === 'member_number'}><Input type={key.startsWith('valid_') ? 'date' : 'text'} maxLength={key === 'administrative_notes' ? 1000 : key === 'member_number' ? 100 : key === 'relationship_to_holder' ? 80 : 150} value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} /></FormField>)}
+          <Checkbox label="Seguro activo" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked, is_primary: e.target.checked && form.is_primary })} />
+          <Checkbox label="Seguro principal" checked={form.is_primary} disabled={!form.is_active} onChange={e => setForm({ ...form, is_primary: e.target.checked })} />
+          <Button type="submit" disabled={!form.insurance_company_id} loading={saving}>Guardar seguro</Button>
+          {editing && <Button variant="outline" disabled={saving} onClick={() => { setEditing(null); setForm(empty); }}>Cancelar edición</Button>}
         </form>}
       </>}
     </div>

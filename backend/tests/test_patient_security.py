@@ -281,6 +281,7 @@ def test_insurance_omission_and_existing_frontend_noop_preserve_every_field(pati
 @pytest.mark.parametrize("include_flag", [True, False])
 def test_explicit_insurance_update_adds_affiliation_and_preserves_history(patient_app, include_flag):
     ctx = patient_app
+    ctx["active"]["user"] = ctx["secretary"]
     fields = {"insurance": {"insurance_company_id": ctx["company"].id, "member_number": "NEW-FICTIONAL", "plan_name": "Plan ficticio"}}
     if include_flag:
         fields["has_insurance"] = True
@@ -294,6 +295,7 @@ def test_explicit_insurance_update_adds_affiliation_and_preserves_history(patien
 
 def test_explicit_insurance_optout_deactivates_without_deleting(patient_app):
     ctx = patient_app
+    ctx["active"]["user"] = ctx["secretary"]
     assert ctx["client"].put(f"/api/v1/patients/{ctx['a'].id}", json=identity_payload(ctx["a"], has_insurance=False)).status_code == 200
     ctx["db"].refresh(ctx["policy"])
     assert not ctx["policy"].is_active and not ctx["policy"].is_primary
@@ -303,6 +305,7 @@ def test_explicit_insurance_optout_deactivates_without_deleting(patient_app):
 @pytest.mark.parametrize("invalid", [{"insurance_company_id": 99999, "member_number": "FICTIONAL"}, {"insurance_company_id": 1, "member_number": "   "}, {"insurance_company_id": 1}, {"insurance_company_id": -1, "member_number": "FICTIONAL"}])
 def test_invalid_insurance_cannot_partially_update_identity_or_policy(patient_app, invalid):
     ctx = patient_app
+    ctx["active"]["user"] = ctx["secretary"]
     response = ctx["client"].put(f"/api/v1/patients/{ctx['a'].id}", json=identity_payload(ctx["a"], phone="8095559999", insurance=invalid, has_insurance=True))
     assert response.status_code == 422
     ctx["db"].refresh(ctx["a"])
@@ -325,6 +328,7 @@ def test_conflicting_optout_and_insurance_is_rejected_without_partial_state(pati
 @pytest.mark.parametrize("insurance_change", [False, True])
 def test_commit_failure_rolls_back_identity_and_insurance(patient_app, monkeypatch, insurance_change):
     ctx = patient_app
+    ctx["active"]["user"] = ctx["secretary"]
     def fail_commit():
         ctx["db"].flush()
         raise SQLAlchemyError("synthetic transaction failure")
@@ -342,6 +346,7 @@ def test_commit_failure_rolls_back_identity_and_insurance(patient_app, monkeypat
 
 def test_invalid_insurance_cannot_leave_created_patient(patient_app):
     ctx = patient_app
+    ctx["active"]["user"] = ctx["secretary"]
     before = ctx["db"].scalar(select(func.count()).select_from(Patient))
     response = ctx["client"].post("/api/v1/patients", json={"first_name": "Nuevo", "last_name": "Paciente", "date_of_birth": "2000-01-01", "has_insurance": True, "insurance": {"insurance_company_id": 99999, "member_number": "FICTIONAL"}})
     assert response.status_code == 422

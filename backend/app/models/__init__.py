@@ -13,7 +13,7 @@ from app.models.doctor_availability import DoctorAvailability
 from app.models.follow_up import FollowUp, Notification
 from app.models.communication_log import CommunicationLog
 from app.models.identity import Permission, Role, User
-from app.models.insurance import InsuranceCompany, PatientInsurance
+from app.models.insurance import InsuranceCompany, PatientInsurance, InsurancePlan, AppointmentCoverage
 from app.models.locality import Locality
 from app.models.regional import Country, RegionalSettings, TerritorialLevel, TerritorialUnit
 from app.models.patient import Patient
