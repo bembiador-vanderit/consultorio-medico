@@ -137,3 +137,7 @@ La [fase 6C4](docs/6c4-organizations.md) introduce organizaciones, membresías c
 ## Seguros / ARS (6C5)
 
 La [fase 6C5](docs/6c5-insurance-authorizations.md) incorpora planes, afiliaciones históricas y cobertura/autorización por cita, aisladas por organización. Prepara los importes para fases posteriores de Caja y Reclamaciones sin implementarlas.
+
+## Caja / Facturación (6C6)
+
+[6C6](docs/6c6-cash-billing.md) añade Finanzas: cajas por usuario/centro, cobros mixtos y parciales, documentos internos, saldos de pacientes y cierres auditables. El importe ARS permanece esperado, separado de lo recaudado. No incluye fiscalización ni reclamaciones ARS. Migración aditiva `0038_cash_billing`, sin cobros sembrados para el piloto.

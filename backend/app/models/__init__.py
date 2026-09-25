@@ -46,3 +46,5 @@ for _model, _columns in (
 ):
     Index("uq_tenant_" + _model.__tablename__ + "_" + ("_".join(_columns) or "singleton"),
           _model.__table__.c.organization_id, *[_model.__table__.c[name] for name in _columns], unique=True)
+
+from app.models.finance import CashRegister, Invoice, CashMovement

@@ -1,3 +1,4 @@
+from app.models.finance import Invoice
 from app.models.insurance import AppointmentCoverage
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -241,6 +242,8 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
         or payload.doctor_id != appointment.doctor_id
         or payload.center_id != appointment.center_id
     )
+    if identity_context_changed and db.scalar(select(Invoice.id).where(Invoice.appointment_id == appointment_id)) is not None:
+        raise HTTPException(409, "Una cita facturada conserva su paciente, médico y centro")
     if identity_context_changed and db.scalar(select(AppointmentCoverage.id).where(AppointmentCoverage.appointment_id == appointment_id)) is not None:
         raise HTTPException(409, "Una cita con cobertura de seguro conserva su paciente, médico y centro")
     specialty_changed = requested_specialty_id != appointment.specialty_id
@@ -336,4 +339,6 @@ def delete_appointment(appointment_id: int, user: User = Depends(access), db: Se
         raise HTTPException(status_code=409, detail="No se puede eliminar una cita con trazabilidad de cobertura")
     if db.scalar(select(AppointmentCoverage.id).where(AppointmentCoverage.appointment_id == appointment_id)) is not None:
         raise HTTPException(409, "No se puede eliminar una cita con cobertura de seguro; puede cancelarla")
+    if db.scalar(select(Invoice.id).where(Invoice.appointment_id == appointment_id)) is not None:
+        raise HTTPException(409, "No se puede eliminar una cita con historial financiero")
     db.delete(appointment); db.commit()
