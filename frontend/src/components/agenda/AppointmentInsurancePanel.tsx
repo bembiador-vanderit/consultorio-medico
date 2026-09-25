@@ -35,7 +35,13 @@ export default function AppointmentInsurancePanel({ appointment, user }: { appoi
       authorization_notes: form.authorization_notes || null, notes: form.notes || null }); apply(data); setNotice('Cobertura guardada.');
     } catch (e: any) { setError(insuranceError(e)); setBlocked(e?.response?.status === 409); } finally { setSaving(false); }
   }
-  async function reload() { setLoading(true); try { apply((await api.get(path)).data); setError(''); setBlocked(false); } catch(e) { setError(insuranceError(e)); } finally { setLoading(false); } }
+  async function reload() {
+    setLoading(true);
+    try {
+      const [c, i, s] = await Promise.all([api.get(path), api.get(`/insurance/patients/${appointment.patient_id}`), api.get('/insurance/authorization-states')]);
+      apply(c.data); setInsurances(i.data); setStates(s.data); setError(''); setBlocked(false);
+    } catch(e) { setError(insuranceError(e)); setBlocked(true); } finally { setLoading(false); }
+  }
   return <Card compact><h3>Cobertura / Autorización</h3>
     {error && <Alert tone="danger" title="No se pudo completar la operación">{error}<Button variant="outline" onClick={() => void reload()}>Recargar cobertura</Button></Alert>}
     {notice && <Alert title={notice} />}

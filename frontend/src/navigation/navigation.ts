@@ -32,6 +32,7 @@ export const navigationItems: readonly NavigationItem[] = [
 
 export type NavigationVisibilityResolver = (item: NavigationItem, user: Pick<User, "roles" | "permissions">) => boolean;
 export const roleNavigationVisibility: NavigationVisibilityResolver = (item, user) => {
+  if (item.view === "insurance" && !user.permissions?.includes("users:manage")) return false;
   const capability = ({ insurance: "users:manage", appointments: "patients:access", reports: "patients:access", patients: "patients:access", "follow-ups": "clinical:access", availability: "patients:access", "clinical-coverages": "patients:access", users: "users:manage", "care-context": "centers:manage" } as Record<string, string>)[item.view];
   if (capability && user.permissions && !user.permissions.includes(capability)) return false;
   return item.visibility.kind === "authenticated" || item.visibility.roles.some((role) => user.roles.includes(role));

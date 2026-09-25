@@ -179,3 +179,37 @@ def test_private_coverage_and_completed_affiliation_lock(insurance_api):
     with Session(engine) as db:
         db.get(Appointment,d[1]['appointment']).status='completed'; db.commit()
     assert c.put(path(d[1]),headers=h,json=coverage(d[1],revision=1)).status_code==409
+
+
+def test_authorization_timestamp_is_utc_and_returned_with_offset(insurance_api):
+    c,h,_,d=insurance_api
+    result=c.put(path(d[1]),headers=h,json=coverage(d[1],authorization_status='authorized',authorization_number='SYNTHETIC-AUTH',authorized_at='2026-10-01T10:00:00-04:00',authorized_amount='900.50'))
+    assert result.status_code==200,result.text
+    assert result.json()['authorized_at']=='2026-10-01T14:00:00Z'
+    assert result.json()['authorized_amount']=='900.50'
+    assert c.get(path(d[1]),headers=h).json()['authorized_at']=='2026-10-01T14:00:00Z'
+
+
+def test_inactive_and_mismatched_plan_rejected_without_mutation(insurance_api):
+    c,h,engine,d=insurance_api
+    with Session(engine) as db:
+        extra=InsuranceCompany(organization_id=1,name='Second synthetic ARS'); db.add(extra); db.flush()
+        plan=db.get(InsurancePlan,d[1]['plan']); plan.insurance_company_id=extra.id; db.commit()
+    url=f"/api/v1/insurance/patients/{d[1]['patient']}"
+    assert c.post(url,headers=h,json=affiliate(d[1])).status_code==422
+    with Session(engine) as db:
+        plan=db.get(InsurancePlan,d[1]['plan']); plan.insurance_company_id=d[1]['company']; plan.is_active=False; db.commit()
+    assert c.post(url,headers=h,json=affiliate(d[1])).status_code==422
+    assert c.put(path(d[1]),headers=h,json=coverage(d[1])).status_code==422
+
+
+def test_covered_appointment_cannot_change_patient_or_outlive_snapshot(insurance_api):
+    c,h,_,d=insurance_api
+    assert c.put(path(d[1]),headers=h,json=coverage(d[1])).status_code==200
+    body={'patient_id':d[2]['patient'],'doctor_id':1,'center_id':d[1]['center'],'appointment_date':'2026-10-01','appointment_time':'10:00:00'}
+    # Context protection happens before assignment validation, preserving the snapshot.
+    result=c.put(f"/api/v1/appointments/{d[1]['appointment']}",headers=h,json=body)
+    assert result.status_code==409,result.text
+    body['patient_id']=d[1]['patient']; body['appointment_date']='2027-01-01'
+    result=c.put(f"/api/v1/appointments/{d[1]['appointment']}",headers=h,json=body)
+    assert result.status_code==409,result.text

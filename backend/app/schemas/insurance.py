@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -83,6 +83,8 @@ class CoverageWrite(CoverageFields):
             raise ValueError("Registre el número de autorización")
         if self.authorized_at and self.authorized_at.tzinfo is None:
             raise ValueError("La fecha de autorización debe incluir zona horaria")
+        if self.authorized_at:
+            self.authorized_at = self.authorized_at.astimezone(timezone.utc)
         return self
 
 class CoverageResponse(CoverageFields):
@@ -92,3 +94,9 @@ class CoverageResponse(CoverageFields):
     expected_insurer_balance: Decimal
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("authorized_at")
+    @classmethod
+    def utc_if_naive(cls, value):
+        # SQLite test storage drops offsets; PostgreSQL retains timezone.
+        return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value

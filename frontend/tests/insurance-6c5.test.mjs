@@ -91,3 +91,10 @@ test('catalog edits insurer state without changing its identity',async () => {
  await act(async () => document.querySelector('input[type=checkbox]').click()); await submit();
  const call=calls.find(c=>c.method==='put'); assert.equal(call.url,'/insurance/companies/1'); assert.equal(JSON.parse(call.data).is_active,false);
 });
+
+test('insurance catalog navigation requires explicit administrative capability', async () => {
+ const { getNavigationItems } = await server.ssrLoadModule('/src/navigation/navigation.ts');
+ assert.ok(getNavigationItems({roles:['admin'],permissions:['users:manage']}).some(x=>x.view==='insurance'));
+ assert.ok(!getNavigationItems({roles:['doctor'],permissions:['patients:access']}).some(x=>x.view==='insurance'));
+ assert.ok(!getNavigationItems({roles:['admin'],permissions:[]}).some(x=>x.view==='insurance'));
+});
