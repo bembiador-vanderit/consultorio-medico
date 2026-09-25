@@ -5,7 +5,7 @@ from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
 from app.models import Role, User
 from app.models.administration import ReauthenticationGrant, SecurityAudit
-RESTRICTABLE = {"patients:access", "clinical:access"}
+RESTRICTABLE = {"patients:access", "clinical:access", "insurance:manage"}
 def effective_permissions(user: User) -> set[str]:
     permissions = {p.code for role in user.roles for p in role.permissions}
     if not any(role.code == "doctor" for role in user.roles):

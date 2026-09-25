@@ -80,6 +80,8 @@ class AppointmentDB:
     def scalar(self, _query):
         # These assignment unit tests use an already-selectable patient. Full
         # patient visibility/direct-ID checks use the real DB in test_patient_security.
+        if _query.column_descriptions[0].get("entity") is Appointment:
+            return self.appointment
         if _query.column_descriptions[0].get("entity") is Patient:
             return self.patient.id
         return None

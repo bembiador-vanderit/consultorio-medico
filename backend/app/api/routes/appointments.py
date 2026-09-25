@@ -1,3 +1,4 @@
+from app.models.insurance import AppointmentCoverage
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -231,7 +232,7 @@ def create_appointment(payload: AppointmentCreate, user: User = Depends(access),
 
 @router.put("/{appointment_id}", response_model=AppointmentResponse)
 def update_appointment(appointment_id: int, payload: AppointmentCreate, user: User = Depends(access), db: Session = Depends(get_db)):
-    appointment = db.get(Appointment, appointment_id)
+    appointment = db.scalar(select(Appointment).where(Appointment.id == appointment_id).with_for_update())
     if not appointment: raise HTTPException(status_code=404, detail="Cita no encontrada")
     ensure_appointment_access(user, appointment, db)
     requested_specialty_id = payload.specialty_id if payload.specialty_id is not None else appointment.specialty_id
@@ -240,12 +241,19 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
         or payload.doctor_id != appointment.doctor_id
         or payload.center_id != appointment.center_id
     )
+    if identity_context_changed and db.scalar(select(AppointmentCoverage.id).where(AppointmentCoverage.appointment_id == appointment_id)) is not None:
+        raise HTTPException(409, "Una cita con cobertura de seguro conserva su paciente, médico y centro")
     specialty_changed = requested_specialty_id != appointment.specialty_id
     context_changed = identity_context_changed or specialty_changed
     schedule_changed = (
         payload.appointment_date != appointment.appointment_date
         or payload.appointment_time != appointment.appointment_time
     )
+    coverage = db.scalar(select(AppointmentCoverage).where(AppointmentCoverage.appointment_id == appointment_id))
+    if schedule_changed and coverage:
+        snapshot = coverage.insurance_snapshot
+        if (snapshot.get("valid_from") and payload.appointment_date < date.fromisoformat(snapshot["valid_from"])) or (snapshot.get("valid_until") and payload.appointment_date > date.fromisoformat(snapshot["valid_until"])):
+            raise HTTPException(409, "La fecha está fuera de la vigencia de la cobertura registrada")
     if appointment.status == "completed" and context_changed:
         raise HTTPException(status_code=409, detail="El contexto de una cita finalizada es inmutable")
     if appointment.status == "completed" and payload.status != "completed":
@@ -319,11 +327,13 @@ def update_appointment(appointment_id: int, payload: AppointmentCreate, user: Us
 
 @router.delete("/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_appointment(appointment_id: int, user: User = Depends(access), db: Session = Depends(get_db)):
-    appointment = db.get(Appointment, appointment_id)
+    appointment = db.scalar(select(Appointment).where(Appointment.id == appointment_id).with_for_update())
     if not appointment: raise HTTPException(status_code=404, detail="Cita no encontrada")
     ensure_appointment_access(user, appointment, db)
     if db.scalar(select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)) is not None:
         raise HTTPException(status_code=409, detail="No se puede eliminar una cita con consulta clínica")
     if appointment.coverage_transfer is not None:
         raise HTTPException(status_code=409, detail="No se puede eliminar una cita con trazabilidad de cobertura")
+    if db.scalar(select(AppointmentCoverage.id).where(AppointmentCoverage.appointment_id == appointment_id)) is not None:
+        raise HTTPException(409, "No se puede eliminar una cita con cobertura de seguro; puede cancelarla")
     db.delete(appointment); db.commit()

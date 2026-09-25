@@ -12,6 +12,8 @@ from app.models.patient import Patient
 from app.models.locality import Locality
 from app.models.regional import Country, TerritorialLevel, TerritorialUnit
 from app.schemas.center import LocalityResponse
+from app.services.administration import effective_permissions
+from app.services.insurance import save_insurance, record
 from app.services.patient_demographics import normalize_document
 from app.schemas.patient import PatientCreate, PatientCreatedResponse, PatientDetailResponse, PatientIdentityResponse, PatientResponse, PatientUpdate
 from app.services.patient_scope import (
@@ -156,20 +158,14 @@ def _validate_insurance(payload, db: Session) -> InsuranceCompany:
     return company
 
 
-def _add_insurance(patient: Patient, payload, db: Session) -> None:
-    if not payload.has_insurance:
-        return
-    company = _validate_insurance(payload, db)
-    insurance = payload.insurance
-    item = PatientInsurance(
-        patient_id=patient.id,
-        insurance_company_id=company.id,
-        member_number=insurance.member_number.strip(),
-        plan_name=insurance.plan_name.strip() if insurance.plan_name else None,
-        is_primary=insurance.is_primary,
-        is_active=True,
-    )
-    db.add(item)
+def _require_insurance_write(user):
+    if "insurance:manage" not in effective_permissions(user):
+        raise HTTPException(403, "No tiene permiso para gestionar seguros")
+
+
+def _add_insurance(patient: Patient, payload, db: Session, user) -> None:
+    if payload.has_insurance:
+        save_insurance(db, user, patient.id, payload.insurance, commit=False, check_access=False)
 
 
 @router.post("", response_model=PatientCreatedResponse, status_code=status.HTTP_201_CREATED)
@@ -177,13 +173,14 @@ def create_patient(payload: PatientCreate, user=Depends(access), db: Session = D
     require_available_identity(db, date_of_birth=payload.date_of_birth, phone=payload.phone, email=payload.email)
     _validate_demographics(payload, db)
     if payload.has_insurance:
+        _require_insurance_write(user)
         _validate_insurance(payload, db)
     patient_data = payload.model_dump(exclude={"has_insurance", "insurance"})
     patient = Patient(**patient_data)
     try:
         db.add(patient)
         db.flush()
-        _add_insurance(patient, payload, db)
+        _add_insurance(patient, payload, db, user)
         proof = issue_patient_selection_token(user, patient.id)
         db.commit()
         db.refresh(patient)
@@ -218,6 +215,8 @@ def update_patient(patient_id: int, payload: PatientUpdate, user=Depends(access)
     deactivate_insurance = "has_insurance" in payload.model_fields_set and payload.has_insurance is False
     if deactivate_insurance and payload.insurance is not None:
         raise HTTPException(status_code=422, detail="No puede registrar un seguro y desactivarlo en la misma actualización")
+    if payload.insurance is not None or (deactivate_insurance and db.scalar(select(PatientInsurance.id).where(PatientInsurance.patient_id == patient_id, PatientInsurance.is_active.is_(True)).limit(1))):
+        _require_insurance_write(user)
     company = _validate_insurance(payload, db) if payload.insurance is not None else None
 
     patient_data = payload.model_dump(exclude={"has_insurance", "insurance"})
@@ -227,22 +226,7 @@ def update_patient(patient_id: int, payload: PatientUpdate, user=Depends(access)
     if {"document_type", "document_number"} & payload.model_fields_set:
         patient_data.update(document_type=payload.document_type, document_number=payload.document_number)
     if company is not None:
-        active_primary = db.scalars(
-            select(PatientInsurance).where(
-                PatientInsurance.patient_id == patient_id,
-                PatientInsurance.is_primary.is_(True),
-                PatientInsurance.is_active.is_(True),
-            )
-        ).all()
-        for item in active_primary:
-            item.is_primary = False
-        insurance = payload.insurance
-        db.add(PatientInsurance(
-            patient_id=patient_id, insurance_company_id=company.id,
-            member_number=insurance.member_number.strip(),
-            plan_name=insurance.plan_name.strip() if insurance.plan_name else None,
-            is_primary=insurance.is_primary, is_active=True,
-        ))
+        save_insurance(db, user, patient_id, payload.insurance, commit=False, check_access=False)
     elif deactivate_insurance:
         active_items = db.scalars(
             select(PatientInsurance).where(
@@ -253,6 +237,7 @@ def update_patient(patient_id: int, payload: PatientUpdate, user=Depends(access)
         for item in active_items:
             item.is_active = False
             item.is_primary = False
+            record(db, user, "patient_deactivated", item.id)
 
     for field, value in patient_data.items():
         setattr(patient, field, value)

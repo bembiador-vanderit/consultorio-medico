@@ -1,3 +1,4 @@
+import AppointmentInsurancePanel from "./AppointmentInsurancePanel";
 import type { Appointment } from "../../types/appointment";
 import type { User } from "../../types/user";
 import { Alert, Button, Divider, Modal } from "../../ui";
@@ -100,6 +101,7 @@ export function AppointmentDrawer({
             El horario y el contexto de la cita están protegidos.
           </Alert>
         )}
+        {open && user.permissions?.includes("patients:access") && <AppointmentInsurancePanel key={appointment.id} appointment={appointment} user={user} />}
         <Divider />
         <section aria-labelledby="agenda-actions">
           <h3 id="agenda-actions" className="atlas-card-title">

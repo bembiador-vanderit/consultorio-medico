@@ -35,6 +35,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
   const [dateOfBirth, setDateOfBirth] = useState(patient?.date_of_birth || "");
   const [phone, setPhone] = useState(patient?.phone || "");
   const [email, setEmail] = useState(patient?.email || "");
+  const canManageInsurance = !!user.permissions?.includes("insurance:manage");
   const [hasInsurance, setHasInsurance] = useState(false);
   const [companies, setCompanies] = useState<InsuranceCompany[]>([]);
   const [companyId, setCompanyId] = useState("");
@@ -102,7 +103,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
     setSaving(true);
     setError("");
 
-    if (hasInsurance && (!companyId || !memberNumber.trim())) {
+    if (canManageInsurance && hasInsurance && (!companyId || !memberNumber.trim())) {
       setError("Para registrar un seguro debe seleccionar la ARS e indicar el número de afiliado.");
       setSaving(false);
       return;
@@ -123,7 +124,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
       date_of_birth: dateOfBirth,
       phone: phone.trim() || null,
       email: email.trim() || null,
-      ...(!patient || insuranceDirty || (insuranceReady && insuranceChanged) ? { has_insurance: hasInsurance,
+      ...(canManageInsurance && (!patient || insuranceDirty || (insuranceReady && insuranceChanged)) ? { has_insurance: hasInsurance,
       insurance: insuranceChanged ? {
         insurance_company_id: Number(companyId),
         member_number: memberNumber.trim(),
@@ -208,11 +209,11 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
             <FormSection title={<SectionTitle icon="shield">Seguro médico</SectionTitle>} className="patient-form-insurance-section">
               {insuranceError && <div className="patient-form-wide"><Alert tone="warning" title="Seguro no disponible">{insuranceError}</Alert></div>}
               {loadingInsurance && <p role="status" className="atlas-help patient-form-wide">Cargando seguro...</p>}
-              <div className="patient-form-wide patient-form-insurance-choice-row"><p className="patient-form-insurance-question">¿El paciente tiene seguro médico?</p><div className="patient-form-actions"><Radio name={insuranceGroupId} label="Sí" checked={hasInsurance} disabled={!insuranceReady || loadingInsurance} onChange={() => selectInsurance(true)} /><Radio name={insuranceGroupId} label="No" checked={!hasInsurance} disabled={!insuranceReady || loadingInsurance} onChange={() => selectInsurance(false)} /></div></div>
+              <div className="patient-form-wide patient-form-insurance-choice-row"><p className="patient-form-insurance-question">¿El paciente tiene seguro médico?</p><div className="patient-form-actions"><Radio name={insuranceGroupId} label="Sí" checked={hasInsurance} disabled={!canManageInsurance || !insuranceReady || loadingInsurance} onChange={() => selectInsurance(true)} /><Radio name={insuranceGroupId} label="No" checked={!hasInsurance} disabled={!canManageInsurance || !insuranceReady || loadingInsurance} onChange={() => selectInsurance(false)} /></div></div>
               {hasInsurance && <>
-                <FormField label="ARS / Seguro" required requiredLabel="*"><Select disabled={!insuranceReady || loadingInsurance} value={companyId} onChange={(e) => setCompanyId(e.target.value)}><option value="">Seleccione una ARS</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}</Select></FormField>
-                <FormField label="Número de póliza / Afiliado" required requiredLabel="*"><Input disabled={!insuranceReady || loadingInsurance} maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} /></FormField>
-                <div className="patient-form-wide"><FormField label="Plan"><Input disabled={!insuranceReady || loadingInsurance} maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} /></FormField></div>
+                <FormField label="ARS / Seguro" required requiredLabel="*"><Select disabled={!canManageInsurance || !insuranceReady || loadingInsurance} value={companyId} onChange={(e) => setCompanyId(e.target.value)}><option value="">Seleccione una ARS</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}</Select></FormField>
+                <FormField label="Número de póliza / Afiliado" required requiredLabel="*"><Input disabled={!canManageInsurance || !insuranceReady || loadingInsurance} maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} /></FormField>
+                <div className="patient-form-wide"><FormField label="Plan"><Input disabled={!canManageInsurance || !insuranceReady || loadingInsurance} maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} /></FormField></div>
               </>}
               {!hasInsurance && insuranceReady && <p className="atlas-help patient-form-wide">Paciente sin Seguro</p>}
             </FormSection>

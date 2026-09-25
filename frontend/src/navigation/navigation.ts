@@ -1,6 +1,6 @@
 import type { User } from "../types/user";
 
-export type AppView = "security" | "dashboard" | "patients" | "appointments" | "reports" | "care-context" | "availability" | "users" | "follow-ups" | "consultation" | "clinical-coverages";
+export type AppView = "insurance" | "security" | "dashboard" | "patients" | "appointments" | "reports" | "care-context" | "availability" | "users" | "follow-ups" | "consultation" | "clinical-coverages";
 /** Receives the requested transition and may defer it until the current view is ready to leave. */
 export type NavigationGuard = (proceed: () => void) => void;
 export type NavigationGuardRegistrar = (guard: NavigationGuard | null) => void;
@@ -17,6 +17,7 @@ export type NavigationItem = {
 
 /** Mirrors App.tsx at the approved base. Visibility never grants authorization. */
 export const navigationItems: readonly NavigationItem[] = [
+  { id: "insurance", label: "Aseguradoras / ARS", view: "insurance", icon: "center", group: "administration", order: 95, visibility: { kind: "any-role", roles: ["admin"] } },
   { id: "security", label: "Seguridad", view: "security", icon: "users", group: "administration", order: 100, visibility: { kind: "authenticated" } },
   { id: "dashboard", label: "Dashboard", view: "dashboard", icon: "home", group: "general", order: 10, visibility: { kind: "authenticated" } },
   { id: "appointments", label: "Agenda", view: "appointments", icon: "calendar", group: "general", order: 20, visibility: { kind: "authenticated" } },
@@ -31,7 +32,7 @@ export const navigationItems: readonly NavigationItem[] = [
 
 export type NavigationVisibilityResolver = (item: NavigationItem, user: Pick<User, "roles" | "permissions">) => boolean;
 export const roleNavigationVisibility: NavigationVisibilityResolver = (item, user) => {
-  const capability = ({ appointments: "patients:access", reports: "patients:access", patients: "patients:access", "follow-ups": "clinical:access", availability: "patients:access", "clinical-coverages": "patients:access", users: "users:manage", "care-context": "centers:manage" } as Record<string, string>)[item.view];
+  const capability = ({ insurance: "users:manage", appointments: "patients:access", reports: "patients:access", patients: "patients:access", "follow-ups": "clinical:access", availability: "patients:access", "clinical-coverages": "patients:access", users: "users:manage", "care-context": "centers:manage" } as Record<string, string>)[item.view];
   if (capability && user.permissions && !user.permissions.includes(capability)) return false;
   return item.visibility.kind === "authenticated" || item.visibility.roles.some((role) => user.roles.includes(role));
 };

@@ -133,3 +133,7 @@ Las garantías de una consulta por cita, revisión optimista y serialización de
 Los [horarios laborales y políticas de acceso (6C4C)](docs/6c4c-access-schedules.md) permiten restricciones opcionales por membresía, zona horaria por organización, horas extra y días sin acceso. Se configuran en Seguridad y conservan el acceso actual del piloto hasta activarse expresamente.
 
 La [fase 6C4](docs/6c4-organizations.md) introduce organizaciones, membresías con roles y estado propios, y aislamiento por host en el backend. El piloto se migra a la organización inicial `pilot` conservando centros e historiales. Configure `TENANT_HOSTS_JSON` y, si se prepara un host de plataforma, `PLATFORM_HOSTS_JSON` según la documentación antes de publicar nuevos hosts. Se requiere un nuevo inicio de sesión tras la migración. Este cambio depende de 6C3/PR #48 y se integra hacia `feat/complete-care-context`; Cardiología permanece pausada.
+
+## Seguros / ARS (6C5)
+
+La [fase 6C5](docs/6c5-insurance-authorizations.md) incorpora planes, afiliaciones históricas y cobertura/autorización por cita, aisladas por organización. Prepara los importes para fases posteriores de Caja y Reclamaciones sin implementarlas.
