@@ -1,4 +1,4 @@
-from app.api.routes import finance
+from app.api.routes import finance, ars
 import asyncio
 from contextlib import asynccontextmanager, suppress
 
@@ -69,5 +69,5 @@ app.add_middleware(
     expose_headers=["X-Access-Schedule"],
 )
 
-for router in (finance.router, organizations.router, administration.router, health.router, auth.router, users.router, localities.router, centers.router, regional.router, patients.router, insurance.router, clinical_history.router, clinical_addenda.router, clinical_orders.router, diagnoses.router, prescriptions.router, vital_signs.router, appointments.router, clinical_coverages.router, doctor_availability.router, follow_ups.router, communications.router, clinical_catalog.router, reports.router, report_communications.router):
+for router in (ars.router, finance.router, organizations.router, administration.router, health.router, auth.router, users.router, localities.router, centers.router, regional.router, patients.router, insurance.router, clinical_history.router, clinical_addenda.router, clinical_orders.router, diagnoses.router, prescriptions.router, vital_signs.router, appointments.router, clinical_coverages.router, doctor_availability.router, follow_ups.router, communications.router, clinical_catalog.router, reports.router, report_communications.router):
     app.include_router(router, prefix="/api/v1")

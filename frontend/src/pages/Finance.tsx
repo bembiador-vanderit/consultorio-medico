@@ -4,19 +4,21 @@ import { api } from '../services/api';
 import { financeError, kinds, methods, money, states, timestamp, type Invoice, type Method, type Movement, type Register } from '../services/finance';
 import { Alert, Button, Card, FormField, Input, Select } from '../ui';
 import FinanceCharge from '../components/FinanceCharge';
+import ArsFinance from '../components/ArsFinance';
 import './finance.css';
 
-const tabs = ['Caja', 'Facturación', 'Movimientos del día', 'Cuentas pendientes de pacientes'];
+const tabs = ['Caja', 'Facturación', 'Movimientos del día', 'Cuentas pendientes de pacientes', 'Reclamaciones ARS', 'Pagos ARS / remesas', 'Cuentas por cobrar ARS', 'Conciliación / resumen'];
 type Summary = { collected: Record<Method, string>; reversed: Record<Method, string>; copays: string; private: string; patient_pending: string; ars_expected: string; adjustments: string };
 type Action = { url: string; body: unknown; title: string };
 
 export default function Finance({ user }: { user: User }) {
   const canRead = !!user.permissions?.includes('finance:read');
+  const canReadArs = !!user.permissions?.includes('ars:read');
   const canCollect = !!user.permissions?.includes('finance:collect');
   const canManage = !!user.permissions?.includes('finance:manage');
   const [centers, setCenters] = useState<{ id: number; name: string }[]>([]);
   const [center, setCenter] = useState('');
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(canRead ? 0 : 4);
   const [day, setDay] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
   const [registers, setRegisters] = useState<Register[]>([]);
   const [registerId, setRegisterId] = useState('');
@@ -41,13 +43,13 @@ export default function Finance({ user }: { user: User }) {
   const register = registers.find(r => String(r.id) === registerId);
   const active = register?.state === 'open' && (register.opened_by === user.id || canManage) ? register : undefined;
   useEffect(() => {
-    if (!canRead) return;
+    if (!canRead && !canReadArs) return;
     const controller = new AbortController();
-    api.get('/finance/centers', { signal: controller.signal }).then(r => { setCenters(r.data); setCenter(String(r.data[0]?.id || '')); }).catch(e => { if (!controller.signal.aborted) setError(financeError(e)); });
+    api.get(canRead ? '/finance/centers' : '/ars/centers', { signal: controller.signal }).then(r => { setCenters(r.data); setCenter(String(r.data[0]?.id || '')); }).catch(e => { if (!controller.signal.aborted) setError(financeError(e)); });
     return () => controller.abort();
-  }, [canRead]);
+  }, [canRead, canReadArs]);
   useEffect(() => {
-    if (!center || !canRead) return;
+    if (!center || !canRead || tab >= 4) return;
     const controller = new AbortController(); setLoading(true); setError('');
     setRegisters([]); setSummary(null); setInvoices([]); setMovements([]);
     const params = { center_id: center, day, offset, limit: 50 };
@@ -73,7 +75,7 @@ export default function Finance({ user }: { user: User }) {
     try { const r = await api.get(`/finance/invoices/${id}`); setDetail(r.data); }
     catch (e) { setError(financeError(e)); } finally { setBusy(false); }
   }
-  if (!canRead) return <Alert tone="danger" title="Sin permiso para Finanzas" />;
+  if (!canRead && !canReadArs) return <Alert tone="danger" title="Sin permiso para Finanzas" />;
   return <section className="finance-workspace">
     <header><h1>Finanzas</h1><p>Caja y facturación interna · DOP</p></header>
     <div className="finance-controls">
@@ -82,11 +84,12 @@ export default function Finance({ user }: { user: User }) {
       <Button variant="outline" disabled={loading || busy} onClick={() => setVersion(v => v + 1)}>Actualizar</Button>
       {canCollect && <Button disabled={!center || loading || busy || !!action || !!charge} onClick={() => { setDetail(null); setCharge('new'); }}>Nuevo cobro</Button>}
     </div>
-    <nav aria-label="Secciones de Finanzas" className="finance-tabs">{tabs.map((t, i) => <Button key={t} variant={tab === i ? 'primary' : 'outline'} aria-current={tab === i ? 'page' : undefined} disabled={busy || !!action || !!charge} onClick={() => { resetContext(); setTab(i); }}>{t}</Button>)}</nav>
+    <nav aria-label="Secciones de Finanzas" className="finance-tabs">{tabs.map((t, i) => (i < 4 ? canRead : canReadArs) ? <Button key={t} variant={tab === i ? 'primary' : 'outline'} aria-current={tab === i ? 'page' : undefined} disabled={busy || !!action || !!charge} onClick={() => { resetContext(); setTab(i); }}>{t}</Button> : null)}</nav>
     {error && <Alert tone="danger" title={error} />}{success && <Alert tone="success" title={success} />}
     {loading && <p role="status">Cargando Finanzas…</p>}
     {action && <Card><h2>{action.title}</h2><p>Confirme para registrar esta operación en el historial.</p><Button loading={busy} onClick={() => void execute()}>Confirmar</Button><Button variant="outline" disabled={busy} onClick={() => setAction(null)}>Cancelar</Button></Card>}
     {charge && <FinanceCharge key={`${center}-${charge === 'new' ? 'new' : charge.id}`} centerId={Number(center)} register={active} invoice={charge === 'new' ? undefined : charge} onCancel={() => { setCharge(null); setVersion(v => v + 1); }} onDone={i => { setCharge(null); setDetail(null); setSuccess(`${i.number}: saldo del paciente ${money(i.balance)}.`); setVersion(v => v + 1); }} />}
+    {tab >= 4 && <ArsFinance section={tab - 4} centerId={Number(center)} user={user} />}
     {tab === 0 && <>
       {summary && <><div className="finance-summary">
         <Card><h3>Copagos netos del día</h3><strong>{money(summary.copays)}</strong></Card><Card><h3>Particulares netos del día</h3><strong>{money(summary.private)}</strong></Card>

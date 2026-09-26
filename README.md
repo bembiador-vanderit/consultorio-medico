@@ -141,3 +141,7 @@ La [fase 6C5](docs/6c5-insurance-authorizations.md) incorpora planes, afiliacion
 ## Caja / Facturación (6C6)
 
 [6C6](docs/6c6-cash-billing.md) añade Finanzas: cajas por usuario/centro, cobros mixtos y parciales, documentos internos, saldos de pacientes y cierres auditables. El importe ARS permanece esperado, separado de lo recaudado. No incluye fiscalización ni reclamaciones ARS. Migración aditiva `0038_cash_billing`, sin cobros sembrados para el piloto.
+
+## Reclamaciones y cuentas por cobrar ARS (6C7)
+
+[6C7](docs/6c7-ars-receivables.md) convierte el importe esperado de ARS en reclamaciones con fotografía histórica, glosas, correcciones, remesas, aplicaciones, reversos, aging y conciliación. Estos cobros permanecen separados de Caja y del saldo del paciente. Migración aditiva `0039_ars_receivables`, sin reclamaciones sembradas.

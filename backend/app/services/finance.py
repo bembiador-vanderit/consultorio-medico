@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models import Appointment, CareCenter, Patient
 from app.models.administration import SecurityAudit
 from app.models.finance import CashRegister, CashMovement, Invoice
+from app.models.ars import ArsClaim
 from app.models.insurance import AppointmentCoverage
 from app.services.administration import effective_permissions
 from app.services.appointment_scope import assigned_center_ids, is_role, ensure_appointment_access
@@ -203,6 +204,13 @@ def create_invoice(db, user, payload):
     if coverage and (coverage.base_amount != payload.base_amount or coverage.service != payload.concept):
         raise HTTPException(409, 'Importes o concepto distintos de la cobertura; vuelva a consultarla')
     ars = coverage.covered_amount if coverage else Decimal('0.00')
+    if payload.appointment_id:
+        claim = db.scalar(select(ArsClaim).where(ArsClaim.appointment_id == payload.appointment_id,
+                                                  ArsClaim.state != 'cancelled'))
+        if claim and (claim.coverage_id != (coverage.id if coverage else None) or
+                      claim.claimed_amount != ars or claim.snapshot.get('base_amount') != str(payload.base_amount) or
+                      claim.snapshot.get('patient_amount') != str(payload.base_amount - ars)):
+            raise HTTPException(409, 'La reclamación ARS vigente conserva otros importes; corrija el flujo antes de facturar')
     row = Invoice(center_id=payload.center_id, patient_id=patient.id, patient_name=f'{patient.first_name} {patient.last_name}',
         appointment_id=payload.appointment_id, coverage_id=coverage.id if coverage else None,
         coverage_snapshot=({'revision': coverage.revision, 'insurance': coverage.insurance_snapshot,
@@ -276,9 +284,15 @@ def adjust_register(db, user, register_id, payload):
 
 
 def void_invoice(db, user, invoice_id, payload):
+    row = invoice_access(db, user, invoice_id)
+    if row.appointment_id:
+        db.scalar(select(Appointment).where(Appointment.id == row.appointment_id).with_for_update())
     row = invoice_access(db, user, invoice_id, lock=True)
     if row.voided_at or row.paid_amount:
         raise HTTPException(409, 'La factura está anulada o tiene pagos; revierta los cobros primero')
+    if row.appointment_id and db.scalar(select(ArsClaim.id).where(ArsClaim.appointment_id == row.appointment_id,
+                                                              ArsClaim.state != 'cancelled')):
+        raise HTTPException(409, 'Cancele la reclamación ARS vigente antes de anular esta factura')
     row.voided_at, row.voided_by, row.void_reason = datetime.utcnow(), user.id, payload.reason
     audit(db, user, 'invoice_void', row.id, row.center_id)
     commit(db)
