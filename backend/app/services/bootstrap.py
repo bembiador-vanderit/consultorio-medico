@@ -5,7 +5,7 @@ from app.core.security import hash_password
 from app.models import Permission, Role, User, Organization, OrganizationMembership
 
 ROLE_PERMISSIONS = {
-    "admin": ("Administrador", ["users:manage", "patients:access", "centers:access", "centers:manage", "insurance:manage", "finance:read", "finance:collect", "finance:manage"]),
+    "admin": ("Administrador", ["users:manage", "patients:access", "centers:access", "centers:manage", "insurance:manage", "finance:read", "finance:collect", "finance:manage", "ars:read", "ars:claim", "ars:send", "ars:glosa", "ars:payment", "ars:reconcile", "ars:report"]),
     "doctor": ("Doctor", ["patients:access", "clinical:access", "centers:access"]),
     "secretary": ("Secretaria", ["patients:access", "centers:access", "insurance:manage", "finance:read", "finance:collect"]),
 }

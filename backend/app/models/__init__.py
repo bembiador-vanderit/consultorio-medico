@@ -48,3 +48,4 @@ for _model, _columns in (
           _model.__table__.c.organization_id, *[_model.__table__.c[name] for name in _columns], unique=True)
 
 from app.models.finance import CashRegister, Invoice, CashMovement
+from app.models.ars import ArsClaim, ArsClaimEvent, ArsRemittance, ArsApplication

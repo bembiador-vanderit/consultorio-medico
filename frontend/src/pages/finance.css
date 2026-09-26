@@ -11,3 +11,7 @@
 .finance-table th { color: #475569; background: #f8fafc; white-space: nowrap; }
 .finance-workspace .atlas-button { margin-right: 6px; }
 @media(max-width: 700px) { .finance-workspace { padding: 12px; } .finance-controls { align-items: stretch; flex-direction: column; } }
+.ars-workspace { display: grid; gap: 1rem; }
+.ars-table-wrap { overflow-x: auto; }
+.ars-table-wrap table { width: 100%; border-collapse: collapse; min-width: 760px; }
+.ars-table-wrap th, .ars-table-wrap td { padding: .6rem; text-align: left; border-bottom: 1px solid #dbe7f3; }
