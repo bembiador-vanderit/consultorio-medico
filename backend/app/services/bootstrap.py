@@ -2,16 +2,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import hash_password
-from app.models import Permission, Role, User
+from app.models import Permission, Role, User, Organization, OrganizationMembership
 
 ROLE_PERMISSIONS = {
-    "admin": ("Administrador", ["users:manage", "patients:access", "centers:access", "centers:manage"]),
-    "doctor": ("Doctor", ["patients:access", "centers:access"]),
-    "secretary": ("Secretaria", ["patients:access", "centers:access"]),
+    "admin": ("Administrador", ["users:manage", "patients:access", "centers:access", "centers:manage", "insurance:manage", "finance:read", "finance:collect", "finance:manage", "ars:read", "ars:claim", "ars:send", "ars:glosa", "ars:payment", "ars:reconcile", "ars:report"]),
+    "doctor": ("Doctor", ["patients:access", "clinical:access", "centers:access"]),
+    "secretary": ("Secretaria", ["patients:access", "centers:access", "insurance:manage", "finance:read", "finance:collect"]),
 }
 
 
 def seed_identity(db: Session) -> None:
+    if db.get(Organization, 1) is None:
+        db.add(Organization(id=1, slug="pilot", name="Organización inicial", timezone="America/Santo_Domingo"))
+        db.flush()
     permissions = {}
     for code in {item for _, values in ROLE_PERMISSIONS.items() for item in values[1]}:
         permission = db.scalar(select(Permission).where(Permission.code == code))
@@ -33,7 +36,7 @@ def seed_identity(db: Session) -> None:
     if (
         settings.initial_admin_email
         and settings.initial_admin_password
-        and db.scalar(select(User).where(User.email == settings.initial_admin_email.lower())) is None
+        and db.scalar(select(User.id).limit(1)) is None
     ):
         db.add(
             User(
@@ -41,6 +44,7 @@ def seed_identity(db: Session) -> None:
                 full_name=settings.initial_admin_name,
                 password_hash=hash_password(settings.initial_admin_password),
                 roles=[roles["admin"]],
+                memberships=[OrganizationMembership(organization_id=1, state="active", roles=[roles["admin"]])],
             )
         )
     db.commit()

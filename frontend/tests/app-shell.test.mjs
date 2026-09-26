@@ -1,0 +1,256 @@
+import { after, afterEach, beforeEach, test } from "node:test";
+import assert from "node:assert/strict";
+import { createServer } from "vite";
+import { createBrowser } from "./browser.mjs";
+import { appointmentScheduled, consultationWorkspace } from "./fixtures/clinical.mjs";
+
+const { dom, setDesktop } = createBrowser();
+const { createElement: h, act } = await import("react");
+const { createRoot } = await import("react-dom/client");
+const server = await createServer({ server: { middlewareMode: true, ws: false }, appType: "custom", optimizeDeps: { noDiscovery: true, include: [] } });
+const { default: App } = await server.ssrLoadModule("/src/App.tsx");
+const { api, setAccessToken } = await server.ssrLoadModule("/src/services/api.ts");
+const originalAdapter = api.defaults.adapter;
+const host = document.getElementById("root");
+let root, requests, data;
+const baseLabels = ["Dashboard", "Agenda", "Reportes de citas", "Pacientes"];
+const headings = { Seguridad: "Seguridad y administración", Dashboard: "Hola, Personal de prueba", Agenda: "Agenda", "Reportes de citas": "Reportes de citas", Pacientes: "Pacientes", Seguimientos: "Seguimiento de pacientes", "Mi disponibilidad": "Mi disponibilidad", "Cobertura clínica": "Cobertura clínica", "Usuarios y roles": "Usuarios y roles", "Localidades y centros": "Localidades y centros" };
+const listEndpoints = ["/administration/transfers", "/administration/audit?offset=0&limit=20","/patients", "/appointments", "/centers/mine", "/follow-ups", "/doctor-availability", "/clinical-coverages", "/users", "/centers", "/localities/all", "/clinical-catalog/specialties", "/appointments/doctors"];
+
+beforeEach(() => {
+  root = createRoot(host);
+  requests = [];
+  data = new Map(listEndpoints.map((path) => [path, []]));
+  data.set("/patients/count", { count: 0 });
+  data.set("/appointments/scope-options", { doctors: [], centers: [] });
+  data.set("/follow-ups/notifications", []);
+  data.set("/follow-ups/notifications/sync", {});
+  data.set("/auth/refresh", { access_token: "fixture-only" });
+  data.set("/auth/logout", null);
+  setAccessToken(null);
+  setDesktop(true);
+  api.defaults.adapter = async (config) => {
+    requests.push({ url: config.url, method: config.method });
+    if (!data.has(config.url)) throw new Error(`Unexpected endpoint ${config.url}`);
+    return { data: data.get(config.url), status: 200, statusText: "OK", headers: {}, config };
+  };
+});
+afterEach(async () => { await act(async () => root.unmount()); api.defaults.adapter = originalAdapter; setAccessToken(null); });
+after(async () => { await server.close(); dom.window.close(); });
+
+async function mount(roles) {
+  data.set("/auth/me", { id: 1, full_name: "Personal de prueba", email: "personal@example.com", roles, is_active: true });
+  await act(async () => root.render(h(App)));
+}
+async function click(button) { assert.ok(button); await act(async () => button.click()); }
+async function change(input, value) { assert.ok(input); await act(async () => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value").set.call(input, value); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); }); }
+function button(text, scope = host) { return [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === text); }
+function navigation() { return host.querySelector(".atlas-sidebar nav"); }
+function activeDialog() { const dialog = document.querySelector("dialog[open]"); assert.ok(dialog); return dialog; }
+
+for (const roles of [[], ["doctor"], ["secretary"], ["admin"], ["doctor", "admin"], ["doctor", "secretary"], ["secretary", "admin"], ["doctor", "secretary", "admin"], ["unexpected"]]) {
+  test(`operational navigation and reachable bodies preserve roles ${roles.join("+") || "none"}`, async () => {
+    await mount(roles);
+    assert.ok(host.querySelector(".atlas-shell"));
+    assert.equal(host.querySelector(".atlas-login"), null);
+    const expected = [...baseLabels];
+    if (roles.includes("doctor")) expected.push("Seguimientos", "Mi disponibilidad");
+    if (roles.includes("doctor") || roles.includes("secretary")) expected.push("Cobertura clínica");
+    if (roles.includes("admin")) expected.push("Usuarios y roles", "Localidades y centros");
+    expected.push("Seguridad");
+    assert.deepEqual([...navigation().querySelectorAll("button")].map((item) => item.textContent), expected);
+    for (const label of expected) {
+      await click(button(label, navigation()));
+      assert.equal(navigation().querySelectorAll('[aria-current="page"]').length, 1);
+      assert.equal(navigation().querySelector('[aria-current="page"]').textContent, label);
+      assert.equal(host.querySelector("main h1, main h2").textContent, headings[label]);
+    }
+    assert.ok(host.querySelector(".atlas-topbar .atlas-user").textContent.includes("Personal de prueba"));
+    if (!roles.includes("doctor")) assert.ok(!button("Seguimientos", navigation()));
+  });
+}
+
+test("existing page back callback updates the single active view", async () => {
+  await mount(["doctor"]);
+  await click(button("Pacientes", navigation()));
+  await click(button("← Volver al dashboard", host.querySelector("main")));
+  assert.equal(navigation().querySelector('[aria-current="page"]').textContent, "Dashboard");
+  assert.match(host.querySelector("main").textContent, /Hola, Personal de prueba/);
+});
+
+test("patient scheduling opens Agenda with that patient; navigation to Agenda clears the selection", async () => {
+  data.set("/patients", [{ id: 9, first_name: "Paciente", last_name: "Ficticio", date_of_birth: "1980-01-01" }]);
+  await mount(["doctor"]);
+  await click(button("Pacientes", navigation()));
+  await click(host.querySelector(".patients-row"));
+  await click(button("Agendar cita", host.querySelector("main")));
+  assert.equal(navigation().querySelector('[aria-current="page"]').textContent, "Agenda");
+  assert.match(document.body.textContent, /Paciente Ficticio/);
+  await click(button("Dashboard", navigation()));
+  await click(button("Agenda", navigation()));
+  assert.doesNotMatch(document.body.textContent, /Paciente Ficticio/);
+});
+
+test("real notification bell keeps unread data, read endpoint and Dashboard callback", async () => {
+  data.set("/follow-ups/notifications", [{ id: 7, title: "Aviso ficticio", message: "Mensaje de prueba", notification_type: "validation", is_read: false }]);
+  data.set("/follow-ups/notifications/7/read", {});
+  await mount(["doctor"]);
+  await click(button("Pacientes", navigation()));
+  await click(host.querySelector('[aria-label="Notificaciones, 1 sin leer"]'));
+  assert.match(host.querySelector(".atlas-notification-panel").textContent, /Aviso ficticio/);
+  data.set("/follow-ups/notifications", []);
+  await click(button("Marcar como leída", host.querySelector(".atlas-notification-panel")));
+  assert.ok(requests.some((request) => request.url === "/follow-ups/notifications/7/read" && request.method === "post"));
+  assert.ok(host.querySelector('[aria-label="Notificaciones"]'));
+  assert.match(host.querySelector(".atlas-notification-panel").textContent, /No tienes notificaciones pendientes/);
+  await click(button("Ver en Dashboard"));
+  assert.equal(navigation().querySelector('[aria-current="page"]').textContent, "Dashboard");
+});
+
+test("mobile navigation closes after destination, cancel and desktop transition", async () => {
+  setDesktop(false);
+  await mount(["secretary"]);
+  const trigger = host.querySelector('[aria-label="Abrir navegación"]');
+  const drawer = document.querySelector("dialog");
+  trigger.focus();
+  await click(trigger);
+  assert.equal(drawer.open, true);
+  assert.equal(trigger.getAttribute("aria-expanded"), "true");
+  assert.equal(document.activeElement, drawer.querySelector("h2"));
+  await click(button("Agenda", drawer));
+  assert.equal(drawer.open, false);
+  assert.equal(document.activeElement, trigger);
+  assert.equal(navigation().querySelector('[aria-current="page"]').textContent, "Agenda");
+  await click(trigger);
+  await act(async () => drawer.dispatchEvent(new dom.window.Event("cancel", { bubbles: false, cancelable: true })));
+  assert.equal(drawer.open, false);
+  await click(trigger);
+  await act(async () => setDesktop(true));
+  assert.equal(drawer.open, false);
+  assert.equal(document.body.style.overflow, "");
+});
+
+test("shell logout uses the existing API and returns approved Login without shell", async () => {
+  await mount(["admin"]);
+  await click(button("Cerrar sesión"));
+  assert.ok(requests.some((request) => request.url === "/auth/logout" && request.method === "post"));
+  assert.equal(api.defaults.headers.common.Authorization, undefined);
+  assert.equal(host.querySelector(".atlas-shell"), null);
+  assert.equal(host.querySelector("h1").textContent, "Bienvenido a Atlas");
+});
+
+test("bottom navigation uses the single view and Más reflects secondary destinations", async () => {
+  await mount(["doctor"]);
+  await act(async () => setDesktop(false));
+  const nav = host.querySelector('[aria-label="Navegación móvil"]');
+  assert.equal(button("Inicio", nav).getAttribute("aria-current"), "page");
+  await click(button("Pacientes", nav));
+  assert.equal(button("Pacientes", nav).getAttribute("aria-current"), "page");
+  assert.equal(host.querySelector("main h1").textContent, "Pacientes");
+  const more = nav.querySelector('[aria-label="Más opciones"]');
+  more.focus();
+  await click(more);
+  const drawer = document.querySelector("dialog[open]");
+  await click(button("Seguimientos", drawer));
+  assert.equal(drawer.open, false);
+  assert.equal(document.activeElement, more);
+  assert.equal(more.getAttribute("aria-current"), "page");
+  assert.equal(nav.querySelectorAll('[aria-current="page"]').length, 1);
+  await click(button("Inicio", nav));
+  assert.match(host.querySelector("main h2").textContent, /Hola, Personal de prueba/);
+});
+
+test("account disclosure closes with Escape and retains accessible logout", async () => {
+  await mount(["admin"]);
+  const menu = host.querySelector(".atlas-account-menu");
+  const trigger = menu.querySelector("summary");
+  assert.equal(trigger.getAttribute("aria-label"), "Cuenta de Personal de prueba");
+  await click(trigger);
+  assert.equal(menu.open, true);
+  await act(async () => menu.dispatchEvent(new dom.window.KeyboardEvent("keydown", {key:"Escape",bubbles:true})));
+  assert.equal(menu.open, false);
+  assert.equal(document.activeElement, trigger);
+  const before = requests.length;
+  await click(trigger);
+  assert.equal(requests.length, before);
+  await click(button("Cerrar sesión", menu));
+  assert.equal(host.querySelector(".atlas-shell"), null);
+});
+
+async function enterDirtyConsultation() {
+  const today = new Date().toISOString().slice(0, 10);
+  const appointment = { ...structuredClone(appointmentScheduled), appointment_date: today, doctor_id: 1, doctor_name: "Personal de prueba" };
+  data.set("/appointments", [appointment]);
+  data.set(`/clinical-history/appointments/${appointment.id}/context`, {
+    appointment_id: appointment.id,
+    patient_id: appointment.patient_id,
+    doctor_id: appointment.doctor_id,
+    center_id: appointment.center_id,
+    specialty_id: appointment.specialty_id,
+    specialty_name: appointment.specialty_name,
+    appointment_date: appointment.appointment_date,
+    appointment_time: appointment.appointment_time,
+    appointment_reason: appointment.reason,
+    appointment_status: appointment.status,
+    workspace: consultationWorkspace(),
+    previous_consultations: [],
+  });
+  await mount(["doctor"]);
+  await click(button("Agenda", navigation()));
+  await click(host.querySelector(".agenda-appointment-card--day"));
+  await click(button("Iniciar consulta", document));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+  const reason = [...host.querySelectorAll("label")].find((item) => item.textContent.startsWith("Motivo de consulta")).querySelector("input");
+  await change(reason, "Cambio pendiente desde navegación");
+  return reason;
+}
+
+test("la navegación lateral usa el modal Atlas y sale una sola vez al confirmar", async () => {
+  const reason = await enterDirtyConsultation();
+  let confirmations = 0;
+  dom.window.confirm = () => { confirmations += 1; return false; };
+  const dashboard = button("Dashboard", navigation());
+  dashboard.focus();
+  await click(dashboard);
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+  const discardDialog = activeDialog();
+  assert.match(discardDialog.textContent, /Hay cambios sin guardar en esta consulta/);
+  assert.equal(confirmations, 0);
+  await click(button("Continuar editando", discardDialog));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+  assert.equal(reason.value, "Cambio pendiente desde navegación");
+  assert.equal(document.activeElement, dashboard);
+  await click(dashboard);
+  await click(button("Salir sin guardar", activeDialog()));
+  assert.match(host.querySelector("main").textContent, /Hola, Personal de prueba/);
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(confirmations, 0);
+});
+
+test("navegación móvil, notificaciones y cerrar sesión respetan el modal de cambios", async () => {
+  await enterDirtyConsultation();
+  let confirmations = 0;
+  dom.window.confirm = () => { confirmations += 1; return false; };
+
+  await act(async () => setDesktop(false));
+  const mobileNavigation = host.querySelector('[aria-label="Navegación móvil"]');
+  await click(button("Inicio", mobileNavigation));
+  await click(button("Continuar editando", activeDialog()));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+
+  const notificationTrigger = host.querySelector('[aria-label^="Notificaciones"]');
+  await click(notificationTrigger);
+  await click(button("Ver en Dashboard", document));
+  await click(button("Continuar editando", activeDialog()));
+  assert.equal(host.querySelector("main h2").textContent, "Consulta médica");
+
+  const account = host.querySelector(".atlas-account-menu");
+  await click(account.querySelector("summary"));
+  await click(button("Cerrar sesión", account));
+  assert.ok(activeDialog());
+  assert.equal(requests.some((request) => request.url === "/auth/logout"), false);
+  await click(button("Salir sin guardar", activeDialog()));
+  await act(async () => { await Promise.resolve(); });
+  assert.equal(host.querySelector(".atlas-shell"), null);
+  assert.equal(confirmations, 0);
+});

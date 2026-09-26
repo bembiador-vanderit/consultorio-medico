@@ -1,17 +1,42 @@
 from datetime import date, datetime
-
-from sqlalchemy import Date, DateTime, ForeignKey, Text
-from sqlalchemy.orm import Mapped, mapped_column
-
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
+from app.models.organization import TenantOwned
 
-
-class ClinicalHistory(Base):
+class ClinicalHistory(TenantOwned, Base):
     __tablename__ = "clinical_histories"
-
+    __table_args__ = (
+        UniqueConstraint("appointment_id", name="uq_clinical_histories_appointment_id"),
+        CheckConstraint(
+            "status IN ('in_progress', 'completed')",
+            name="ck_clinical_histories_status",
+        ),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id", ondelete="CASCADE"), nullable=False, index=True)
+    appointment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("appointments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    doctor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    center_id: Mapped[int | None] = mapped_column(
+        ForeignKey("care_centers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    specialty_id: Mapped[int | None] = mapped_column(
+        ForeignKey("specialties.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    specialty_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("specialty_templates.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     consultation_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="in_progress", nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     reason_for_visit: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_illness: Mapped[str | None] = mapped_column(Text, nullable=True)
     personal_history: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -24,3 +49,20 @@ class ClinicalHistory(Base):
     clinical_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    patient = relationship("Patient")
+    @property
+    def patient_date_of_birth(self) -> date:
+        return self.patient.date_of_birth
+    specialty = relationship("Specialty")
+    specialty_template = relationship("SpecialtyTemplate")
+    doctor = relationship("User", foreign_keys=[doctor_id])
+    center = relationship("CareCenter")
+    @property
+    def specialty_name(self) -> str:
+        return self.specialty.name if self.specialty else "No especificada (registro histórico)"
+    @property
+    def doctor_name(self) -> str | None:
+        return self.doctor.full_name if self.doctor else None
+    @property
+    def center_name(self) -> str | None:
+        return self.center.name if self.center else None

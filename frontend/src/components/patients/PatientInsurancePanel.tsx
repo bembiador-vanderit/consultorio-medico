@@ -1,177 +1,71 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Alert, Button, Card, Checkbox, EmptyState, FormField, Input, LoadingState, Modal, Select, StatusBadge } from "../../ui";
+import "../../pages/patients.css";
 import { api } from "../../services/api";
-import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
+import type { InsuranceCompany, InsurancePlan, PatientInsurance } from "../../types/insurance";
 import type { User } from "../../types/user";
+import { insuranceError } from "../../services/insurance";
 
-type Props = {
-  patientId: number;
-  patientName: string;
-  user: User;
-  onClose: () => void;
-};
-
+type Props = { patientId: number; patientName: string; user: User; onClose: () => void };
+const empty = { insurance_company_id: "", plan_id: "", plan_name: "", member_number: "", policy_holder: "", relationship_to_holder: "", valid_from: "", valid_until: "", administrative_notes: "", is_primary: true, is_active: true };
 export default function PatientInsurancePanel({ patientId, patientName, user, onClose }: Props) {
   const [items, setItems] = useState<PatientInsurance[]>([]);
   const [companies, setCompanies] = useState<InsuranceCompany[]>([]);
-  const [companyId, setCompanyId] = useState("");
-  const [memberNumber, setMemberNumber] = useState("");
-  const [planName, setPlanName] = useState("");
-  const [isPrimary, setIsPrimary] = useState(true);
-  const [newCompany, setNewCompany] = useState("");
-  const [newCode, setNewCode] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const canManageCompanies = user.roles.includes("admin");
-
+  const [plans, setPlans] = useState<InsurancePlan[]>([]);
+  const [form, setForm] = useState(empty);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const canWrite = !!user.permissions?.includes("insurance:manage") && !!user.permissions?.includes("patients:access");
   async function load() {
-    setLoading(true);
-    setError("");
-    try {
-      const [{ data: patientInsurances }, { data: insuranceCompanies }] = await Promise.all([
-        api.get<PatientInsurance[]>(`/insurance/patients/${patientId}`),
-        api.get<InsuranceCompany[]>("/insurance/companies"),
-      ]);
-      setItems(patientInsurances);
-      setCompanies(insuranceCompanies);
-      if (!companyId && insuranceCompanies.length > 0) setCompanyId(String(insuranceCompanies[0].id));
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "No fue posible cargar los seguros del paciente.");
-    } finally {
-      setLoading(false);
-    }
+    const [i, c, p] = await Promise.all([api.get(`/insurance/patients/${patientId}`), api.get("/insurance/companies?include_inactive=true"), api.get("/insurance/plans?include_inactive=true")]);
+    setItems(i.data); setCompanies(c.data); setPlans(p.data);
   }
-
-  useEffect(() => { void load(); }, [patientId]);
-
-  async function addInsurance(event: FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    setError("");
+  useEffect(() => { setLoading(true); setForm(empty); setEditing(null); load().catch(e => setError(insuranceError(e))).finally(() => setLoading(false)); }, [patientId]);
+  async function save(e: FormEvent) {
+    e.preventDefault(); setSaving(true); setError("");
+    const payload = { ...form, insurance_company_id: Number(form.insurance_company_id), plan_id: form.plan_id ? Number(form.plan_id) : null,
+      plan_name: form.plan_name || null, policy_holder: form.policy_holder || null, relationship_to_holder: form.relationship_to_holder || null,
+      valid_from: form.valid_from || null, valid_until: form.valid_until || null, administrative_notes: form.administrative_notes || null };
     try {
-      await api.post(`/insurance/patients/${patientId}`, {
-        insurance_company_id: Number(companyId),
-        member_number: memberNumber.trim(),
-        plan_name: planName.trim() || null,
-        is_primary: isPrimary,
-      });
-      setMemberNumber("");
-      setPlanName("");
-      await load();
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      setError(Array.isArray(detail) ? detail.map((item: any) => item.msg).join(", ") : detail || "No fue posible registrar el seguro.");
-    } finally {
-      setSaving(false);
-    }
+      if (editing) await api.put(`/insurance/patients/${patientId}/${editing}`, payload);
+      else await api.post(`/insurance/patients/${patientId}`, payload);
+      setForm(empty); setEditing(null); await load();
+    } catch (e) { setError(insuranceError(e)); } finally { setSaving(false); }
   }
-
-  async function deactivateInsurance(item: PatientInsurance) {
-    if (!window.confirm(`¿Desea desactivar el seguro ${item.insurance_company_name} del paciente? El registro se conservará en el historial.`)) return;
-    setSaving(true);
-    setError("");
-    try {
-      await api.delete(`/insurance/patients/${patientId}/${item.id}`);
-      await load();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "No fue posible desactivar el seguro.");
-    } finally {
-      setSaving(false);
-    }
+  function edit(i: PatientInsurance) {
+    setEditing(i.id); setForm({ insurance_company_id: String(i.insurance_company_id), plan_id: i.plan_id ? String(i.plan_id) : "", plan_name: i.plan_name || "",
+      member_number: i.member_number, policy_holder: i.policy_holder || "", relationship_to_holder: i.relationship_to_holder || "", valid_from: i.valid_from || "",
+      valid_until: i.valid_until || "", administrative_notes: i.administrative_notes || "", is_primary: i.is_primary, is_active: i.is_active });
   }
-
-  async function createCompany(event: FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    setError("");
-    try {
-      const { data } = await api.post<InsuranceCompany>("/insurance/companies", {
-        name: newCompany.trim(),
-        code: newCode.trim() || null,
-      });
-      setNewCompany("");
-      setNewCode("");
-      setCompanies((current) => [...current, data].sort((a, b) => a.name.localeCompare(b.name)));
-      setCompanyId(String(data.id));
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "No fue posible registrar la ARS.");
-    } finally {
-      setSaving(false);
-    }
+  async function deactivate(i: PatientInsurance) {
+    setSaving(true); setError("");
+    try { await api.delete(`/insurance/patients/${patientId}/${i.id}`); await load(); } catch (e) { setError(insuranceError(e)); } finally { setSaving(false); }
   }
-
-  const activeItems = items.filter((item) => item.is_active);
-
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 p-4">
-      <div className="mx-auto mt-8 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-teal-700">Ficha del paciente</p>
-            <h3 className="mt-1 text-2xl font-bold">Seguro médico</h3>
-            <p className="mt-1 text-sm text-slate-500">{patientName}</p>
-          </div>
-          <button onClick={onClose} className="rounded-lg border px-3 py-2 text-sm">Cerrar</button>
-        </div>
-
-        {error && <div className="mt-5 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-
-        <div className="mt-6 rounded-xl border bg-slate-50 p-4">
-          <h4 className="font-semibold">Registrar seguro del paciente</h4>
-          {companies.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">No hay compañías de seguros registradas. Un administrador debe crear la primera ARS.</p>
-          ) : (
-            <form onSubmit={addInsurance} className="mt-4 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-medium">Compañía / ARS *
-                <select required value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2">
-                  {companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}
-                </select>
-              </label>
-              <label className="text-sm font-medium">Número de afiliado *
-                <input required maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-              </label>
-              <label className="text-sm font-medium">Plan
-                <input maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-              </label>
-              <label className="flex items-center gap-2 pt-6 text-sm font-medium">
-                <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} /> Seguro principal
-              </label>
-              <div className="sm:col-span-2 flex justify-end">
-                <button disabled={saving} className="rounded-lg bg-teal-700 px-5 py-2 font-medium text-white disabled:opacity-60">{saving ? "Guardando..." : "Agregar seguro"}</button>
-              </div>
-            </form>
-          )}
-        </div>
-
-        {canManageCompanies && (
-          <form onSubmit={createCompany} className="mt-4 rounded-xl border p-4">
-            <h4 className="font-semibold">Administrar compañías de seguros</h4>
-            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px_auto]">
-              <input required minLength={2} maxLength={150} value={newCompany} onChange={(e) => setNewCompany(e.target.value)} placeholder="Nombre de la ARS" className="rounded-lg border border-slate-300 p-2" />
-              <input maxLength={50} value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código opcional" className="rounded-lg border border-slate-300 p-2" />
-              <button disabled={saving} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">Nueva ARS</button>
-            </div>
-          </form>
-        )}
-
-        <div className="mt-6">
-          <h4 className="font-semibold">Seguros registrados</h4>
-          {loading ? <p className="mt-3 text-sm text-slate-500">Cargando...</p> : items.length === 0 ? (
-            <p className="mt-3 rounded-lg border border-dashed p-5 text-center text-sm text-slate-500">Paciente sin Seguro.</p>
-          ) : (
-            <div className="mt-3 overflow-hidden rounded-xl border">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">ARS</th><th className="px-4 py-3">Afiliado</th><th className="px-4 py-3">Plan</th><th className="px-4 py-3">Estado</th><th className="px-4 py-3 text-right">Acción</th></tr></thead>
-                <tbody className="divide-y divide-slate-100">
-                  {items.map((item) => <tr key={item.id}><td className="px-4 py-3 font-medium">{item.insurance_company_name}{item.is_primary && item.is_active && <span className="ml-2 rounded-full bg-teal-50 px-2 py-1 text-xs text-teal-700">Principal</span>}</td><td className="px-4 py-3">{item.member_number}</td><td className="px-4 py-3">{item.plan_name || "—"}</td><td className="px-4 py-3">{item.is_active ? "Activo" : "Inactivo"}</td><td className="px-4 py-3 text-right">{item.is_active ? <button disabled={saving} onClick={() => void deactivateInsurance(item)} className="font-medium text-red-700 hover:underline disabled:opacity-50">Desactivar</button> : <span className="text-slate-400">Historial</span>}</td></tr>)}
-                </tbody>
-              </table>
-              {activeItems.length === 0 && <p className="border-t bg-slate-50 p-4 text-center text-sm font-medium text-slate-600">Paciente sin Seguro activo.</p>}
-            </div>
-          )}
-        </div>
-      </div>
+  return <Modal title="Seguros" description={patientName} open onClose={() => { if (!saving) onClose(); }} closeLabel="Cerrar seguros">
+    <div className="patient-form">
+      {error && <Alert tone="danger" title="No se pudo guardar">{error}</Alert>}
+      {loading ? <LoadingState label="Cargando seguros..." /> : <>
+        <p className="atlas-help">Las coberturas ya registradas en citas conservan sus datos aunque cambie esta afiliación.</p>
+        {!items.length && <EmptyState title="Sin seguros registrados" description="Puede registrar una afiliación cuando disponga de los datos." />}
+        {items.map(i => <Card key={i.id} compact><h3>{i.insurance_company_name}</h3><StatusBadge tone={i.is_active ? "success" : "neutral"}>{i.is_active ? i.is_primary ? "Activo · Principal" : "Activo" : "Inactivo"}</StatusBadge>
+          <p>{i.plan_name || "Sin plan"} · Afiliado / póliza: {i.member_number}</p>
+          <p>Titular: {i.policy_holder || "No registrado"} · Relación: {i.relationship_to_holder || "No registrada"}</p>
+          <p>Vigencia: {i.valid_from || "Sin fecha inicial"} — {i.valid_until || "Sin fecha final"}</p>
+          {i.administrative_notes && <p>{i.administrative_notes}</p>}
+          {canWrite && <><Button variant="outline" disabled={saving} onClick={() => edit(i)}>Editar seguro</Button>{i.is_active && <Button variant="outline" disabled={saving} onClick={() => void deactivate(i)}>Desactivar</Button>}</>}
+        </Card>)}
+        {canWrite && <form className="patient-form" onSubmit={save}>
+          <h3>{editing ? "Editar afiliación" : "Registrar seguro"}</h3>
+          <FormField label="Aseguradora / ARS" required><Select value={form.insurance_company_id} onChange={e => setForm({ ...form, insurance_company_id: e.target.value, plan_id: "", plan_name: "" })}><option value="">Seleccione</option>{companies.filter(c => c.is_active || String(c.id) === form.insurance_company_id).map(c => <option key={c.id} value={c.id}>{c.name}{!c.is_active && " (inactiva)"}</option>)}</Select></FormField>
+          <FormField label="Plan"><Select value={form.plan_id} onChange={e => setForm({ ...form, plan_id: e.target.value, plan_name: "" })}><option value="">Sin plan de catálogo</option>{plans.filter(p => p.insurance_company_id === Number(form.insurance_company_id) && (p.is_active || String(p.id) === form.plan_id)).map(p => <option key={p.id} value={p.id}>{p.name}{!p.is_active && " (inactivo)"}</option>)}</Select></FormField>
+          {form.plan_name && !form.plan_id && <p>Plan anterior: {form.plan_name}</p>}
+          {([['member_number', 'Número de afiliado / póliza'], ['policy_holder', 'Titular'], ['relationship_to_holder', 'Relación con el titular'], ['valid_from', 'Vigente desde'], ['valid_until', 'Vigente hasta'], ['administrative_notes', 'Observaciones administrativas']] as const).map(([key, label]) => <FormField key={key} label={label} required={key === 'member_number'}><Input type={key.startsWith('valid_') ? 'date' : 'text'} maxLength={key === 'administrative_notes' ? 1000 : key === 'member_number' ? 100 : key === 'relationship_to_holder' ? 80 : 150} value={form[key]} onChange={e => setForm({ ...form, [key]: e.target.value })} /></FormField>)}
+          <Checkbox label="Seguro activo" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked, is_primary: e.target.checked && form.is_primary })} />
+          <Checkbox label="Seguro principal" checked={form.is_primary} disabled={!form.is_active} onChange={e => setForm({ ...form, is_primary: e.target.checked })} />
+          <Button type="submit" disabled={!form.insurance_company_id} loading={saving}>Guardar seguro</Button>
+          {editing && <Button variant="outline" disabled={saving} onClick={() => { setEditing(null); setForm(empty); }}>Cancelar edición</Button>}
+        </form>}
+      </>}
     </div>
-  );
+  </Modal>;
 }

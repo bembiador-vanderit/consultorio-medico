@@ -1,0 +1,96 @@
+name: Security and administration
+
+on:
+  pull_request:
+    branches: [main, feat/complete-care-context]
+    paths: ['backend/**', 'frontend/**', '.github/workflows/security-administration.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: disposable-ci-password
+          POSTGRES_DB: administration_security_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: sqlite://
+      SECRET_KEY: disposable-ci-signing-key-not-for-production
+      ADMIN_SECURITY_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/administration_security_test
+      PATIENT_SECURITY_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/patient_security_test
+      FINANCE_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/finance_concurrency_test
+      ARS_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/ars_concurrency_test
+      INSURANCE_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/insurance_concurrency_test
+      CLINICAL_CONCURRENCY_POSTGRES_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/clinical_concurrency_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Prepare disposable databases
+        run: |
+          python - <<'PY'
+          import psycopg
+          from psycopg import sql
+          with psycopg.connect('postgresql://postgres:disposable-ci-password@localhost/postgres', autocommit=True) as db:
+              for name in ('patient_security_test', 'clinical_concurrency_test', 'administration_migration_test', 'access_schedule_migration_test', 'insurance_migration_test', 'insurance_concurrency_test', 'finance_concurrency_test', 'finance_migration_test', 'ars_migration_test', 'ars_concurrency_test'):
+                  db.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
+          PY
+      - name: Check migration upgrade and rollback
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/administration_migration_test
+        run: |
+          alembic upgrade head
+          alembic downgrade 0033_specialty_codes
+          alembic upgrade head
+      - name: Check opt-in schedule backfill on PostgreSQL
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/access_schedule_migration_test
+          PYTHONPATH: .
+        run: python scripts/check_access_schedule_migration.py
+      - name: Check insurance migration preservation on PostgreSQL
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/insurance_migration_test
+          PYTHONPATH: .
+        run: python scripts/check_insurance_migration.py
+      - name: Check financial migration preservation on PostgreSQL
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/finance_migration_test
+          PYTHONPATH: .
+        run: python scripts/check_finance_migration.py
+      - name: Check ARS migration and payment cycle on PostgreSQL
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:disposable-ci-password@localhost/ars_migration_test
+          PYTHONPATH: .
+        run: python scripts/check_ars_migration.py
+      - name: Backend and PostgreSQL concurrency tests
+        working-directory: backend
+        run: python -m pytest -q
+      - name: Frontend build and behavioral tests
+        working-directory: frontend
+        run: |
+          npm install --package-lock=false
+          npm run build
+          node --test --test-concurrency=2 tests/*.test.mjs

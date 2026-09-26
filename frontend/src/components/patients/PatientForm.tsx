@@ -1,20 +1,41 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState, type ComponentProps } from "react";
+import { Alert, Button, FormField, FormSection, Input, Modal, Radio, Select } from "../../ui";
+import "../../pages/patients.css";
 import { api } from "../../services/api";
 import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
-import type { Patient } from "../../types/patient";
+import { patientAgeLabel, todayDate } from "../../services/patientAge";
+import PatientDemographicFields, { documentLabels } from "./PatientDemographicFields";
+import { PatientFormIcon, type PatientFormIconName } from "./PatientFormIcon";
+import type { PatientDemographics, Patient } from "../../types/patient";
+import type { User } from "../../types/user";
+
+type PatientIdentity = { id: number; first_name: string; last_name: string; date_of_birth: string; phone_masked: string | null; email_masked: string | null; selection_token: string };
 
 type Props = {
   patient: Patient | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (patient: Patient) => void;
+  onExistingSelected: (patient: Patient) => void;
+  user: User;
 };
 
-export default function PatientForm({ patient, onClose, onSaved }: Props) {
+function SectionTitle({ icon, children }: { icon: PatientFormIconName; children: string }) {
+  return <span className="patient-form-section-title"><PatientFormIcon name={icon} size={22} /><span>{children}</span></span>;
+}
+
+function InputWithIcon({ icon, ...props }: ComponentProps<typeof Input> & { icon?: PatientFormIconName }) {
+  if (!icon) return <Input {...props} />;
+  return <span className="patient-form-input-with-icon"><Input {...props} /><PatientFormIcon name={icon} size={18} /></span>;
+}
+
+export default function PatientForm({ patient, onClose, onSaved, onExistingSelected, user }: Props) {
+  const [demographics, setDemographics] = useState<PatientDemographics>(() => Object.fromEntries(["document_type", "document_number", "home_phone", "registered_sex", "blood_type", "address", "country_code", "territorial_unit_id", "territorial_path", "sector_locality", "province", "nationality", "occupation", "emergency_contact_name", "emergency_contact_relationship", "emergency_contact_mobile", "emergency_contact_home_phone", "guardian_name", "guardian_relationship", "guardian_mobile", "guardian_home_phone", "locality_id"].map((key) => [key, patient?.[key as keyof PatientDemographics] ?? null])));
   const [firstName, setFirstName] = useState(patient?.first_name || "");
   const [lastName, setLastName] = useState(patient?.last_name || "");
   const [dateOfBirth, setDateOfBirth] = useState(patient?.date_of_birth || "");
   const [phone, setPhone] = useState(patient?.phone || "");
   const [email, setEmail] = useState(patient?.email || "");
+  const canManageInsurance = !!user.permissions?.includes("insurance:manage");
   const [hasInsurance, setHasInsurance] = useState(false);
   const [companies, setCompanies] = useState<InsuranceCompany[]>([]);
   const [companyId, setCompanyId] = useState("");
@@ -24,6 +45,12 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
   const [loadingInsurance, setLoadingInsurance] = useState(Boolean(patient));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [identityMatches, setIdentityMatches] = useState<PatientIdentity[]>([]);
+  const formId = useId();
+  const insuranceGroupId = useId();
+  const [insuranceDirty, setInsuranceDirty] = useState(false);
+  const [insuranceReady, setInsuranceReady] = useState(false);
+  const [insuranceError, setInsuranceError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -38,11 +65,12 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
           setCompanyId(String(insuranceCompanies[0].id));
         }
 
-        if (!patient) return;
+        if (!patient) { setInsuranceReady(true); return; }
         const { data: patientInsurances } = await api.get<PatientInsurance[]>(`/insurance/patients/${patient.id}`);
         if (cancelled) return;
         const active = patientInsurances.find((item) => item.is_active && item.is_primary) ?? patientInsurances.find((item) => item.is_active) ?? null;
         setCurrentInsurance(active);
+        setInsuranceReady(true);
         if (active) {
           setHasInsurance(true);
           setCompanyId(String(active.insurance_company_id));
@@ -50,7 +78,7 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
           setPlanName(active.plan_name || "");
         }
       } catch (err: any) {
-        if (!cancelled) setError(err?.response?.data?.detail || "No fue posible cargar las compañías de seguros.");
+        if (!cancelled) setInsuranceError(err?.response?.data?.detail || "No fue posible cargar el seguro. Los datos de seguro se conservarán al editar.");
       } finally {
         if (!cancelled) setLoadingInsurance(false);
       }
@@ -61,6 +89,7 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
   }, [patient?.id]);
 
   function selectInsurance(value: boolean) {
+    setInsuranceDirty(true);
     setHasInsurance(value);
     if (!value) {
       setMemberNumber("");
@@ -74,7 +103,7 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
     setSaving(true);
     setError("");
 
-    if (hasInsurance && (!companyId || !memberNumber.trim())) {
+    if (canManageInsurance && hasInsurance && (!companyId || !memberNumber.trim())) {
       setError("Para registrar un seguro debe seleccionar la ARS e indicar el número de afiliado.");
       setSaving(false);
       return;
@@ -87,30 +116,43 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
       (currentInsurance.plan_name || "") !== planName.trim()
     );
 
+    const { territorial_path: _territorialPath, ...demographicPayload } = demographics;
     const payload = {
+      ...demographicPayload,
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       date_of_birth: dateOfBirth,
       phone: phone.trim() || null,
       email: email.trim() || null,
-      has_insurance: hasInsurance,
+      ...(canManageInsurance && (!patient || insuranceDirty || (insuranceReady && insuranceChanged)) ? { has_insurance: hasInsurance,
       insurance: insuranceChanged ? {
         insurance_company_id: Number(companyId),
         member_number: memberNumber.trim(),
         plan_name: planName.trim() || null,
         is_primary: true,
-      } : null,
+      } : null } : {}),
     };
 
     try {
-      if (patient) {
-        await api.put(`/patients/${patient.id}`, payload);
-      } else {
-        await api.post("/patients", payload);
+      if (!patient && dateOfBirth && (phone.trim() || email.trim()) && (user.roles.includes("doctor") || user.roles.includes("admin"))) {
+        const identifier = email.trim() || phone.trim();
+        const { data } = await api.get<PatientIdentity[]>("/patients/identity-search", { params: {
+          date_of_birth: dateOfBirth,
+          phone: identifier.includes("@") ? undefined : identifier,
+          email: identifier.includes("@") ? identifier : undefined,
+        } });
+        if (data.length) {
+          setIdentityMatches(data);
+          setError("Ya existe una identidad coincidente. Seleccione el registro existente para evitar duplicarlo.");
+          return;
+        }
       }
-      onSaved();
+      const response = patient
+        ? await api.put<Patient>(`/patients/${patient.id}`, payload)
+        : await api.post<Patient>("/patients", payload);
+      onSaved(response.data);
     } catch (err: any) {
-      console.error(err);
+      // Do not log request payloads containing patient identifiers.
       const detail = err?.response?.data?.detail;
       setError(
         Array.isArray(detail)
@@ -122,70 +164,63 @@ export default function PatientForm({ patient, onClose, onSaved }: Props) {
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4">
-      <form onSubmit={save} className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
-        <h3 className="text-xl font-bold">{patient ? "Editar paciente" : "Nuevo paciente"}</h3>
-        <p className="mt-1 text-sm text-slate-500">Complete los datos del paciente y su cobertura médica.</p>
-
-        {error && <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm font-medium">Nombre *
-            <input required minLength={2} maxLength={100} value={firstName} onChange={(e) => setFirstName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-          </label>
-          <label className="text-sm font-medium">Apellido *
-            <input required minLength={2} maxLength={100} value={lastName} onChange={(e) => setLastName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-          </label>
-          <label className="text-sm font-medium">Fecha de nacimiento *
-            <input required type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-          </label>
-          <label className="text-sm font-medium">Teléfono
-            <input maxLength={30} value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-          </label>
-          <label className="text-sm font-medium sm:col-span-2">Correo
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" />
-          </label>
-        </div>
-
-        <div className="mt-6 rounded-xl border bg-slate-50 p-4">
-          <h4 className="font-semibold">Seguro</h4>
-          <p className="mt-1 text-sm text-slate-500">Indique si el paciente tiene seguro médico.</p>
-          <div className="mt-3 flex gap-6">
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-              <input type="checkbox" checked={hasInsurance} onChange={() => selectInsurance(true)} className="h-4 w-4" />
-              Sí
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-              <input type="checkbox" checked={!hasInsurance} onChange={() => selectInsurance(false)} className="h-4 w-4" />
-              No
-            </label>
+  return <Modal title={patient ? "Editar paciente" : "Nuevo paciente"} headingIcon={<PatientFormIcon name="person-add" size={38} />} description={patient ? "Actualice la información del paciente en Atlas." : "Complete la información del paciente para su registro en Atlas."} open onClose={() => { if (!saving) onClose(); }} closeLabel="Cerrar formulario de paciente" footer={<div className="patient-form-actions"><Button variant="outline" disabled={saving} onClick={onClose}>Cancelar</Button><Button type="submit" form={formId} icon={<PatientFormIcon name="save" size={20} />} loading={saving} loadingLabel="Guardando..." disabled={loadingInsurance}>{patient ? "Guardar cambios" : "Guardar paciente"}</Button></div>}>
+    <form id={formId} onSubmit={save} className="patient-form">
+      {error && <Alert tone="danger" title="Revise los datos del paciente">{error}</Alert>}
+      {identityMatches.length > 0 && <div className="patient-identity-matches">{identityMatches.map((match) => <Button key={match.id} variant="outline" onClick={() => onExistingSelected({ id: match.id, first_name: match.first_name, last_name: match.last_name, date_of_birth: match.date_of_birth, phone: match.phone_masked, email: null, created_at: new Date().toISOString(), selection_token: match.selection_token })}><strong>Usar {match.first_name} {match.last_name}</strong><span className="atlas-help"> · {match.date_of_birth}{match.phone_masked ? ` · ${match.phone_masked}` : ""}</span></Button>)}</div>}
+      {!patient && user.roles.includes("secretary") && <Alert title="Seleccionar un paciente existente">Para buscar un paciente existente, use Nueva cita y seleccione primero el centro y el médico autorizado.</Alert>}
+      <div className="patient-form-columns">
+        <section className="patient-form-folder patient-form-folder--personal" aria-labelledby={`${formId}-personal-title`}>
+          <header className="patient-form-folder-heading patient-form-folder-heading--personal">
+            <span className="patient-form-folder-icon" aria-hidden="true"><PatientFormIcon name="person-add" size={34} /></span>
+            <span><strong id={`${formId}-personal-title`}>1. Datos personales</strong><small>Información básica y de contacto</small></span>
+          </header>
+          <div className="patient-form-folder-content">
+            <FormSection title={<SectionTitle icon="person">Identificación</SectionTitle>}>
+              <FormField label="Nombre" required requiredLabel="*"><Input minLength={2} maxLength={100} autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} /></FormField>
+              <FormField label="Apellido" required requiredLabel="*"><Input minLength={2} maxLength={100} autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} /></FormField>
+              <FormField label="Tipo de documento">
+                <Select value={demographics.document_type ?? ""} onChange={(event) => setDemographics({ ...demographics, document_type: event.target.value || null, ...(!event.target.value ? { document_number: null } : {}) })}>
+                  <option value="">Sin documento</option>
+                  {Object.entries(documentLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </Select>
+              </FormField>
+              <FormField label="Número de documento"><Input maxLength={100} value={demographics.document_number ?? ""} onChange={(event) => setDemographics({ ...demographics, document_number: event.target.value || null })} /></FormField>
+              <FormField label="Fecha de nacimiento" required requiredLabel="*"><InputWithIcon icon="calendar" type="date" max={todayDate()} value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></FormField>
+              <FormField label="Edad" description="Se calcula automáticamente"><InputWithIcon icon="info" readOnly value={patientAgeLabel(dateOfBirth)} /></FormField>
+            </FormSection>
+            <FormSection title={<SectionTitle icon="phone">Información de contacto</SectionTitle>} className="patient-form-contact-section">
+              <FormField label="Teléfono (Celular)"><InputWithIcon icon="mobile" type="tel" maxLength={30} autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></FormField>
+              <FormField label="Teléfono (Casa)"><InputWithIcon icon="home" type="tel" maxLength={30} value={demographics.home_phone ?? ""} onChange={(event) => setDemographics({ ...demographics, home_phone: event.target.value || null })} /></FormField>
+              <FormField label="Correo electrónico" className="patient-form-contact-email"><InputWithIcon icon="mail" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FormField>
+            </FormSection>
+            <PatientDemographicFields value={demographics} onChange={setDemographics} section="personal" />
           </div>
+        </section>
 
-          <div className={`mt-4 grid gap-4 sm:grid-cols-2 ${!hasInsurance ? "opacity-50" : ""}`}>
-            <label className="text-sm font-medium">ARS *
-              <select required={hasInsurance} disabled={!hasInsurance || loadingInsurance} value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 disabled:cursor-not-allowed disabled:bg-slate-100">
-                <option value="">{loadingInsurance ? "Cargando ARS..." : "Seleccione una ARS"}</option>
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}
-              </select>
-            </label>
-            <label className="text-sm font-medium">Número de afiliado *
-              <input required={hasInsurance} disabled={!hasInsurance} maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 disabled:cursor-not-allowed disabled:bg-slate-100" />
-            </label>
-            <label className="text-sm font-medium sm:col-span-2">Plan
-              <input disabled={!hasInsurance} maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 disabled:cursor-not-allowed disabled:bg-slate-100" />
-            </label>
+        <section className="patient-form-folder patient-form-folder--clinical" aria-labelledby={`${formId}-clinical-title`}>
+          <header className="patient-form-folder-heading patient-form-folder-heading--clinical">
+            <span className="patient-form-folder-icon" aria-hidden="true"><PatientFormIcon name="clinical" size={34} /></span>
+            <span><strong id={`${formId}-clinical-title`}>2. Datos clínicos</strong><small>Información médica relevante</small></span>
+          </header>
+          <div className="patient-form-folder-content">
+            <PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical-basic" />
+            <aside className="patient-form-blood-note"><PatientFormIcon name="info" size={22} /><p>El tipo sanguíneo es un dato importante para la atención médica. Puede ser declarado por el paciente y posteriormente confirmado por laboratorio.</p></aside>
+            <FormSection title={<SectionTitle icon="shield">Seguro médico</SectionTitle>} className="patient-form-insurance-section">
+              {insuranceError && <div className="patient-form-wide"><Alert tone="warning" title="Seguro no disponible">{insuranceError}</Alert></div>}
+              {loadingInsurance && <p role="status" className="atlas-help patient-form-wide">Cargando seguro...</p>}
+              <div className="patient-form-wide patient-form-insurance-choice-row"><p className="patient-form-insurance-question">¿El paciente tiene seguro médico?</p><div className="patient-form-actions"><Radio name={insuranceGroupId} label="Sí" checked={hasInsurance} disabled={!canManageInsurance || !insuranceReady || loadingInsurance} onChange={() => selectInsurance(true)} /><Radio name={insuranceGroupId} label="No" checked={!hasInsurance} disabled={!canManageInsurance || !insuranceReady || loadingInsurance} onChange={() => selectInsurance(false)} /></div></div>
+              {hasInsurance && <>
+                <FormField label="ARS / Seguro" required requiredLabel="*"><Select disabled={!canManageInsurance || !insuranceReady || loadingInsurance} value={companyId} onChange={(e) => setCompanyId(e.target.value)}><option value="">Seleccione una ARS</option>{companies.map((company) => <option key={company.id} value={company.id}>{company.name}{company.code ? ` (${company.code})` : ""}</option>)}</Select></FormField>
+                <FormField label="Número de póliza / Afiliado" required requiredLabel="*"><Input disabled={!canManageInsurance || !insuranceReady || loadingInsurance} maxLength={100} value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} /></FormField>
+                <div className="patient-form-wide"><FormField label="Plan"><Input disabled={!canManageInsurance || !insuranceReady || loadingInsurance} maxLength={150} value={planName} onChange={(e) => setPlanName(e.target.value)} /></FormField></div>
+              </>}
+              {!hasInsurance && insuranceReady && <p className="atlas-help patient-form-wide">Paciente sin Seguro</p>}
+            </FormSection>
+            <PatientDemographicFields value={demographics} onChange={setDemographics} section="clinical-contacts" />
           </div>
-          {!hasInsurance && <p className="mt-3 text-sm font-medium text-slate-600">Paciente sin Seguro</p>}
-        </div>
-
-        <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2">Cancelar</button>
-          <button type="submit" disabled={saving || loadingInsurance} className="rounded-lg bg-teal-700 px-5 py-2 font-medium text-white disabled:opacity-60">
-            {saving ? "Guardando..." : patient ? "Guardar cambios" : "Guardar paciente"}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+        </section>
+      </div>
+    </form>
+  </Modal>;
 }
