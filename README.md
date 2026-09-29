@@ -74,6 +74,10 @@ docker compose exec backend python -m pytest -q
 - Health check: <http://localhost:8000/api/v1/health>
 - Documentación OpenAPI: <http://localhost:8000/docs>
 
+## Validación integrada pre-piloto
+
+La fase reproducible de staging para 6C3–6C7 usa un proyecto Docker y una base PostgreSQL desechable separados. El procedimiento, los datos sintéticos, la matriz PASS/FAIL y la recomendación de readiness están en [`docs/pre-pilot-validation.md`](docs/pre-pilot-validation.md). No ejecutar los scripts de pre-piloto contra una instalación real.
+
 El frontend admite tanto `http://localhost:5173` desde la PC del servidor como
 `http://IP_DE_LA_PC:5173` desde la red local. No es necesario sustituir localhost
 en el código: las llamadas a la API usan `/api/v1` en la dirección con la que se
