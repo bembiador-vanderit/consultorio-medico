@@ -1,0 +1,826 @@
+import { after, afterEach, beforeEach, test } from "node:test";
+import assert from "node:assert/strict";
+import { createServer } from "vite";
+
+import { createBrowser } from "./browser.mjs";
+import {
+  activeDoctor,
+  appointmentConfirmed,
+  appointmentScheduled,
+  consultationWorkspace,
+  clinicalHistory,
+  clinicalHistoryCompleted,
+  clinicalHistoryInProgress,
+  diagnosisFixture,
+  laboratoryTestFixture,
+  legacyClinicalHistory,
+  medicalStudyFixture,
+  prescriptionFixture,
+  requestedTestFixture,
+  vitalSignsFixture,
+} from "./fixtures/clinical.mjs";
+
+const { dom } = createBrowser();
+const { createElement: h, act } = await import("react");
+const { createRoot } = await import("react-dom/client");
+const server = await createServer({
+  server: { middlewareMode: true, ws: false },
+  appType: "custom",
+  optimizeDeps: { noDiscovery: true, include: [] },
+});
+const { default: Consultation } = await server.ssrLoadModule("/src/pages/Consultation.tsx");
+const { api } = await server.ssrLoadModule("/src/services/api.ts");
+const { clearClinicalCatalogCacheForTests } = await server.ssrLoadModule("/src/services/clinicalApi.ts");
+const originalAdapter = api.defaults.adapter;
+const NativeDate = globalThis.Date;
+const nativeAnchorClick = dom.window.HTMLAnchorElement.prototype.click;
+const host = document.getElementById("root");
+
+let root;
+let calls;
+let currentAppointment;
+let contextHistories;
+let currentHistory;
+let vitals;
+let diagnoses;
+let prescriptions;
+let requestedTests;
+let laboratoryOrders;
+let studyOrders;
+let intercept;
+let backCount;
+let confirmCount;
+let previousRequests;
+let registeredGuard;
+let currentWorkspace;
+
+function clone(value) {
+  return structuredClone(value);
+}
+
+function ok(config, data) {
+  return { data: clone(data), status: 200, statusText: "OK", headers: {}, config };
+}
+
+function failure(detail, status = 409) {
+  const error = new Error(detail);
+  error.response = { status, data: { detail } };
+  throw error;
+}
+
+function payload(config) {
+  return typeof config.data === "string" ? JSON.parse(config.data) : config.data;
+}
+
+function context() {
+  return {
+    appointment_id: currentAppointment.id,
+    patient_id: currentAppointment.patient_id,
+    doctor_id: currentAppointment.doctor_id,
+    center_id: currentAppointment.center_id,
+    specialty_id: currentAppointment.specialty_id,
+    specialty_name: currentAppointment.specialty_name,
+    appointment_date: currentAppointment.appointment_date,
+    appointment_time: currentAppointment.appointment_time,
+    appointment_reason: currentAppointment.reason,
+    appointment_status: currentAppointment.status,
+    patient_blood_type: "AB+",
+    workspace: currentWorkspace,
+    previous_consultations: contextHistories,
+  };
+}
+
+async function responseAdapter(config) {
+  calls.push(config);
+  if (intercept) {
+    const result = intercept(config);
+    if (result !== undefined) return result;
+  }
+
+  if (config.url === "/auth/me" && config.method === "get") return ok(config, activeDoctor);
+  if (config.url === `/clinical-history/appointments/${currentAppointment.id}/context` && config.method === "get") return ok(config, context());
+  if (config.url === "/clinical-catalog/studies" && config.method === "get") return ok(config, [medicalStudyFixture]);
+  if (config.url === "/laboratory-tests" && config.method === "get") return ok(config, [laboratoryTestFixture]);
+  if (config.url === `/clinical-history/${currentHistory?.id}/prescriptions/pdf` && config.method === "get") return ok(config, new Blob(["fixture"]));
+  if (config.url === `/clinical-history/${currentHistory?.id}/requested-tests/pdf` && config.method === "get") return ok(config, new Blob(["fixture"]));
+  if (config.url === `/clinical-history/${currentHistory?.id}/summary/pdf` && config.method === "get") return ok(config, new Blob(["fixture"]));
+  if (config.url === `/clinical-history/${currentHistory?.id}/prescriptions` && config.method === "get") return ok(config, prescriptions);
+  if (config.url === `/clinical-history/${currentHistory?.id}/diagnoses` && config.method === "get") return ok(config, diagnoses);
+  if (config.url === `/clinical-history/${currentHistory?.id}/requested-tests` && config.method === "get") return ok(config, requestedTests);
+  if (config.url === `/clinical-history/${currentHistory?.id}/vital-signs` && config.method === "get") return ok(config, vitals);
+  if (config.url === `/clinical-history/${currentHistory?.id}/laboratory-orders` && config.method === "get") return ok(config, laboratoryOrders);
+  if (config.url === `/clinical-history/${currentHistory?.id}/study-orders` && config.method === "get") return ok(config, studyOrders);
+
+  if (config.url === `/clinical-history/patients/${currentAppointment.patient_id}` && config.method === "post") {
+    currentHistory = clinicalHistory({ id: 61, appointment_id: currentAppointment.id, ...payload(config) });
+    contextHistories = [currentHistory, ...contextHistories];
+    return ok(config, currentHistory);
+  }
+  if (config.url === `/clinical-history/${currentHistory?.id}` && config.method === "put") {
+    const { expected_revision, ...changes } = payload(config);
+    currentHistory = { ...currentHistory, ...changes, revision: expected_revision + 1, updated_at: "2026-09-16T10:01:00" };
+    return ok(config, currentHistory);
+  }
+  if (config.url === `/clinical-history/${currentHistory?.id}/complete` && config.method === "post") {
+    currentHistory = {
+      ...currentHistory,
+      status: "completed",
+      revision: currentHistory.revision + 1,
+      completed_at: "2026-09-16T10:05:00",
+      completed_by_id: activeDoctor.id,
+    };
+    currentAppointment = { ...currentAppointment, status: "completed" };
+    return ok(config, currentHistory);
+  }
+  if (config.url === `/clinical-history/${currentHistory?.id}/vital-signs` && config.method === "put") {
+    vitals = { ...vitalSignsFixture, ...payload(config), clinical_history_id: currentHistory.id };
+    return ok(config, vitals);
+  }
+  if (config.url === `/clinical-history/${currentHistory?.id}/diagnoses` && config.method === "post") {
+    const next = { ...diagnosisFixture, id: diagnoses.length + 100, ...payload(config), clinical_history_id: currentHistory.id };
+    diagnoses = next.is_primary ? [next, ...diagnoses.map((item) => ({ ...item, is_primary: false }))] : [...diagnoses, next];
+    return ok(config, next);
+  }
+  if (new RegExp(`^/clinical-history/${currentHistory?.id}/diagnoses/\\d+$`).test(config.url) && config.method === "delete") {
+    diagnoses = diagnoses.filter((item) => item.id !== Number(config.url.split("/").at(-1)));
+    return ok(config, null);
+  }
+  if (config.url === `/clinical-history/${currentHistory?.id}/prescriptions` && config.method === "post") {
+    const next = { ...prescriptionFixture, id: prescriptions.length + 200, ...payload(config), clinical_history_id: currentHistory.id };
+    prescriptions = [...prescriptions, next];
+    return ok(config, next);
+  }
+  if (new RegExp(`^/clinical-history/${currentHistory?.id}/prescriptions/\\d+$`).test(config.url) && config.method === "put") {
+    const id = Number(config.url.split("/").at(-1));
+    const next = { ...prescriptions.find((item) => item.id === id), ...payload(config), id, clinical_history_id: currentHistory.id };
+    prescriptions = prescriptions.map((item) => item.id === id ? next : item);
+    return ok(config, next);
+  }
+  if (new RegExp(`^/clinical-history/${currentHistory?.id}/prescriptions/\\d+$`).test(config.url) && config.method === "delete") {
+    prescriptions = prescriptions.filter((item) => item.id !== Number(config.url.split("/").at(-1)));
+    return ok(config, null);
+  }
+  if (config.url === `/clinical-history/${currentHistory?.id}/requested-tests` && config.method === "post") {
+    const next = { id: requestedTests.length + 300, clinical_history_id: currentHistory.id, ...payload(config) };
+    requestedTests = [...requestedTests, next];
+    return ok(config, next);
+  }
+  if (/^\/clinical-history\/requested-tests\/\d+$/.test(config.url) && config.method === "delete") {
+    requestedTests = requestedTests.filter((item) => item.id !== Number(config.url.split("/").at(-1)));
+    return ok(config, null);
+  }
+  if (config.url === `/clinical-history/${currentHistory?.id}/laboratory-orders` && config.method === "post") {
+    const next = { id: 401, clinical_history_id: currentHistory.id, patient_name: currentAppointment.patient_name, doctor_name: currentAppointment.doctor_name, center_name: currentAppointment.center_name, specialty_name: currentAppointment.specialty_name, status: "ordered", is_additional: false, notes: payload(config).notes, created_at: "2026-09-16T09:50:00", items: payload(config).items.map((item, index) => ({ id: index + 1, laboratory_test_id: item.laboratory_test_id, test_code: laboratoryTestFixture.code, test_name: laboratoryTestFixture.name, test_category: laboratoryTestFixture.category, custom_note: null })) };
+    laboratoryOrders = [next];
+    return ok(config, next);
+  }
+  if (config.url === `/clinical-history/${currentHistory?.id}/study-orders` && config.method === "post") return ok(config, {});
+
+  throw new Error(`Unexpected request ${config.method} ${config.url}`);
+}
+
+async function settle() {
+  for (let index = 0; index < 4; index += 1) {
+    await act(async () => { await Promise.resolve(); });
+  }
+}
+
+async function mount(appointment = appointmentScheduled) {
+  await act(async () => {
+    root.render(h(Consultation, { appointment, onBack() { backCount += 1; }, registerNavigationGuard(guard) { registeredGuard = guard; } }));
+  });
+  await settle();
+}
+
+function button(label, scope = host) {
+  return [...scope.querySelectorAll("button")].find((item) => item.textContent.trim() === label);
+}
+
+function activeDialog() {
+  const dialog = document.querySelector("dialog[open]");
+  assert.ok(dialog);
+  return dialog;
+}
+
+function control(label, scope = host) {
+  const wrapper = [...scope.querySelectorAll("label")].find((item) => item.textContent.trim().startsWith(label));
+  assert.ok(wrapper, label);
+  const target = wrapper.querySelector("input, textarea, select");
+  assert.ok(target, label);
+  return target;
+}
+
+async function click(target) {
+  assert.ok(target);
+  await act(async () => { target.click(); });
+  await settle();
+}
+
+async function change(target, value) {
+  await act(async () => {
+    const prototype = target.tagName === "TEXTAREA"
+      ? dom.window.HTMLTextAreaElement.prototype
+      : target.tagName === "SELECT"
+        ? dom.window.HTMLSelectElement.prototype
+        : dom.window.HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, "value").set.call(target, value);
+    target.dispatchEvent(new dom.window.Event(target.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
+  });
+  await settle();
+}
+
+function urls() {
+  return calls.map((item) => `${item.method} ${item.url}`);
+}
+
+beforeEach(() => {
+  clearClinicalCatalogCacheForTests();
+  globalThis.Date = class extends NativeDate {
+    constructor(...args) { super(...(args.length ? args : ["2026-09-16T12:00:00"])); }
+    static now() { return new NativeDate("2026-09-16T12:00:00").getTime(); }
+  };
+  root = createRoot(host);
+  calls = [];
+  currentAppointment = clone(appointmentScheduled);
+  contextHistories = [];
+  currentHistory = null;
+  currentWorkspace = consultationWorkspace();
+  vitals = null;
+  diagnoses = [];
+  prescriptions = [];
+  requestedTests = [];
+  laboratoryOrders = [];
+  studyOrders = [];
+  intercept = null;
+  backCount = 0;
+  confirmCount = 0;
+  previousRequests = [];
+  registeredGuard = null;
+  dom.window.confirm = () => { confirmCount += 1; return true; };
+  dom.window.HTMLAnchorElement.prototype.click = function clickDownloadFixture() {};
+  api.defaults.adapter = responseAdapter;
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  api.defaults.adapter = originalAdapter;
+  dom.window.HTMLAnchorElement.prototype.click = nativeAnchorClick;
+  globalThis.Date = NativeDate;
+  clearClinicalCatalogCacheForTests();
+});
+
+after(async () => {
+  await server.close();
+  dom.window.close();
+});
+
+test("consulta nueva conserva el contexto de la cita y bloquea módulos sin historyId", async () => {
+  await mount();
+  assert.match(host.textContent, /Paciente de prueba/);
+  assert.match(host.textContent, /Dra\. Prueba/);
+  assert.match(host.textContent, /Centro de prueba/);
+  assert.match(host.textContent, /Cardiología ficticia/);
+  assert.equal(button("Guardar consulta").disabled, false);
+  assert.equal(control("Medicamento *").disabled, true);
+  assert.match(host.textContent, /Guarda primero la consulta para crear órdenes estructuradas/);
+  assert.deepEqual([...urls()].sort(), [
+    "get /auth/me",
+    "get /clinical-history/appointments/81/context",
+  ].sort());
+  await click(button("← Volver a la agenda"));
+  assert.equal(backCount, 1);
+});
+
+test("primer guardado envía solo contenido clínico y appointment_id al servidor", async () => {
+  await mount();
+  await change(control("Motivo de consulta"), "Motivo caracterizado");
+  await click(button("Guardar consulta"));
+  const created = calls.find((item) => item.method === "post" && item.url === "/clinical-history/patients/34");
+  assert.ok(created);
+  const body = payload(created);
+  assert.deepEqual(Object.keys(body).sort(), [
+    "allergies", "appointment_id", "chronic_conditions", "clinical_notes", "consultation_date", "current_illness", "current_medications", "family_history", "habits", "personal_history", "previous_surgeries", "reason_for_visit",
+  ].sort());
+  assert.equal(body.appointment_id, 81);
+  assert.equal(body.reason_for_visit, "Motivo caracterizado");
+  assert.equal("doctor_id" in body, false);
+  assert.equal("center_id" in body, false);
+  assert.equal("specialty_id" in body, false);
+  assert.equal("patient_id" in body, false);
+  assert.ok(!urls().includes("get /clinical-history/61/vital-signs"));
+  assert.ok(urls().includes("get /clinical-history/61/laboratory-orders"));
+});
+
+test("consulta existente carga solo los recursos activos de la consulta", async () => {
+  currentAppointment = clone(appointmentConfirmed);
+  currentHistory = clinicalHistory({ appointment_id: 82, status: "in_progress" });
+  contextHistories = [currentHistory];
+  vitals = clone(vitalSignsFixture);
+  diagnoses = [clone(diagnosisFixture)];
+  prescriptions = [clone(prescriptionFixture)];
+  requestedTests = [clone(requestedTestFixture)];
+  await mount(currentAppointment);
+  assert.equal(calls.filter((item) => item.method === "get").length, 10);
+  assert.equal(calls.filter((item) => item.method === "get" && item.url === "/clinical-catalog/studies").length, 1);
+  assert.match(host.textContent, /Diagnóstico ficticio/);
+  assert.match(host.textContent, /Medicamento ficticio/);
+  assert.match(host.textContent, /Estudio ficticio/);
+  assert.equal(control("Presión sistólica").value, "120");
+  for (const expected of [
+    "/auth/me",
+    "/clinical-history/appointments/82/context",
+    "/clinical-history/42/prescriptions",
+    "/clinical-history/42/diagnoses",
+    "/clinical-history/42/requested-tests",
+    "/clinical-history/42/vital-signs",
+    "/laboratory-tests",
+    "/clinical-history/42/laboratory-orders",
+    "/clinical-history/42/study-orders",
+  ]) assert.ok(calls.some((item) => item.url === expected), expected);
+});
+
+test("signos vitales preservan el payload actual y muestran el error del API", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  vitals = clone(vitalSignsFixture);
+  await mount();
+  await change(control("Frecuencia cardíaca"), "88");
+  await click(button("Guardar signos vitales"));
+  const update = calls.find((item) => item.method === "put" && item.url === "/clinical-history/42/vital-signs");
+  assert.deepEqual(payload(update), {
+    systolic_pressure: 120,
+    diastolic_pressure: 80,
+    heart_rate: 88,
+    respiratory_rate: null,
+    temperature_c: null,
+    oxygen_saturation: null,
+    weight_kg: 68.5,
+    height_cm: 167,
+  });
+
+  intercept = (config) => config.url === "/clinical-history/42/vital-signs" && config.method === "put" ? failure("Rango rechazado", 422) : undefined;
+  await change(control("Frecuencia cardíaca"), "10");
+  await click(button("Guardar signos vitales"));
+  assert.match(host.textContent, /Rango rechazado/);
+});
+
+test("actualización envía expected_revision y adopta la revisión devuelta", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(control("Motivo de consulta"), "Versión actualizada");
+  await click(button("Actualizar consulta"));
+  const firstUpdate = calls.find((item) => item.method === "put" && item.url === "/clinical-history/42");
+  assert.equal(payload(firstUpdate).expected_revision, 1);
+  assert.equal(currentHistory.revision, 2);
+
+  await change(control("Motivo de consulta"), "Segunda versión");
+  await click(button("Actualizar consulta"));
+  const updates = calls.filter((item) => item.method === "put" && item.url === "/clinical-history/42");
+  assert.equal(payload(updates.at(-1)).expected_revision, 2);
+  assert.equal(currentHistory.revision, 3);
+});
+
+test("409 por revisión obsoleta conserva cambios locales y muestra el conflicto", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(control("Motivo de consulta"), "Cambio local pendiente");
+  const detail = "La consulta fue modificada en otra sesión o pestaña. Recarga la información antes de continuar.";
+  intercept = (config) => config.url === "/clinical-history/42" && config.method === "put" ? failure(detail, 409) : undefined;
+  await click(button("Actualizar consulta"));
+  assert.match(host.textContent, /modificada en otra sesión o pestaña/);
+  assert.match(host.textContent, /Los cambios locales no fueron guardados y permanecen visibles/);
+  assert.ok(button("Recargar versión del servidor"));
+  assert.equal(control("Motivo de consulta").value, "Cambio local pendiente");
+  assert.equal(currentHistory.revision, 1);
+  await click(button("Continuar revisando mis cambios"));
+  assert.doesNotMatch(host.textContent, /Los cambios locales no fueron guardados/);
+  assert.equal(control("Motivo de consulta").value, "Cambio local pendiente");
+});
+
+test("recarga explícita tras 409 adopta la revisión del servidor sin reintento automático", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(control("Motivo de consulta"), "Borrador local no guardado");
+  intercept = (config) => config.url === "/clinical-history/42" && config.method === "put" ? failure("La consulta fue modificada en otra sesión o pestaña. Recarga la información antes de continuar.", 409) : undefined;
+  await click(button("Actualizar consulta"));
+  assert.equal(calls.filter((item) => item.method === "put" && item.url === "/clinical-history/42").length, 1);
+  currentHistory = { ...currentHistory, reason_for_visit: "Versión vigente del servidor", revision: 2, updated_at: "2026-09-16T10:10:00" };
+  contextHistories = [currentHistory];
+  intercept = null;
+  await click(button("Recargar versión del servidor"));
+  await settle();
+  assert.equal(control("Motivo de consulta").value, "Versión vigente del servidor");
+  assert.equal(calls.filter((item) => item.method === "get" && item.url === "/clinical-history/appointments/81/context").length, 2);
+  assert.doesNotMatch(host.textContent, /Los cambios locales no fueron guardados/);
+  await change(control("Motivo de consulta"), "Edición sobre revisión vigente");
+  await click(button("Actualizar consulta"));
+  const updates = calls.filter((item) => item.method === "put" && item.url === "/clinical-history/42");
+  assert.equal(payload(updates.at(-1)).expected_revision, 2);
+});
+
+test("dirty state protege salida, beforeunload y finalización; guardar lo limpia", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  assert.equal(typeof registeredGuard, "function");
+  assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), true);
+  assert.equal(button("Finalizar consulta").disabled, false);
+
+  await change(control("Motivo de consulta"), "Cambio pendiente protegido");
+  assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), false);
+  assert.equal(button("Finalizar consulta").disabled, true);
+  assert.match(host.textContent, /Guarde o descarte los cambios pendientes antes de finalizar/);
+  assert.equal(calls.some((item) => item.url === "/clinical-history/42/complete"), false);
+  assert.equal(document.querySelector("dialog[open]"), null);
+
+  const backTrigger = button("← Volver a la agenda");
+  backTrigger.focus();
+  await click(backTrigger);
+  assert.equal(backCount, 0);
+  assert.equal(control("Motivo de consulta").value, "Cambio pendiente protegido");
+  const discardDialog = activeDialog();
+  assert.match(discardDialog.textContent, /Hay cambios sin guardar en esta consulta/);
+  assert.equal(confirmCount, 0);
+  await click(button("Continuar editando", discardDialog));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, backTrigger);
+
+  await click(button("Actualizar consulta"));
+  assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), true);
+  assert.equal(button("Finalizar consulta").disabled, false);
+  let proceeded = false;
+  registeredGuard(() => { proceeded = true; });
+  assert.equal(proceeded, true);
+  assert.equal(document.querySelector("dialog[open]"), null);
+});
+
+test("workspace incompatible no renderiza módulos, ni permite finalizar o escribir", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  currentWorkspace = consultationWorkspace({
+    modules: [
+      { key: "core.anamnesis", label: "Historia de la consulta", position: 1, required: true },
+      { key: "cardiology.assessment", label: "Evaluación cardiovascular", position: 2, required: true },
+    ],
+  });
+  await mount();
+
+  assert.match(host.textContent, /esta versión de Atlas no puede interpretar/i);
+  assert.equal(host.querySelector("[data-consultation-module]"), null);
+  assert.equal(button("Finalizar consulta").disabled, true);
+  assert.match(host.textContent, /No puede finalizar mientras la configuración clínica sea incompatible/);
+  assert.equal(calls.some((item) => item.method === "post" && item.url === `/clinical-history/${currentHistory.id}/complete`), false);
+  assert.equal(calls.some((item) => ["post", "put"].includes(item.method) && item.url.startsWith(`/clinical-history/patients/${currentAppointment.patient_id}`)), false);
+  assert.equal(calls.some((item) => item.method === "put" && item.url === `/clinical-history/${currentHistory.id}`), false);
+});
+
+test("Escape cancela la salida con cambios pendientes y conserva el borrador", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const backTrigger = button("← Volver a la agenda");
+  backTrigger.focus();
+  await change(control("Motivo de consulta"), "Borrador que no debe perderse");
+  await click(backTrigger);
+  const discardDialog = activeDialog();
+  await act(async () => discardDialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(backCount, 0);
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, backTrigger);
+  assert.equal(control("Motivo de consulta").value, "Borrador que no debe perderse");
+  assert.equal(confirmCount, 0);
+});
+
+test("guardar con error conserva el borrador y la protección de navegación", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(control("Motivo de consulta"), "Borrador tras error");
+  intercept = (config) => config.url === "/clinical-history/42" && config.method === "put" ? failure("Fallo de guardado", 500) : undefined;
+  await click(button("Actualizar consulta"));
+  assert.match(host.textContent, /Fallo de guardado/);
+  assert.equal(control("Motivo de consulta").value, "Borrador tras error");
+  assert.equal(dom.window.dispatchEvent(new dom.window.Event("beforeunload", { cancelable: true })), false);
+});
+
+test("volver sin cambios pendientes navega sin confirmación", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await click(button("← Volver a la agenda"));
+  assert.equal(backCount, 1);
+  assert.equal(confirmCount, 0);
+});
+
+test("diagnósticos conservan creación principal/CIE-10 y eliminación", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  await change(host.querySelector('input[placeholder="Descripción del diagnóstico"]'), "Hallazgo ficticio");
+  await change(host.querySelector('input[placeholder="Código CIE-10"]'), "Z99.9");
+  await click(button("Agregar"));
+  const created = calls.find((item) => item.method === "post" && item.url === "/clinical-history/42/diagnoses");
+  assert.deepEqual(payload(created), { description: "Hallazgo ficticio", icd10_code: "Z99.9", is_primary: true });
+  assert.match(host.textContent, /Hallazgo ficticio/);
+  await click(button("Eliminar"));
+  assert.ok(calls.some((item) => item.method === "delete" && /\/clinical-history\/42\/diagnoses\//.test(item.url)));
+});
+
+test("receta conserva CRUD y PDF sobre la historia activa", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  prescriptions = [clone(prescriptionFixture)];
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = () => "blob:fixture";
+  URL.revokeObjectURL = () => {};
+  try {
+    await mount();
+    await click(button("Editar"));
+    await change(control("Dosis"), "20 mg");
+    await click(button("Guardar cambios"));
+    const updated = calls.find((item) => item.method === "put" && item.url === "/clinical-history/42/prescriptions/11");
+    assert.equal(payload(updated).dose, "20 mg");
+    await click(button("Descargar receta PDF"));
+    assert.ok(calls.some((item) => item.method === "get" && item.url === "/clinical-history/42/prescriptions/pdf"));
+    await click(button("Eliminar"));
+    assert.ok(calls.some((item) => item.method === "delete" && item.url === "/clinical-history/42/prescriptions/11"));
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test("nuevas órdenes usan ClinicalOrdersSection y no exponen creación RequestedTest", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  assert.equal(host.querySelector('input[placeholder^="Ej. Hemograma"]'), null);
+  assert.equal(button("Agregar estudio"), undefined);
+  await click(button("+ Nueva orden"));
+  await click([...host.querySelectorAll("button")].find((item) => item.textContent.trim().startsWith("Laboratorio")));
+  await click(host.querySelector('button[aria-expanded="false"]'));
+  const laboratoryChoice = [...host.querySelectorAll("label")].find((item) => item.textContent.includes("Hemograma ficticio"));
+  await click(laboratoryChoice.querySelector('input[type="checkbox"]'));
+  await click(button("Guardar orden"));
+  const order = calls.find((item) => item.method === "post" && item.url === "/clinical-history/42/laboratory-orders");
+  assert.deepEqual(payload(order), { items: [{ laboratory_test_id: 31 }], notes: null });
+  assert.equal(calls.some((item) => item.method === "post" && item.url === "/clinical-history/42/requested-tests"), false);
+});
+
+test("RequestedTest legado sigue visible como historial y conserva PDF", async () => {
+  currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
+  currentHistory = clone(clinicalHistoryCompleted);
+  contextHistories = [currentHistory];
+  requestedTests = [clone(requestedTestFixture)];
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  URL.createObjectURL = () => "blob:fixture";
+  URL.revokeObjectURL = () => {};
+  try {
+    await mount(currentAppointment);
+    assert.match(host.textContent, /Solicitudes heredadas/);
+    assert.match(host.textContent, /Estudio ficticio/);
+    assert.equal(button("Agregar estudio"), undefined);
+    await click(button("Descargar orden PDF"));
+    assert.ok(calls.some((item) => item.method === "get" && item.url === "/clinical-history/42/requested-tests/pdf"));
+  } finally {
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test("el panel RequestedTest heredado no se muestra cuando no hay registros", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  assert.doesNotMatch(host.textContent, /Solicitudes heredadas/);
+});
+
+test("finalizar consulta abre el Modal Atlas sin window.confirm y cancelar no llama el API", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const trigger = button("Finalizar consulta");
+  trigger.focus();
+  await click(trigger);
+  const dialog = activeDialog();
+  assert.ok(dialog.getAttribute("aria-labelledby"));
+  assert.equal(document.activeElement, dialog.querySelector("h2"));
+  assert.match(dialog.textContent, /¿Desea finalizar esta consulta\?/);
+  assert.match(dialog.textContent, /quedará en modo de solo lectura/);
+  assert.equal(confirmCount, 0);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+  await click(button("Cancelar", dialog));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, trigger);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+});
+
+test("confirmar finalización muestra estado ocupado, llama el API y mantiene lectura", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  prescriptions = [clone(prescriptionFixture)];
+  let releaseCompletion;
+  intercept = (config) => {
+    if (config.url !== "/clinical-history/42/complete" || config.method !== "post") return undefined;
+    return new Promise((resolve) => {
+      releaseCompletion = () => {
+        currentHistory = { ...currentHistory, status: "completed", revision: currentHistory.revision + 1, completed_at: "2026-09-16T10:05:00", completed_by_id: activeDoctor.id };
+        currentAppointment = { ...currentAppointment, status: "completed" };
+        resolve(ok(config, currentHistory));
+      };
+    });
+  };
+  await mount();
+  await click(button("Finalizar consulta"));
+  const dialog = activeDialog();
+  await click(button("Finalizar consulta", dialog));
+  assert.equal(confirmCount, 0);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 1);
+  assert.ok(button("Finalizando...", dialog));
+  assert.equal(button("Finalizando...", dialog).disabled, true);
+  assert.equal(button("Cancelar", dialog).disabled, true);
+  await act(async () => { releaseCompletion(); });
+  await settle();
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.match(host.textContent, /Consulta finalizada y bloqueada en modo de solo lectura/);
+  assert.equal(button("Finalizar consulta"), undefined);
+  assert.equal(button("Guardar consulta"), undefined);
+  assert.ok(button("Descargar resumen PDF"));
+});
+
+for (const [status, detail] of [[409, "La consulta finalizada es de solo lectura"], [403, "No tiene acceso a esta historia clínica"]]) {
+  test(`finalizar conserva el error ${status} del servidor y mantiene el Modal`, async () => {
+    currentHistory = clone(clinicalHistoryInProgress);
+    contextHistories = [currentHistory];
+    intercept = (config) => config.url === "/clinical-history/42/complete" && config.method === "post" ? failure(detail, status) : undefined;
+    await mount();
+    await click(button("Finalizar consulta"));
+    const dialog = activeDialog();
+    await click(button("Finalizar consulta", dialog));
+    assert.equal(confirmCount, 0);
+    assert.match(host.textContent, new RegExp(detail));
+    assert.ok(document.querySelector("dialog[open]"));
+    assert.ok(button("Finalizar consulta"));
+  });
+}
+
+test("Escape cierra el Modal de finalización sin finalizar", async () => {
+  currentHistory = clone(clinicalHistoryInProgress);
+  contextHistories = [currentHistory];
+  await mount();
+  const trigger = button("Finalizar consulta");
+  trigger.focus();
+  await click(trigger);
+  const dialog = activeDialog();
+  await act(async () => dialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(document.querySelector("dialog[open]"), null);
+  assert.equal(document.activeElement, trigger);
+  assert.equal(calls.filter((item) => item.method === "post" && item.url === "/clinical-history/42/complete").length, 0);
+});
+
+test("consulta completed se mantiene legible y el historial previo se abre/cierra solo con su control actual", async () => {
+  currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
+  currentHistory = clone(clinicalHistoryCompleted);
+  contextHistories = [currentHistory, clone(legacyClinicalHistory)];
+  await mount(currentAppointment);
+  assert.match(host.textContent, /Consulta finalizada y bloqueada en modo de solo lectura/);
+  assert.equal(button("Guardar consulta"), undefined);
+  assert.ok(button("Descargar resumen PDF"));
+  intercept = (config) => {
+    if (config.method === "get" && config.url === "/clinical-history/18/vital-signs") return ok(config, null);
+    if (config.method === "get" && config.url === "/clinical-history/18/diagnoses") return ok(config, []);
+    if (config.method === "get" && config.url === "/clinical-history/18/prescriptions") return ok(config, []);
+    if (config.method === "get" && config.url === "/clinical-history/18/requested-tests") return ok(config, []);
+    if (config.method === "get" && config.url === "/clinical-history/18/addenda") return ok(config, []);
+    if (config.method === "get" && config.url === "/clinical-history/18/laboratory-orders") return ok(config, []);
+    if (config.method === "get" && config.url === "/clinical-history/18/study-orders") return ok(config, []);
+    return undefined;
+  };
+  const historyTrigger = button("Ver historial completo");
+  historyTrigger.focus();
+  await click(historyTrigger);
+  const dialog = document.querySelector('dialog[open]');
+  assert.ok(dialog);
+  assert.ok(dialog.getAttribute("aria-labelledby"));
+  assert.equal(document.activeElement, dialog.querySelector("h2"));
+  assert.match(dialog.textContent, /Consulta del 2025-06-02/);
+  await act(async () => dialog.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+  assert.ok(document.querySelector('dialog[open]'));
+  await act(async () => dialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true })));
+  assert.equal(document.querySelector('dialog[open]'), null);
+  assert.equal(document.activeElement, historyTrigger);
+});
+
+function historicalResponse(id, kind) {
+  if (kind === "vital-signs") return { ...vitalSignsFixture, clinical_history_id: id, systolic_pressure: id };
+  if (kind === "diagnoses") return [{ ...diagnosisFixture, clinical_history_id: id, description: `Diagnóstico histórico ${id}` }];
+  if (kind === "prescriptions") return [{ ...prescriptionFixture, clinical_history_id: id, medication: `Medicamento histórico ${id}` }];
+  if (kind === "requested-tests") return [{ ...requestedTestFixture, clinical_history_id: id, test_name: `Solicitud histórica ${id}` }];
+  if (kind === "addenda") return [{ id: id * 10, clinical_history_id: id, author_user_id: 12, author_name: "Dra. Prueba", reason: "Aclaración", note: `Nota histórica ${id}`, created_at: "2026-09-17T10:00:00" }];
+  if (kind === "laboratory-orders") return [{ id: id * 10, clinical_history_id: id, patient_name: "Paciente de prueba", doctor_name: "Dra. Prueba", center_name: "Centro de prueba", specialty_name: "Cardiología ficticia", status: "ordered", is_additional: false, notes: `Nota laboratorio ${id}`, created_at: "2026-09-17T10:00:00", items: [{ id: id * 100, laboratory_test_id: 31, test_code: "LAB-FICT", test_name: `Laboratorio histórico ${id}`, test_category: "Laboratorio", custom_note: null }] }];
+  if (kind === "study-orders") return [{ id: id * 10, clinical_history_id: id, patient_name: "Paciente de prueba", doctor_name: "Dra. Prueba", center_name: "Centro de prueba", specialty_name: "Cardiología ficticia", status: "ordered", is_additional: false, notes: `Nota estudio ${id}`, created_at: "2026-09-17T10:00:00", items: [{ id: id * 100, medical_study_id: 21, modality: "study", study_name: `Estudio histórico ${id}`, region_description: "Abdomen", contrast: "not_applicable", clinical_notes: "Detalle histórico" }] }];
+  return [];
+}
+
+function deferHistoricalReads(config) {
+  if (/^\/(laboratory-orders|study-orders)\/\d+\/pdf$/.test(config.url)) return ok(config, new Blob(["fixture"]));
+  const match = /^\/clinical-history\/(18|19)\/(vital-signs|diagnoses|prescriptions|requested-tests|addenda|laboratory-orders|study-orders)$/.exec(config.url);
+  if (!match) return undefined;
+  return new Promise((resolve, reject) => previousRequests.push({ id: Number(match[1]), kind: match[2], config, resolve, reject }));
+}
+
+test("historial anterior comparte la proyección clínica completa y conserva PDFs estructurados", async () => {
+  currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
+  currentHistory = clone(clinicalHistoryCompleted);
+  const historical = clone(legacyClinicalHistory);
+  contextHistories = [currentHistory, historical];
+  intercept = (config) => deferHistoricalReads(config) ?? undefined;
+  await mount(currentAppointment);
+  await click(button("Ver historial completo"));
+  for (const request of previousRequests) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  const dialog = document.querySelector('dialog[open]');
+  assert.ok(dialog);
+  assert.match(dialog.textContent, /Consulta del 2025-06-02/);
+  assert.match(dialog.textContent, /Diagnóstico histórico 18/);
+  assert.match(dialog.textContent, /Medicamento histórico 18/);
+  assert.match(dialog.textContent, /Solicitud histórica 18/);
+  assert.match(dialog.textContent, /Laboratorio histórico 18/);
+  assert.match(dialog.textContent, /Estudio histórico 18/);
+  assert.match(dialog.textContent, /Nota histórica 18/);
+  const orderPdfButtons = [...dialog.querySelectorAll("button")].filter((item) => item.textContent?.trim() === "Descargar PDF");
+  assert.equal(orderPdfButtons.length, 2);
+  await click(orderPdfButtons[0]);
+  assert.ok(calls.some((item) => item.url === "/laboratory-orders/180/pdf"));
+  await click(orderPdfButtons[1]);
+  assert.ok(calls.some((item) => item.url === "/study-orders/180/pdf"));
+});
+
+test("historial anterior a → b ignora éxito y error tardíos, y el desmontaje invalida publicaciones pendientes", async () => {
+  currentAppointment = { ...clone(appointmentScheduled), status: "completed" };
+  currentHistory = clone(clinicalHistoryCompleted);
+  const historyA = clone(legacyClinicalHistory);
+  const historyB = { ...clone(legacyClinicalHistory), id: 19, consultation_date: "2025-07-03", reason_for_visit: "Consulta B" };
+  contextHistories = [currentHistory, historyA, historyB];
+  intercept = (config) => deferHistoricalReads(config) ?? undefined;
+  await mount(currentAppointment);
+
+  const historicalButtons = () => [...host.querySelectorAll("aside button")].filter((item) => item.textContent.includes("Ver historial completo") || item.textContent.includes("Cargando"));
+  await click(historicalButtons()[0]);
+  const secondButton = historicalButtons()[1];
+  assert.ok(secondButton);
+  secondButton.disabled = false;
+  await click(secondButton);
+  const requestsA = previousRequests.filter((request) => request.id === historyA.id);
+  const requestsB = previousRequests.filter((request) => request.id === historyB.id);
+  assert.equal(requestsA.length, 7);
+  assert.equal(requestsB.length, 7);
+  for (const request of requestsA) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  assert.equal(document.querySelector('dialog[open]'), null);
+  for (const request of requestsB) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  assert.match(document.querySelector('dialog[open]').textContent, /Consulta del 2025-07-03/);
+  assert.doesNotMatch(host.textContent, /Solicitud histórica 18/);
+
+  await click(document.querySelector('dialog[open] [aria-label="Cerrar historial anterior"]'));
+  previousRequests = [];
+  await click(historicalButtons()[0]);
+  const secondButtonAfterRetry = historicalButtons()[1];
+  secondButtonAfterRetry.disabled = false;
+  await click(secondButtonAfterRetry);
+  const retryRequestsA = previousRequests.filter((request) => request.id === historyA.id);
+  const retryRequestsB = previousRequests.filter((request) => request.id === historyB.id);
+  for (const request of retryRequestsA) request.reject(new Error("stale historical error"));
+  await settle();
+  assert.doesNotMatch(host.textContent, /stale historical error/);
+  for (const request of retryRequestsB) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  assert.match(document.querySelector('dialog[open]').textContent, /Consulta del 2025-07-03/);
+
+  await click(document.querySelector('dialog[open] [aria-label="Cerrar historial anterior"]'));
+  previousRequests = [];
+  await click(historicalButtons()[0]);
+  const pendingUnmountRequests = [...previousRequests];
+  await act(async () => root.unmount());
+  for (const request of pendingUnmountRequests) request.resolve(ok(request.config, historicalResponse(request.id, request.kind)));
+  await settle();
+  assert.equal(document.querySelector('dialog[open]'), null);
+});
+
+
+test("edad clínica sigue fecha de consulta editada y sangre se presenta como dato declarado actual", async () => {
+  currentAppointment = { ...currentAppointment, patient_date_of_birth: "2000-09-20" };
+  await mount(currentAppointment);
+  assert.match(host.textContent, /Tipo sanguíneo declarado\/registrado \(ficha actual\)/);
+  assert.match(host.textContent, /No equivale a confirmación de laboratorio/);
+  await change(control("Fecha de consulta"), "2020-09-19");
+  assert.match(host.textContent, /Edad en la consulta: 19 años/);
+  await change(control("Fecha de consulta"), "2020-09-20");
+  assert.match(host.textContent, /Edad en la consulta: 20 años/);
+});

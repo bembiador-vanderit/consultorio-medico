@@ -1,0 +1,85 @@
+/* Shared operational frame; module bodies retain their contracts. */
+.atlas-operational-workspace { width:100%; max-width:90rem; margin-inline:auto; padding:var(--atlas-page-space); min-width:0; overflow-x:auto; }
+.atlas-operational-workspace--dashboard { max-width:none; padding:var(--atlas-space-4); overflow-x:clip; }
+.atlas-shell .atlas-sidebar { position:sticky; top:0; width:14rem; height:100dvh; overflow-y:auto; display:flex; flex-direction:column; background:linear-gradient(165deg,var(--atlas-navigation-surface),var(--atlas-navigation-bg) 55%); }
+.atlas-shell .atlas-brand { padding-bottom:var(--atlas-space-5); }
+.atlas-shell .atlas-brand-mark { background:transparent; color:var(--atlas-primary); width:44px; height:44px; }
+.atlas-brand-mark svg { width:100%; height:100%; }
+.atlas-sidebar-footer { margin-top:auto; padding:var(--atlas-space-5) var(--atlas-space-3) 0; color:var(--atlas-navigation-text-muted); font-size:var(--atlas-type-caption); }
+.atlas-shell-body { background:var(--atlas-surface-secondary); }
+.atlas-shell .atlas-topbar { position:sticky; top:0; z-index:var(--atlas-z-sticky); min-height:64px; height:64px; flex-shrink:0; flex-wrap:nowrap; gap:var(--atlas-space-3); padding:var(--atlas-space-2) var(--atlas-space-4); }
+.atlas-topbar-context { flex:1; min-width:0; }
+.atlas-shell .atlas-topbar-account { flex-wrap:nowrap; width:auto; justify-content:flex-end; gap:var(--atlas-space-3); flex-shrink:0; }
+.atlas-topbar-title { display:none; }
+.atlas-topbar-title:has(.atlas-help) { display:block; }
+.atlas-notification-trigger { display:grid; place-items:center; width:44px; height:44px; color:var(--atlas-action); background:var(--atlas-surface-secondary); }
+.atlas-topbar-search { min-width:18rem; justify-content:flex-start; color:var(--atlas-text-muted); border-color:var(--atlas-border); background:var(--atlas-surface-secondary); }
+.atlas-mobile-brand { display:none; align-items:center; gap:var(--atlas-space-2); }
+.atlas-mobile-brand svg { width:30px; height:30px; color:var(--atlas-primary); }
+.atlas-account-menu { position:relative; min-width:0; }
+.atlas-account-menu summary { display:flex; align-items:center; gap:var(--atlas-space-3); list-style:none; cursor:pointer; border-radius:var(--atlas-radius-sm); min-height:44px; }
+.atlas-account-menu summary::-webkit-details-marker { display:none; }
+.atlas-account-avatar { display:grid; place-items:center; width:40px; height:40px; border-radius:50%; background:var(--atlas-navigation-bg); color:var(--atlas-navigation-text); font-size:var(--atlas-type-secondary); font-weight:700; flex-shrink:0; }
+.atlas-account-menu .atlas-user { max-width:20rem; min-width:0; text-align:left; }
+.atlas-account-menu .atlas-user p { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.atlas-account-menu .atlas-user .atlas-label { font-size:var(--atlas-type-secondary); }
+.atlas-account-menu .atlas-user .atlas-help { font-size:var(--atlas-type-caption); }
+.atlas-account-panel { position:absolute; right:0; top:calc(100% + .5rem); z-index:var(--atlas-z-popover); width:18rem; max-width:calc(100vw - 2rem); background:var(--atlas-surface); border:1px solid var(--atlas-border); border-radius:var(--atlas-radius); padding:var(--atlas-space-4); box-shadow:var(--atlas-shadow-overlay); overflow-wrap:anywhere; }
+.atlas-account-panel .atlas-button { margin-top:var(--atlas-space-3); width:100%; justify-content:flex-start; border-top:1px solid var(--atlas-border); }
+.atlas-bottom-navigation { display:none; }
+.agenda-page .agenda-mobile-filter-toggle,.agenda-page .agenda-week-mobile { display:none; }
+.atlas-dialog-body:has(>.agenda-month-panel--embedded) { display:flex; flex:1; padding:0; overflow:hidden; }
+.atlas-dialog .agenda-month-panel--embedded { flex:1; height:100%; display:flex; flex-direction:column; min-height:0; border:0; border-radius:0; }
+.agenda-month-panel--embedded .agenda-month-panel-header>[aria-label],.agenda-month-panel--embedded[aria-label="Citas del día"]>.agenda-month-panel-header,.agenda-month-panel--embedded .agenda-drawer-title h2 { display:none; }
+.agenda-month-panel--embedded .agenda-month-panel-header:not(:has(button:not([aria-label]))) { display:none; }
+.agenda-month-panel--embedded .agenda-month-panel-scroll { flex:1; overscroll-behavior:contain; }
+.atlas-dialog .agenda-day-list-item { grid-template-columns:3rem minmax(0,1fr); }
+.atlas-dialog .agenda-day-list-item>.agenda-event-status { grid-column:2; display:block; white-space:normal; }
+@media (min-width:1024px) {
+  .atlas-shell-body:has(.agenda-page) { display:flex; flex-direction:column; height:100dvh; }
+  .atlas-main:has(.agenda-page) { display:flex; flex:1; min-height:0; }
+  .atlas-operational-workspace.atlas-operational-workspace--agenda { display:flex; flex:1; max-width:none; height:auto; min-height:0; overflow:hidden; padding:var(--atlas-space-4); }
+  .atlas-operational-workspace--agenda>.agenda-page { flex:1; }
+}
+@media (max-width:1023px) {
+  .agenda-page .agenda-mobile-filter-toggle { display:inline-flex; }
+  .agenda-page .agenda-sidebar--collapsed { display:none; }
+  .atlas-shell .atlas-sidebar { display:none; }
+  .atlas-operational-workspace { --atlas-page-space:var(--atlas-space-4); }
+  .atlas-shell-body { padding-bottom:calc(64px + env(safe-area-inset-bottom)); }
+  .atlas-topbar-search,.atlas-account-menu .atlas-user,.atlas-account-chevron { display:none; }
+  .atlas-mobile-brand { display:flex; }
+  .atlas-bottom-navigation { position:fixed; inset:auto 0 0; z-index:var(--atlas-z-sticky); display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); padding:var(--atlas-space-1) var(--atlas-space-2) calc(var(--atlas-space-1) + env(safe-area-inset-bottom)); min-height:64px; border-top:1px solid var(--atlas-border); background:var(--atlas-surface); box-shadow:0 -2px 8px rgb(20 39 47 / 5%); }
+  .atlas-bottom-navigation button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:54px; border-radius:var(--atlas-radius-sm); color:var(--atlas-text-muted); cursor:pointer; font-size:var(--atlas-type-caption); }
+  .atlas-bottom-navigation button[aria-current="page"] { background:var(--atlas-mint); color:var(--atlas-action); font-weight:700; box-shadow:inset 0 3px var(--atlas-primary); }
+  .atlas-bottom-navigation button:hover { background:var(--atlas-surface-secondary); }
+  .atlas-more-icon { height:20px; font-size:1.1rem; line-height:16px; letter-spacing:2px; }
+  .atlas-topbar .atlas-notification-panel { left:auto; right:-52px; width:min(calc(100vw - 2rem),380px); }
+}
+@media (max-width:639px) {
+  .agenda-page { padding:0; gap:var(--atlas-space-3); }
+  .agenda-page .atlas-page-header .atlas-actions .atlas-actions>.atlas-button:first-child { display:none; }
+  .agenda-page .atlas-page-header { flex-wrap:nowrap; align-items:center; }
+  .agenda-page .atlas-page-header>div>.atlas-muted { display:none; }
+  .agenda-page .agenda-view-heading p { display:none; }
+  .agenda-page .agenda-view-heading h3 { font-size:var(--atlas-type-card); }
+  .agenda-page .agenda-appointment-card--day { padding:var(--atlas-space-2); min-height:0; }
+  .agenda-page .agenda-appointment-card--day .agenda-appointment-content { font-size:.8rem; line-height:1.25; }
+  .agenda-page .agenda-appointment-card--day .agenda-appointment-time { font-size:.8rem; }
+  .agenda-page .agenda-toolbar { gap:var(--atlas-space-2); }
+  .agenda-page .agenda-toolbar>div:first-of-type { display:grid; grid-template-columns:auto auto minmax(0,1fr) auto; gap:var(--atlas-space-1); }
+  .agenda-page .agenda-toolbar strong { font-size:.75rem; text-align:center; }
+  .agenda-page .agenda-toolbar>[aria-label="Vista de Agenda"] { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--atlas-space-1); order:-1; }
+  .agenda-page .agenda-toolbar>[aria-label="Vista de Agenda"] .atlas-button { padding-inline:var(--atlas-space-1); font-size:.8rem; }
+  .agenda-page .agenda-mobile-filter-toggle { width:100%; order:1; }
+  .agenda-page .agenda-week-grid { display:none; }
+  .agenda-page .agenda-week-mobile { display:grid; gap:var(--atlas-space-4); }
+  .agenda-week-mobile .agenda-view-heading p { display:none; }
+  .agenda-week-mobile .agenda-view-heading h3 { font-size:var(--atlas-type-secondary); }
+  .atlas-shell .atlas-topbar { height:56px; min-height:56px; gap:var(--atlas-space-2); padding:var(--atlas-space-1) var(--atlas-space-3); }
+  .atlas-shell .atlas-topbar-context { gap:var(--atlas-space-2); }
+  .atlas-shell .atlas-topbar-account { gap:var(--atlas-space-2); }
+  .atlas-mobile-brand strong { font-size:var(--atlas-type-card); }
+  .atlas-account-avatar { width:36px; height:36px; }
+  .atlas-topbar .atlas-notification-panel { right:-44px; }
+}
