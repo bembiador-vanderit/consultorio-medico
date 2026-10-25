@@ -3,9 +3,10 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, time
 from threading import Barrier
+from uuid import uuid4
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, MetaData
 from sqlalchemy.orm import Session
 from app.db import Base
 from app.models import Appointment, CareCenter, Patient, Role, User
@@ -47,7 +48,10 @@ def postgres():
             center_id=center.id, received_on=date(2026,10,5), reference='RACE-1', amount='1000'))
         ids = actor.id, claim.id, rem.id
     yield engine, ids
-    Base.metadata.drop_all(engine)
+    # Reflect PostgreSQL-assigned FK names, including pre-existing circular clinical FKs.
+    cleanup = MetaData()
+    cleanup.reflect(engine)
+    cleanup.drop_all(engine)
     engine.dispose()
 
 
@@ -60,7 +64,7 @@ def test_two_workers_cannot_exceed_remittance_or_claim(postgres):
             barrier.wait(timeout=30)
             try:
                 ars.apply(db, db.get(User, actor_id), rem_id,
-                          ApplyInput(allocations=[{'claim_id': claim_id, 'amount': '700'}]))
+                          ApplyInput(request_key=uuid4(), allocations=[{'claim_id': claim_id, 'amount': '700'}]))
                 return 200
             except HTTPException as e:
                 db.rollback()

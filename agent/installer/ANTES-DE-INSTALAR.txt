@@ -1,0 +1,23 @@
+ATLAS LOCAL AGENT - SEGUNDA ESTACIÓN / PILOTO CONTROLADO
+
+Esta instalación incluye el agente y el panel para Windows de 64 bits.
+No necesita instalar .NET por separado. Requiere Windows 10 22H2 o posterior.
+Windows 11: compatibilidad prevista, pendiente de validación en la segunda PC.
+
+Se instala solo para el usuario actual. No usa privilegios de administrador,
+no modifica impresoras y no arranca automáticamente con Windows.
+No instala un Windows Service ni realiza emparejamiento automático.
+No imprime durante la instalación ni al abrir el panel.
+
+El acceso directo inicia comunicación HTTPS y catálogo de impresoras.
+La impresión física y el consumo de trabajos remotos están deshabilitados.
+
+No copie identidad, credenciales, secretos ni datos de la primera estación.
+Cada PC debe crear su propia identidad y vincularse con un código nuevo.
+
+Al desinstalar se conservan la identidad y los datos locales para evitar
+duplicaciones y pérdida de trazabilidad. Desinstalar no revoca la estación:
+la revocación se realiza por un administrador desde Atlas Web.
+
+Paquete piloto sin firma Authenticode de Atlas: no es una distribución
+productiva certificada. No desactive antivirus ni políticas de Windows.

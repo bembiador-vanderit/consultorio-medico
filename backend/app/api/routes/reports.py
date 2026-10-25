@@ -73,14 +73,14 @@ def build_appointment_report_pdf(appointments: list[Appointment], start: date | 
     document = SimpleDocTemplate(
         buffer, pagesize=A4, rightMargin=14 * mm, leftMargin=14 * mm,
         topMargin=14 * mm, bottomMargin=14 * mm,
-        title="Reporte de citas", author="Atlas Consultorio",
+        title="Reporte de citas", author="Atlas Pérgamo",
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], alignment=TA_CENTER, fontSize=16, leading=20, spaceAfter=4 * mm)
     small_style = ParagraphStyle("ReportSmall", parent=styles["Normal"], fontSize=8, leading=10)
     cell_style = ParagraphStyle("ReportCell", parent=styles["Normal"], fontSize=7.5, leading=9)
 
-    story = [Paragraph("Atlas Consultorio", title_style), Paragraph("Reporte de citas", styles["Heading2"])]
+    story = [Paragraph("Atlas Pérgamo", title_style), Paragraph("Reporte de citas", styles["Heading2"])]
     period = f"{fmt_date(start) if start else 'Inicio'} - {fmt_date(end) if end else 'Fin'}"
     story.append(Paragraph(f"Período: {period} &nbsp;&nbsp; Total: {len(appointments)}", small_style))
     story.append(Spacer(1, 5 * mm))
@@ -92,7 +92,7 @@ def build_appointment_report_pdf(appointments: list[Appointment], start: date | 
         center_name = appointment.center.name if appointment.center else "—"
         rows.append([
             Paragraph(fmt_date(appointment.appointment_date), cell_style),
-            Paragraph(appointment.appointment_time.strftime("%H:%M"), cell_style),
+            Paragraph(appointment.appointment_time.strftime("%H:%M") if appointment.appointment_time else "Por turno", cell_style),
             Paragraph(patient_name, cell_style),
             Paragraph(appointment.doctor.full_name, cell_style),
             Paragraph(center_name, cell_style),
@@ -192,7 +192,7 @@ def appointment_report_email(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="SMTP no está configurado")
 
     period = f"{fmt_date(start) if start else 'Inicio'} - {fmt_date(end) if end else 'Fin'}"
-    body = f"Adjunto encontrará el reporte de citas de Atlas Consultorio correspondiente al período {period}. Total de citas: {len(appointments)}."
+    body = f"Adjunto encontrará el reporte de citas de Atlas Pérgamo correspondiente al período {period}. Total de citas: {len(appointments)}."
     try:
         send_email_with_attachment(
             str(to), f"Reporte de citas - {period}", body,
@@ -231,7 +231,7 @@ def appointment_report_whatsapp(
     content = build_appointment_report_pdf(appointments, start, end)
     filename = report_filename(start, end)
     period = f"{fmt_date(start) if start else 'Inicio'} - {fmt_date(end) if end else 'Fin'}"
-    caption = f"Reporte de citas de Atlas Consultorio — {period} — {len(appointments)} citas"
+    caption = f"Reporte de citas de Atlas Pérgamo — {period} — {len(appointments)} citas"
     settings = get_settings()
     try:
         action_url = send_whatsapp_document(phone, filename, content, caption)

@@ -1,7 +1,7 @@
 """Internal DOP ledger. Corrections append movements; nothing is deleted."""
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, JSON, Numeric, String, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 from app.models.organization import TenantOwned
@@ -93,3 +93,60 @@ class CashMovement(TenantOwned, Base):
     request_hash: Mapped[str] = mapped_column(String(64))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class CardProviderSetting(TenantOwned, Base):
+    __tablename__ = "card_provider_settings"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "center_id", "provider", name="uq_card_provider_center"),
+        CheckConstraint("provider IN ('CARDNET','AZUL','VISANET')", name="ck_card_provider_code"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    center_id: Mapped[int] = mapped_column(ForeignKey("care_centers.id", ondelete="RESTRICT"), index=True)
+    provider: Mapped[str] = mapped_column(String(10))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CardBatch(TenantOwned, Base):
+    __tablename__ = "card_batches"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "register_id", "provider", "batch_number", name="uq_card_batch_register"),
+        CheckConstraint("provider IN ('CARDNET','AZUL','VISANET')", name="ck_card_batch_provider"),
+        CheckConstraint("state IN ('open','closed')", name="ck_card_batch_state"),
+        CheckConstraint("declared_count >= 0 AND declared_amount >= 0 AND atlas_count >= 0 AND atlas_amount >= 0", name="ck_card_batch_totals"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    center_id: Mapped[int] = mapped_column(ForeignKey("care_centers.id", ondelete="RESTRICT"), index=True)
+    register_id: Mapped[int] = mapped_column(ForeignKey("cash_registers.id", ondelete="RESTRICT"), index=True)
+    provider: Mapped[str] = mapped_column(String(10))
+    batch_number: Mapped[str] = mapped_column(String(40))
+    state: Mapped[str] = mapped_column(String(10), default="closed")
+    declared_count: Mapped[int] = mapped_column(Integer, default=0)
+    declared_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    atlas_count: Mapped[int] = mapped_column(Integer, default=0)
+    atlas_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    # A POS closure cannot be undone by reopening Atlas. Retain every movement
+    # ever included in a closure so ordinary reversal stays blocked afterwards.
+    ever_closed_movement_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    closed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    reopened_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    reopened_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class CardBatchAudit(TenantOwned, Base):
+    __tablename__ = "card_batch_audit"
+    __table_args__ = (CheckConstraint("action IN ('provider_config','close','reopen','assignment_correction')", name="ck_card_batch_audit_action"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    center_id: Mapped[int] = mapped_column(ForeignKey("care_centers.id", ondelete="RESTRICT"), index=True)
+    register_id: Mapped[int | None] = mapped_column(ForeignKey("cash_registers.id", ondelete="RESTRICT"), index=True)
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("card_batches.id", ondelete="RESTRICT"), index=True)
+    movement_id: Mapped[int | None] = mapped_column(ForeignKey("cash_movements.id", ondelete="RESTRICT"), index=True)
+    action: Mapped[str] = mapped_column(String(24))
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    before: Mapped[dict] = mapped_column(JSON, default=dict)
+    after: Mapped[dict] = mapped_column(JSON, default=dict)
+    reason: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

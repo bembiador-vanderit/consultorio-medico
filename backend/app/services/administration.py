@@ -5,12 +5,30 @@ from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
 from app.models import Role, User
 from app.models.administration import ReauthenticationGrant, SecurityAudit
-RESTRICTABLE = {"patients:access", "clinical:access", "insurance:manage", "finance:read", "finance:collect", "finance:manage", "ars:read", "ars:claim", "ars:send", "ars:glosa", "ars:payment", "ars:reconcile", "ars:report"}
+RESTRICTABLE = {"patients:access", "clinical:access", "clinical_documents:create", "clinical_documents:view", "clinical_documents:prepare", "clinical_documents:edit_clinical", "clinical_documents:sign", "clinical_forms:view", "clinical_forms:create", "clinical_forms:edit_draft", "clinical_forms:publish", "clinical_forms:retire", "clinical_forms:assign", "insurance:manage", "finance:read", "finance:collect", "finance:manage", "ars:read", "ars:claim", "ars:send", "ars:glosa", "ars:payment", "ars:reconcile", "ars:report"}
+RESTRICTABLE.update({"patients:view", "patients:edit"})
+RESTRICTABLE.update({"patient_safety:view", "patient_safety:edit"})
+RESTRICTABLE.update({"patient_care:view", "patient_care:manage"})
+
 def effective_permissions(user: User) -> set[str]:
     permissions = {p.code for role in user.roles for p in role.permissions}
     if not any(role.code == "doctor" for role in user.roles):
         permissions.discard("clinical:access")
-    return permissions - set(user.denied_permissions or [])
+        permissions.discard("clinical_documents:edit_clinical")
+        permissions.discard("clinical_documents:sign")
+    denied = set(user.denied_permissions or [])
+    # Preserve a legacy denial as a denial of both newly separated capabilities.
+    if "patients:access" in denied:
+        denied.update({"patients:view", "patients:edit"})
+    permissions -= denied
+    if not {"patients:view", "patient_care:view", "users:manage"}.issubset(permissions):
+        permissions.discard("patient_care:manage")
+    # Edit without view is invalid; never infer viewing or bypass tenant scope.
+    if "patients:view" not in permissions:
+        permissions.discard("patients:edit")
+    if "patient_safety:view" not in permissions or not {"patients:view", "clinical:access"}.issubset(permissions):
+        permissions.discard("patient_safety:edit")
+    return permissions
 def lock_administration(db: Session) -> None:
     # One database lock shared by all administrative writers.
     db.execute(select(Role.id).where(Role.code == "admin").with_for_update()).all()

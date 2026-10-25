@@ -1,6 +1,10 @@
 export const methods = { cash: 'Efectivo', card: 'Tarjeta', transfer: 'Transferencia', check: 'Cheque', other: 'Otro' } as const;
 export type Method = keyof typeof methods;
-export type Part = { method: Method; amount: string };
+export type CardProvider = 'CARDNET' | 'AZUL' | 'VISANET';
+export type ProviderSetting = { provider: CardProvider; enabled: boolean };
+export type Part = { method: Method; amount: string; batch_number?: string | null; provider?: CardProvider | null };
+export type CardBatch = { id: number | null; provider: CardProvider; batch_number: string; state: 'open' | 'closed'; atlas_count: number; atlas_amount: string; declared_count: number | null; declared_amount: string | null; count_difference: number | null; amount_difference: string | null; closed_by: number | null; closed_at: string | null; ever_closed: boolean };
+export type CardBatchEvent = { id: number; action: string; actor_id: number; created_at: string; batch_id: number | null; movement_id: number | null; before: Record<string, unknown>; after: Record<string, unknown>; reason: string | null };
 export type Invoice = { id: number; number: string; center_id: number; patient_id: number; patient_name: string; concept: string; base_amount: string; ars_amount: string; expected_ars: string; patient_amount: string; paid_amount: string; balance: string; state: string; created_at: string; coverage_snapshot: Record<string, unknown>; movements?: Movement[] };
 export type Movement = { id: number; register_id: number; invoice_id: number | null; kind: string; amount: string; parts: Part[]; reason: string | null; reverses_id: number | null; created_by: number; created_at: string };
 export type Register = { id: number; opened_by: number; state: string; opening_amount: string; opened_at: string; closed_at: string | null; closed_by: number | null; counted_cash: string | null; difference: string | null; closing_notes: string | null; totals: { collected: Record<Method, string>; reversed: Record<Method, string>; adjustments_in: string; adjustments_out: string; expected_cash: string } };

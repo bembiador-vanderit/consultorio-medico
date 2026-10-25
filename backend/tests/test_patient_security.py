@@ -67,8 +67,151 @@ def appointment_payload(ctx, patient_id, **changes):
     return {"patient_id": patient_id, "doctor_id": ctx["doctor"].id, "center_id": ctx["centers"][0].id, "specialty_id": ctx["specialty"].id, "appointment_date": "2026-09-15", "appointment_time": "10:00:00", "status": "scheduled", **changes}
 
 
+def test_agenda_returns_each_visible_patients_phone_without_crossing_scope(patient_app):
+    ctx = patient_app
+    db = ctx["db"]
+    without_phone = Patient(first_name="Sin", last_name="Teléfono", date_of_birth=date(1992, 2, 2), phone=None)
+    db.add(without_phone)
+    db.flush()
+    second = Appointment(
+        patient_id=without_phone.id, doctor_id=ctx["doctor"].id,
+        center_id=ctx["centers"][0].id, specialty_id=ctx["specialty"].id,
+        appointment_date=date(2026, 9, 14), appointment_time=time(10), status="scheduled",
+    )
+    db.add(second)
+    db.commit()
+
+    result = ctx["client"].get("/api/v1/appointments", params={"start": "2026-09-14", "end": "2026-09-14"})
+    assert result.status_code == 200
+    by_patient = {item["patient_id"]: item for item in result.json()}
+    assert set(by_patient) == {ctx["a"].id, without_phone.id}
+    assert by_patient[ctx["a"].id]["patient_name"] == "Paciente Visible"
+    assert by_patient[ctx["a"].id]["patient_phone"] == "8095550001"
+    assert by_patient[without_phone.id]["patient_name"] == "Sin Teléfono"
+    assert by_patient[without_phone.id]["patient_phone"] is None
+    assert ctx["b"].id not in by_patient
+
+    ctx["active"]["user"] = ctx["secretary"]
+    secretary_result = ctx["client"].get("/api/v1/appointments")
+    assert secretary_result.status_code == 200
+    assert {item["patient_id"] for item in secretary_result.json()} == set(by_patient)
+
+
 def identity_payload(patient, **changes):
     return {"first_name": patient.first_name, "last_name": patient.last_name, "date_of_birth": patient.date_of_birth.isoformat(), "phone": patient.phone, "email": patient.email, **changes}
+
+
+def test_patient_read_noop_update_and_real_update_audit(patient_app):
+    from app.models.clinical_audit import ClinicalAuditLog
+    ctx = patient_app
+    client, db, patient = ctx["client"], ctx["db"], ctx["a"]
+    def logs():
+        return db.scalars(select(ClinicalAuditLog).where(ClinicalAuditLog.action == "patient.update", ClinicalAuditLog.resource_id == patient.id)).all()
+    assert client.get(f"/api/v1/patients/{patient.id}").status_code == 200
+    assert not logs()
+    assert client.put(f"/api/v1/patients/{patient.id}", json=identity_payload(patient)).status_code == 200
+    assert not logs()
+    assert client.put(f"/api/v1/patients/{patient.id}", json=identity_payload(patient, phone="5550099")).status_code == 200
+    rows = logs()
+    assert len(rows) == 1
+    assert rows[0].user_id == ctx["doctor"].id and rows[0].created_at
+    assert rows[0].organization_id == patient.organization_id
+    assert "5550099" not in rows[0].action
+    assert rows[0].context == {"changes": {"phone": {"before": "8095550001", "after": "5550099"}}}
+    assert client.get(f"/api/v1/patients/{patient.id}").json()["phone"] == "5550099"
+    ctx["active"]["user"] = ctx["no_permission"]
+    assert client.put(f"/api/v1/patients/{patient.id}", json=identity_payload(patient, phone="5550088")).status_code == 403
+    assert len(logs()) == 1
+
+
+@pytest.mark.parametrize("grants,allowed_get,allowed_put", [
+    (["patients:view"], 200, 403),
+    (["patients:view", "patients:edit"], 200, 200),
+    ([], 403, 403),
+    (["patients:edit"], 403, 403),
+])
+def test_patient_explicit_permission_matrix(patient_app, grants, allowed_get, allowed_put):
+    ctx = patient_app
+    # Keep legacy operational access: it must NOT substitute for either new grant.
+    role = ctx["roles"]["doctor"]
+    role.permissions = ctx["db"].scalars(select(Permission).where(Permission.code.in_(["patients:access", *grants]))).all()
+    ctx["db"].commit()
+    path = f"/api/v1/patients/{ctx['a'].id}"
+    assert ctx["client"].get(path).status_code == allowed_get
+    assert ctx["client"].put(path, json=identity_payload(ctx["a"], phone="5550010")).status_code == allowed_put
+    if allowed_get == 200:
+        assert ctx["client"].get("/api/v1/regional/countries").status_code == 200
+        assert ctx["client"].get(f"/api/v1/insurance/patients/{ctx['a'].id}").status_code == 200
+    if allowed_put == 403:
+        from app.models.clinical_audit import ClinicalAuditLog
+        assert ctx["db"].scalar(select(ClinicalAuditLog.id).where(ClinicalAuditLog.action == "patient.update")) is None
+
+
+@pytest.mark.parametrize("denied", [["patients:edit"], ["patients:view"], ["patients:access"]])
+def test_patient_denials_override_grants_without_reviving_legacy_access(patient_app, denied):
+    ctx = patient_app
+    ctx["doctor"].denied_permissions = denied
+    ctx["db"].commit()
+    path = f"/api/v1/patients/{ctx['a'].id}"
+    assert ctx["client"].get(path).status_code == (200 if denied == ["patients:edit"] else 403)
+    assert ctx["client"].put(path, json=identity_payload(ctx["a"])).status_code == 403
+
+
+def test_patient_three_field_diff_sensitive_redaction_and_rejected_write(patient_app):
+    from app.models.clinical_audit import ClinicalAuditLog
+    ctx = patient_app
+    path = f"/api/v1/patients/{ctx['a'].id}"
+    response = ctx["client"].put(path, json=identity_payload(ctx["a"], phone="5550020", occupation="QA", nationality="Ficticia"))
+    assert response.status_code == 200
+    rows = ctx["db"].scalars(select(ClinicalAuditLog).where(ClinicalAuditLog.resource_type == "patient")).all()
+    assert len(rows) == 1
+    assert rows[0].context["changes"] == {
+        "phone": {"before": "8095550001", "after": "5550020"},
+        "occupation": {"before": None, "after": "QA"},
+        "nationality": {"before": None, "after": "Ficticia"},
+    }
+    assert ctx["client"].put(path, json=identity_payload(ctx["a"], blood_type="AB-")).status_code == 200
+    rows = ctx["db"].scalars(select(ClinicalAuditLog).where(ClinicalAuditLog.resource_type == "patient").order_by(ClinicalAuditLog.id)).all()
+    assert rows[-1].context["changes"] == {"blood_type": {"before": "[REDACTED]", "after": "[REDACTED]", "redacted": True}}
+    assert "AB-" not in str(rows[-1].context)
+    # No API exists to rewrite or delete the audit entry.
+    assert ctx["client"].put(f"/api/v1/patients/{ctx['b'].id}", json=identity_payload(ctx["b"])).status_code == 404
+    assert len(ctx["db"].scalars(select(ClinicalAuditLog)).all()) == len(rows)
+
+
+def test_patient_audit_read_requires_view_and_patient_scope_even_with_admin_audit_permission(patient_app):
+    ctx = patient_app
+    ctx["active"]["user"] = ctx["admin"]
+    for patient in (ctx["a"], ctx["b"]):
+        assert ctx["client"].put(f"/api/v1/patients/{patient.id}", json=identity_payload(patient, occupation="QA audit")).status_code == 200
+    path = "/api/v1/clinical-history/audit-logs"
+    rows = ctx["client"].get(path).json()
+    assert {row["resource_id"] for row in rows if row["resource_type"] == "patient"} == {ctx["a"].id, ctx["b"].id}
+    ctx["admin"].denied_permissions = ["patients:view"]
+    ctx["db"].commit()
+    response = ctx["client"].get(path)
+    assert response.status_code == 200
+    assert not [row for row in response.json() if row["resource_type"] == "patient"]
+    ctx["roles"]["doctor"].permissions.append(ctx["db"].scalar(select(Permission).where(Permission.code == "users:manage")))
+    ctx["db"].commit()
+    ctx["active"]["user"] = ctx["doctor"]
+    rows = ctx["client"].get(path).json()
+    assert {row["resource_id"] for row in rows if row["resource_type"] == "patient"} == {ctx["a"].id}
+
+
+@pytest.mark.parametrize("term", ["Paciente Visible", "8095550001", "visible@example.com", "001-0000000-1"])
+def test_patient_list_search_reuses_existing_scope_for_appointment_selector(patient_app, term):
+    ctx = patient_app
+    ctx["a"].document_type = "cedula"
+    ctx["a"].document_number = "00100000001"
+    ctx["db"].commit()
+    ctx["active"]["user"] = ctx["secretary"]
+    response = ctx["client"].get("/api/v1/patients", params={"query": term})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [ctx["a"].id]
+    assert all("document_number" not in item for item in response.json())
+    for foreign_term in ("Paciente Ajeno", "8095550002", "outside@example.com"):
+        assert ctx["client"].get("/api/v1/patients", params={"query": foreign_term}).json() == []
 
 
 @pytest.mark.parametrize("role", ["doctor", "secretary"])

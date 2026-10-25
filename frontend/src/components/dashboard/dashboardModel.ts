@@ -33,6 +33,48 @@ const quickActions: readonly DashboardAction[] = [
   { id: "centers", label: "Centros de atención", description: "Localidades y centros", view: "care-context", roles: ["admin"], icon: "center", tone: "sage" },
 ];
 
+export type DashboardWidget = { id: string; label: string; group: "actions" | "metrics" | "summary" };
+
+const metricWidgets: readonly DashboardWidget[] = [
+  { id: "metric-appointments", label: "Citas de hoy", group: "metrics" },
+  { id: "metric-patients", label: "Pacientes disponibles", group: "metrics" },
+  { id: "metric-notifications", label: "Notificaciones pendientes", group: "metrics" },
+  { id: "metric-follow-ups", label: "Seguimientos pendientes", group: "metrics" },
+  { id: "metric-users", label: "Usuarios activos", group: "metrics" },
+  { id: "metric-centers", label: "Centros activos", group: "metrics" },
+];
+const summaryWidgets: readonly DashboardWidget[] = [
+  { id: "agenda-today", label: "Agenda de hoy", group: "summary" },
+  { id: "notifications-panel", label: "Detalle de notificaciones", group: "summary" },
+];
+
+export const dashboardWidgetIds = [
+  "users", "centers", ...quickActions.filter(action => action.id !== "users" && action.id !== "centers").map(action => action.id),
+  ...metricWidgets.map(widget => widget.id), ...summaryWidgets.map(widget => widget.id),
+] as const;
+
+export function getDefaultDashboardWidgetOrder(): string[] { return [...dashboardWidgetIds]; }
+
+export function normalizeDashboardWidgetOrder(visible: readonly string[], preferred: readonly string[] = []): string[] {
+  const available = new Set(visible);
+  const valid = preferred.filter((id, index) => available.has(id) && preferred.indexOf(id) === index);
+  const included = new Set(valid);
+  return [...valid, ...visible.filter(id => !included.has(id))];
+}
+
+export function getDashboardWidgets(user: Pick<User, "roles" | "permissions">): DashboardWidget[] {
+  const actions = getDashboardActions(user).map(action => ({ id: action.id, label: action.label, group: "actions" as const }));
+  const can = (permission: string) => !user.permissions || user.permissions.includes(permission);
+  const metrics = metricWidgets.filter(widget =>
+    widget.id === "metric-appointments" ? can("patients:access") :
+    widget.id === "metric-patients" ? can("patients:view") :
+    widget.id === "metric-follow-ups" ? user.roles.includes("doctor") && can("clinical:access") :
+    widget.id === "metric-users" ? user.roles.includes("admin") && can("users:manage") :
+    widget.id === "metric-centers" ? user.roles.includes("admin") && can("centers:manage") : true);
+  const summary = summaryWidgets.filter(widget => widget.id !== "agenda-today" || can("patients:access"));
+  return [...actions, ...metrics, ...summary];
+}
+
 const roleSummaries: readonly DashboardRoleSummary[] = [
   { id: "doctor", title: "Jornada clínica", description: "Priorice la agenda, los seguimientos y su disponibilidad." },
   { id: "secretary", title: "Operación de agenda", description: "Coordine citas y pacientes dentro de los centros y médicos asignados." },

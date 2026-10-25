@@ -43,7 +43,7 @@ export default function Login({ onSignIn, sessionMessage }: { onSignIn: (credent
 
   return <LoginLayout>
     <Card className="atlas-login-card">
-      <h1 className="atlas-page-title atlas-login-heading">Bienvenido a Atlas</h1>
+      <h1 className="atlas-page-title atlas-login-heading">Bienvenido a Atlas Pérgamo</h1>
       <p className="atlas-muted">Inicia sesión para continuar.</p>
       {sessionMessage && <p role="alert">{sessionMessage}</p>}
       <form className="atlas-login-form" onSubmit={submit} aria-label="Iniciar sesión">

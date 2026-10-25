@@ -12,7 +12,7 @@ from app.services.patient_scope import require_patient_identity_access
 from app.services.insurance import save_insurance, save_coverage, appointment_access, patient_lock, record
 
 router = APIRouter(prefix="/insurance", tags=["Seguros médicos"])
-read = require_permission("patients:access")
+read = require_permission("patients:view")
 def write(user: User = Depends(require_permission("insurance:manage")), _: User = Depends(read)):
     return user
 catalog = require_permission("users:manage")

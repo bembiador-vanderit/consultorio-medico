@@ -6,6 +6,8 @@
 .atlas-shell .atlas-brand-mark { background:transparent; color:var(--atlas-primary); width:44px; height:44px; }
 .atlas-brand-mark svg { width:100%; height:100%; }
 .atlas-sidebar-footer { margin-top:auto; padding:var(--atlas-space-5) var(--atlas-space-3) 0; color:var(--atlas-navigation-text-muted); font-size:var(--atlas-type-caption); }
+.atlas-navigation-finance-toggle>span:nth-of-type(1){flex:1;min-width:0}.atlas-navigation-finance-toggle .atlas-navigation-chevron,.finance-chevron{width:.5rem;height:.5rem;flex:none;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .15s ease}.atlas-navigation-finance-toggle[aria-expanded="true"] .atlas-navigation-chevron,.finance-mobile-group-toggle[aria-expanded="true"] .finance-chevron{transform:rotate(225deg)}
+.atlas-navigation .atlas-navigation-finance-panel{padding:.15rem 0 .35rem .45rem}.atlas-navigation .atlas-navigation-finance-panel[hidden]{display:none}.atlas-navigation-finance-group-label{padding:.3rem .7rem .1rem;color:var(--atlas-navigation-text-muted);font-size:.69rem;font-weight:750;letter-spacing:.045em;text-transform:uppercase}.atlas-navigation .atlas-navigation-finance-panel ul{padding:0 0 .2rem}.atlas-navigation .atlas-navigation-finance-panel button{min-height:36px;padding:.35rem .6rem .35rem .75rem;font-size:.84rem;gap:.45rem}.atlas-navigation .atlas-navigation-finance-bullet{width:.6rem;color:var(--atlas-navigation-text-muted);font-size:1.2rem;line-height:1}.atlas-navigation .atlas-navigation-finance-panel button[aria-current="page"]{box-shadow:inset 2px 0 var(--atlas-navigation-active-indicator)}
 .atlas-shell-body { background:var(--atlas-surface-secondary); }
 .atlas-shell .atlas-topbar { position:sticky; top:0; z-index:var(--atlas-z-sticky); min-height:64px; height:64px; flex-shrink:0; flex-wrap:nowrap; gap:var(--atlas-space-3); padding:var(--atlas-space-2) var(--atlas-space-4); }
 .atlas-topbar-context { flex:1; min-width:0; }
@@ -40,6 +42,13 @@
   .atlas-main:has(.agenda-page) { display:flex; flex:1; min-height:0; }
   .atlas-operational-workspace.atlas-operational-workspace--agenda { display:flex; flex:1; max-width:none; height:auto; min-height:0; overflow:hidden; padding:var(--atlas-space-4); }
   .atlas-operational-workspace--agenda>.agenda-page { flex:1; }
+  /* Open operational panels need a scrollable workspace; the fixed-height
+     calendar canvas is retained only while both panels are closed. */
+  .atlas-operational-workspace.atlas-operational-workspace--agenda:has(.agenda-page--operational-expanded) { overflow-x:hidden; overflow-y:auto; }
+  .atlas-operational-workspace--agenda>.agenda-page--operational-expanded { flex:0 0 auto; width:100%; height:auto; min-height:100%; grid-template-rows:auto auto auto auto; }
+  .agenda-page--operational-expanded .agenda-layout { min-height:32rem; overflow:visible; }
+  .agenda-page--operational-expanded .agenda-layout>section { overflow:visible; }
+  .agenda-page--operational-expanded .agenda-sidebar { overflow:visible; }
 }
 @media (max-width:1023px) {
   .agenda-page .agenda-mobile-filter-toggle { display:inline-flex; }
@@ -67,11 +76,7 @@
   .agenda-page .agenda-appointment-card--day .agenda-appointment-content { font-size:.8rem; line-height:1.25; }
   .agenda-page .agenda-appointment-card--day .agenda-appointment-time { font-size:.8rem; }
   .agenda-page .agenda-toolbar { gap:var(--atlas-space-2); }
-  .agenda-page .agenda-toolbar>div:first-of-type { display:grid; grid-template-columns:auto auto minmax(0,1fr) auto; gap:var(--atlas-space-1); }
-  .agenda-page .agenda-toolbar strong { font-size:.75rem; text-align:center; }
-  .agenda-page .agenda-toolbar>[aria-label="Vista de Agenda"] { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--atlas-space-1); order:-1; }
-  .agenda-page .agenda-toolbar>[aria-label="Vista de Agenda"] .atlas-button { padding-inline:var(--atlas-space-1); font-size:.8rem; }
-  .agenda-page .agenda-mobile-filter-toggle { width:100%; order:1; }
+  .agenda-page .agenda-mobile-filter-toggle { width:100%; }
   .agenda-page .agenda-week-grid { display:none; }
   .agenda-page .agenda-week-mobile { display:grid; gap:var(--atlas-space-4); }
   .agenda-week-mobile .agenda-view-heading p { display:none; }
@@ -83,3 +88,4 @@
   .atlas-account-avatar { width:36px; height:36px; }
   .atlas-topbar .atlas-notification-panel { right:-44px; }
 }
+@media(prefers-reduced-motion:reduce){.atlas-navigation-finance-toggle .atlas-navigation-chevron,.finance-chevron{transition:none}}

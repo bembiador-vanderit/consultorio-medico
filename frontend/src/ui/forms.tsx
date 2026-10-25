@@ -6,24 +6,29 @@ const FieldContext = createContext<FieldContextValue | null>(null);
 type FieldProps = { id?: string; label: string; description?: string; error?: string; required?: boolean; requiredLabel?: string; className?: string; children: ReactNode };
 
 /** One control per FormField. Use a fieldset/FormSection for checkbox or radio groups. */
-export function FormField({ id: explicitId, label, description, error, required, requiredLabel = "(obligatorio)", className, children }: FieldProps) {
+export function FormField({ id: explicitId, label, description, error, required, requiredLabel = "*", className, children }: FieldProps) {
   const generatedId = useId();
   const id = explicitId ?? generatedId;
   const describedBy = [description && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") || undefined;
   return <FieldContext.Provider value={{ id, describedBy, invalid: Boolean(error), required }}>
-    <div className={cx("atlas-field", className)}><label htmlFor={id} className="atlas-label">{label}{required && <span> {requiredLabel}</span>}</label>
+    <div className={cx("atlas-field", className)}><label htmlFor={id} className="atlas-label">{label}{required && <span aria-hidden="true" className="atlas-required-mark"> {requiredLabel}</span>}</label>
       {children}{description && <p id={`${id}-help`} className="atlas-help">{description}</p>}
       {error && <p id={`${id}-error`} className="atlas-field-error">{error}</p>}
     </div>
   </FieldContext.Provider>;
 }
 
-function useFieldProps(props: { id?: string; "aria-describedby"?: string; "aria-invalid"?: InputHTMLAttributes<HTMLInputElement>["aria-invalid"]; required?: boolean }) {
+export function RequiredFieldsLegend() {
+  return <p className="atlas-required-legend"><span aria-hidden="true" className="atlas-required-mark">*</span> Campos obligatorios</p>;
+}
+
+function useFieldProps(props: { id?: string; "aria-describedby"?: string; "aria-invalid"?: InputHTMLAttributes<HTMLInputElement>["aria-invalid"]; "aria-required"?: InputHTMLAttributes<HTMLInputElement>["aria-required"]; required?: boolean }) {
   const field = useContext(FieldContext);
   return {
     id: field?.id ?? props.id,
     "aria-describedby": [field?.describedBy, props["aria-describedby"]].filter(Boolean).join(" ") || undefined,
     "aria-invalid": field?.invalid || props["aria-invalid"] || undefined,
+    "aria-required": field?.required || props["aria-required"] || undefined,
     required: field?.required ?? props.required,
   };
 }

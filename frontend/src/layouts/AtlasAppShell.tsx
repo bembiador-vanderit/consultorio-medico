@@ -1,14 +1,33 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { User } from "../types/user";
-import { getNavigationItems, navigationGroups, type AppView, type NavigationItem, type NavigationVisibilityResolver } from "../navigation/navigation";
+import { getFinanceNavigationGroups, getNavigationItems, navigationGroups, normalizeGestionOrder, type AccentTheme, type AppView, type FinanceSection, type NavigationItem, type NavigationVisibilityResolver } from "../navigation/navigation";
 import { Button, Drawer, IconButton } from "../ui";
 import { NavigationIcon } from "./NavigationIcon";
 
-export function Sidebar({ items, activeView, onNavigate }: { items: readonly NavigationItem[]; activeView: AppView; onNavigate: (view: AppView) => void }) {
+export function Sidebar({ items, user, gestionOrder, activeView, activeFinanceSection, onNavigate, onNavigateFinanceSection }: { items: readonly NavigationItem[]; user: Pick<User, "roles" | "permissions">; gestionOrder: readonly string[]; activeView: AppView; activeFinanceSection: FinanceSection; onNavigate: (view: AppView) => void; onNavigateFinanceSection: (section: FinanceSection) => void }) {
+  const financePanelId = useId();
+  const financeGroups = getFinanceNavigationGroups(user);
+  const gestionPosition = new Map(normalizeGestionOrder(items, gestionOrder).map((id, index) => [id, index]));
+  const [financeOpen, setFinanceOpen] = useState(activeView === "finance");
+  useEffect(() => setFinanceOpen(activeView === "finance"), [activeView]);
   return <nav aria-label="Navegación principal" className="atlas-navigation">{navigationGroups.map((group) => {
-    const entries = items.filter((item) => item.group === group.id);
+    const entries = items.filter((item) => item.group === group.id).sort((left, right) => group.id === "general"
+      ? (gestionPosition.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (gestionPosition.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+      : left.order - right.order);
     return entries.length > 0 && <div key={group.id} className="atlas-navigation-group"><p className="atlas-caption">{group.label}</p><ul>
-      {entries.map((item) => <li key={item.id}><button type="button" aria-current={activeView === item.view ? "page" : undefined} onClick={() => onNavigate(item.view)}>
+      {entries.map((item) => item.view === "finance" ? <li key={item.id} className="atlas-navigation-finance">
+        <button type="button" className="atlas-navigation-finance-toggle" aria-current={activeView === "finance" ? "page" : undefined} aria-expanded={financeOpen} aria-controls={financePanelId} onClick={() => {
+          const nextOpen = !financeOpen;
+          setFinanceOpen(nextOpen);
+          if (activeView !== "finance") onNavigate("finance");
+        }}>
+          <NavigationIcon name={item.icon} /><span>{item.label}</span><span className="atlas-navigation-chevron" aria-hidden="true" />
+        </button>
+        <div id={financePanelId} className="atlas-navigation-finance-panel" hidden={!financeOpen}>{financeGroups.map((financeGroup) => <section key={financeGroup.id} aria-label={financeGroup.label}>
+          <p className="atlas-navigation-finance-group-label">{financeGroup.label}</p>
+          <ul>{financeGroup.sections.map((section) => <li key={section.index}><button type="button" aria-current={activeView === "finance" && activeFinanceSection === section.index ? "page" : undefined} onClick={() => onNavigateFinanceSection(section.index)}><span className="atlas-navigation-finance-bullet" aria-hidden="true">›</span><span>{section.label}</span></button></li>)}</ul>
+        </section>)}</div>
+      </li> : <li key={item.id}><button type="button" aria-current={activeView === item.view ? "page" : undefined} onClick={() => onNavigate(item.view)}>
         <NavigationIcon name={item.icon} /><span>{item.label}</span>
       </button></li>)}
     </ul></div>;
@@ -34,7 +53,7 @@ function AccountMenu({ user, onSignOut }: { user: TopbarProps["user"]; onSignOut
   </details>;
 }
 
-type TopbarProps = { pageTitle: string; user: Pick<User, "full_name" | "roles" | "specialty_names" | "organization">; activeCenterName?: string; notifications?: ReactNode; onOpenMenu: () => void; onSignOut: () => void; menuOpen: boolean; onOpenPatients?: () => void };
+type TopbarProps = { pageTitle: string; user: Pick<User, "full_name" | "roles" | "permissions" | "specialty_names" | "organization">; activeCenterName?: string; notifications?: ReactNode; onOpenMenu: () => void; onSignOut: () => void; menuOpen: boolean; onOpenPatients?: () => void };
 const roleLabels: Record<string, string> = { doctor: "Médico", secretary: "Secretaría", admin: "Administrador" };
 export function Topbar({ pageTitle, user, activeCenterName, notifications, onOpenMenu, onSignOut, menuOpen, onOpenPatients }: TopbarProps) {
   return <header className="atlas-topbar"><div className="atlas-topbar-context"><IconButton label="Abrir navegación" variant="outline" className="atlas-mobile-menu" onClick={onOpenMenu} aria-expanded={menuOpen} aria-haspopup="dialog">☰</IconButton>
@@ -43,8 +62,8 @@ export function Topbar({ pageTitle, user, activeCenterName, notifications, onOpe
   </header>;
 }
 
-type ShellProps = Omit<TopbarProps, "onOpenMenu" | "menuOpen"> & { activeView: AppView; onNavigate: (view: AppView) => void; children: ReactNode; resolveVisibility?: NavigationVisibilityResolver };
-export function AtlasAppShell({ activeView, onNavigate, children, resolveVisibility, ...topbar }: ShellProps) {
+type ShellProps = Omit<TopbarProps, "onOpenMenu" | "menuOpen"> & { activeView: AppView; activeFinanceSection: FinanceSection; gestionOrder: readonly string[]; accentTheme: AccentTheme; onNavigate: (view: AppView) => void; onNavigateFinanceSection: (section: FinanceSection) => void; children: ReactNode; resolveVisibility?: NavigationVisibilityResolver };
+export function AtlasAppShell({ activeView, activeFinanceSection, gestionOrder, accentTheme, onNavigate, onNavigateFinanceSection, children, resolveVisibility, ...topbar }: ShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const mainId = useId();
   const items = getNavigationItems(topbar.user, resolveVisibility);
@@ -55,11 +74,12 @@ export function AtlasAppShell({ activeView, onNavigate, children, resolveVisibil
     return () => media.removeEventListener("change", closeOnDesktop);
   }, []);
   function navigate(view: AppView) { setMobileOpen(false); onNavigate(view); }
+  function navigateFinanceSection(section: FinanceSection) { setMobileOpen(false); onNavigateFinanceSection(section); }
   const primaryViews: readonly AppView[] = ["dashboard", "appointments", "patients"];
-  return <div className="atlas-root atlas-shell"><a className="atlas-skip-link" href={`#${mainId}`}>Saltar al contenido</a>
-    <aside className="atlas-sidebar"><div className="atlas-brand"><span className="atlas-brand-mark"><AtlasMark /></span><div><strong>Atlas</strong><p className="atlas-help">Consultorio</p></div></div><Sidebar items={items} activeView={activeView} onNavigate={navigate} /><p className="atlas-sidebar-footer">Atlas Consultorio</p></aside>
+  return <div className="atlas-root atlas-shell" data-atlas-accent={accentTheme}><a className="atlas-skip-link" href={`#${mainId}`}>Saltar al contenido</a>
+    <aside className="atlas-sidebar"><div className="atlas-brand"><span className="atlas-brand-mark"><AtlasMark /></span><div><strong>Atlas</strong><p className="atlas-help">Pérgamo</p></div></div><Sidebar items={items} user={topbar.user} gestionOrder={gestionOrder} activeView={activeView} activeFinanceSection={activeFinanceSection} onNavigate={navigate} onNavigateFinanceSection={navigateFinanceSection} /><p className="atlas-sidebar-footer">Atlas Pérgamo</p></aside>
     <div className="atlas-shell-body"><Topbar {...topbar} onOpenPatients={items.some((item) => item.view === "patients") ? () => navigate("patients") : undefined} menuOpen={mobileOpen} onOpenMenu={() => setMobileOpen(true)} /><main id={mainId} tabIndex={-1} className="atlas-main">{children}</main></div>
     <nav className="atlas-bottom-navigation" aria-label="Navegación móvil">{primaryViews.map((view) => { const item = items.find((entry) => entry.view === view); return item && <button key={view} type="button" aria-current={activeView === view ? "page" : undefined} onClick={() => navigate(view)}><NavigationIcon name={item.icon} /><span>{view === "dashboard" ? "Inicio" : item.label}</span></button>; })}<button type="button" aria-label="Más opciones" aria-haspopup="dialog" aria-expanded={mobileOpen} aria-current={!primaryViews.includes(activeView) ? "page" : undefined} onClick={() => setMobileOpen(true)}><span className="atlas-more-icon" aria-hidden="true">•••</span><span>Más</span></button></nav>
-    <Drawer title="Atlas · Navegación" open={mobileOpen} onClose={() => setMobileOpen(false)}><Sidebar items={items} activeView={activeView} onNavigate={navigate} /></Drawer>
+    <Drawer title="Atlas · Navegación" open={mobileOpen} onClose={() => setMobileOpen(false)}><Sidebar items={items} user={topbar.user} gestionOrder={gestionOrder} activeView={activeView} activeFinanceSection={activeFinanceSection} onNavigate={navigate} onNavigateFinanceSection={navigateFinanceSection} /></Drawer>
   </div>;
 }

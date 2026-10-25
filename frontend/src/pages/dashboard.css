@@ -20,6 +20,7 @@
 .dashboard-action strong { font-size:var(--atlas-type-secondary); display:block; overflow-wrap:anywhere; color:var(--atlas-text-primary); }
 .dashboard-action-help { display:block; font-size:var(--atlas-type-caption); color:var(--atlas-text-muted); }
 .dashboard-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(175px,1fr)); gap:var(--atlas-space-3); }
+.dashboard-metrics>[data-dashboard-widget]>.dashboard-metric,.dashboard-summary-grid>[data-dashboard-widget]>.dashboard-card { height:100%; }
 .dashboard-metric { display:flex; gap:var(--atlas-space-3); align-items:flex-start; padding:var(--atlas-space-4); border-top:3px solid var(--dashboard-edge); background:linear-gradient(135deg,var(--dashboard-tonal),var(--atlas-surface) 80%); }
 .dashboard-metric>div { min-width:0; }
 .dashboard-metric-label { font-size:var(--atlas-type-secondary); font-weight:600; }

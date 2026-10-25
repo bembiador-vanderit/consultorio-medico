@@ -70,6 +70,14 @@
   --atlas-z-sticky: 10;
 }
 
+/* User-selected accent themes are scoped to the authenticated app shell.
+   Semantic status colors (success, warning, danger, info) remain unchanged. */
+.atlas-shell[data-atlas-accent="blue"] { --atlas-primary:#A9C8E2; --atlas-action:#245783; --atlas-action-hover:#1C4569; --atlas-focus:#245783; }
+.atlas-shell[data-atlas-accent="turquoise"] { --atlas-primary:#86D0CB; --atlas-action:#116B6B; --atlas-action-hover:#0D5657; --atlas-focus:#116B6B; }
+.atlas-shell[data-atlas-accent="clinical-green"] { --atlas-primary:#9CC9AB; --atlas-action:#286447; --atlas-action-hover:#1F5038; --atlas-focus:#286447; }
+.atlas-shell[data-atlas-accent="indigo"] { --atlas-primary:#B1BDE5; --atlas-action:#43538E; --atlas-action-hover:#344273; --atlas-focus:#43538E; }
+.atlas-shell[data-atlas-accent="violet"] { --atlas-primary:#C6B1DF; --atlas-action:#644487; --atlas-action-hover:#4F356D; --atlas-focus:#644487; }
+
 /* CSS-first Tailwind 4 aliases. Existing utility colors remain unchanged. */
 @theme inline {
   --color-atlas-primary: var(--atlas-primary);

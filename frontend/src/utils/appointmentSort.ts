@@ -6,7 +6,7 @@ export type SortDirection = "asc" | "desc";
 const collator = new Intl.Collator("es", { numeric: true, sensitivity: "base" });
 
 function sortValue(appointment: Appointment, key: AppointmentSortKey, statusLabels: Record<string, string>) {
-  if (key === "dateTime") return `${appointment.appointment_date}T${appointment.appointment_time}`;
+  if (key === "dateTime") return `${appointment.appointment_date}T${appointment.appointment_time ?? `99:99:${String(appointment.daily_booking_order ?? 0).padStart(6, "0")}`}`;
   if (key === "patient") return appointment.patient_name;
   if (key === "doctor") return appointment.doctor_name;
   if (key === "center") return `${appointment.center_name ?? ""} ${appointment.center_city ?? ""}`;

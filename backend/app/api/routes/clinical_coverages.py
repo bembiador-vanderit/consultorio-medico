@@ -14,6 +14,8 @@ from app.services.clinical_access import add_clinical_audit
 from app.services.clinical_coverage import coverage_allows_appointment_transfer, coverage_status, installation_now
 from app.services.clinical_specialties import active_doctor_specialties
 from app.services.coverage_notifications import add_coverage_appointment_notifications
+from app.services.agenda_schedule import lock_center
+from app.services.appointment_slots import ensure_slot_available, translate_slot_integrity_error
 
 router = APIRouter(prefix="/clinical-coverages", tags=["Cobertura clínica"])
 access = require_permission("clinical:access")
@@ -113,18 +115,29 @@ def revoke_coverage(coverage_id: int, user: User = Depends(access), db: Session 
     if coverage.principal_doctor_id != user.id:
         raise HTTPException(status_code=403, detail="Solo el médico principal puede revocar esta cobertura")
     if coverage.revoked_at is None:
-        coverage.revoked_at = installation_now()
         transfers = list(db.scalars(
             select(AppointmentCoverageTransfer).where(
                 AppointmentCoverageTransfer.coverage_id == coverage.id
             )
         ).all())
+        # Match edit/transfer lock order: appointment rows before center. Taking
+        # center first could deadlock a concurrent edit that already owns a row.
+        if transfers:
+            db.scalars(select(Appointment).where(
+                Appointment.id.in_([item.appointment_id for item in transfers])
+            ).order_by(Appointment.id).with_for_update()).all()
+        lock_center(db, coverage.center_id)
+        coverage.revoked_at = installation_now()
         for transfer in transfers:
             appointment = transfer.appointment
             has_history = db.scalar(
                 select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)
             ) is not None
             if appointment.status in {"scheduled", "confirmed"} and not has_history:
+                ensure_slot_available(db, organization_id=appointment.organization_id,
+                    center_id=appointment.center_id, doctor_id=transfer.original_doctor_id,
+                    day=appointment.appointment_date, start_time=appointment.appointment_time,
+                    schedule_mode=appointment.schedule_mode, status=appointment.status, exclude_id=appointment.id)
                 appointment.doctor_id = transfer.original_doctor_id
                 add_coverage_appointment_notifications(db, appointment, coverage, restored=True)
                 add_clinical_audit(
@@ -148,7 +161,8 @@ def revoke_coverage(coverage_id: int, user: User = Depends(access), db: Session 
         )
         try:
             db.commit()
-        except SQLAlchemyError:
+        except SQLAlchemyError as error:
+            translate_slot_integrity_error(db, error)
             db.rollback()
             raise HTTPException(status_code=500, detail="No fue posible revocar la cobertura")
         db.refresh(coverage)
@@ -182,6 +196,8 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
         raise HTTPException(status_code=409, detail="La cita no corresponde al médico y centro de la cobertura")
     if db.scalar(select(ClinicalHistory.id).where(ClinicalHistory.appointment_id == appointment.id)) is not None:
         raise HTTPException(status_code=409, detail="Una cita con consulta iniciada no puede transferirse")
+    if appointment.appointment_time is None:
+        raise HTTPException(status_code=409, detail="La transferencia por cobertura requiere una cita con hora")
     appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
     if not coverage_allows_appointment_transfer(coverage, appointment_at):
         raise HTTPException(status_code=409, detail="La cita está fuera del período de cobertura")
@@ -196,6 +212,11 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
             status_code=422,
             detail="El médico suplente no tiene asignada y activa la especialidad de la cita",
         )
+    lock_center(db, coverage.center_id)
+    ensure_slot_available(db, organization_id=appointment.organization_id,
+        center_id=appointment.center_id, doctor_id=coverage.substitute_doctor_id,
+        day=appointment.appointment_date, start_time=appointment.appointment_time,
+        schedule_mode=appointment.schedule_mode, status=appointment.status, exclude_id=appointment.id)
     transfer = AppointmentCoverageTransfer(
         appointment_id=appointment.id, coverage_id=coverage.id,
         original_doctor_id=appointment.doctor_id, substitute_doctor_id=coverage.substitute_doctor_id,
@@ -211,7 +232,8 @@ def transfer_appointment(coverage_id: int, appointment_id: int, user: User = Dep
         )
         add_coverage_appointment_notifications(db, appointment, coverage)
         db.commit()
-    except SQLAlchemyError:
+    except SQLAlchemyError as error:
+        translate_slot_integrity_error(db, error)
         db.rollback()
         raise HTTPException(status_code=500, detail="No fue posible transferir la cita")
     return {"appointment_id": appointment.id, "coverage_id": coverage.id, "doctor_id": appointment.doctor_id}

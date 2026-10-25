@@ -1,0 +1,8 @@
+.feature-visibility-settings{min-width:0;border:1px solid #cbd5e1;border-radius:12px;background:white;padding:20px;overflow-wrap:anywhere}
+.feature-visibility-settings h3{font-weight:700}.feature-visibility-settings p{margin:8px 0;color:#475569}
+.feature-visibility-settings fieldset{margin:12px 0;border:1px solid #d7e3e8;border-radius:8px;padding:12px;min-width:0}
+.feature-visibility-settings legend{font-weight:600}.feature-visibility-options,.feature-visibility-actions{display:flex;gap:16px;flex-wrap:wrap}
+.feature-visibility-options label{display:flex;align-items:center;gap:8px;min-height:44px}
+.feature-visibility-settings input[type=checkbox]{width:18px;height:18px;accent-color:#227e77}
+.feature-visibility-actions{margin-top:12px}.feature-visibility-settings textarea,.feature-visibility-settings select{max-width:100%}
+@media(max-width:600px){.feature-visibility-settings{padding:12px}.feature-visibility-options{gap:8px 20px}.feature-visibility-actions>*{flex:1 1 100%}}

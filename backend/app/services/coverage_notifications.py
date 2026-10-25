@@ -41,18 +41,19 @@ def add_coverage_appointment_notifications(
     restored: bool = False,
 ) -> None:
     notification_type = RESTORE_NOTIFICATION_TYPE if restored else TRANSFER_NOTIFICATION_TYPE
-    appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
+    appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time) if appointment.appointment_time else None
+    when = f"{appointment_at:%d/%m/%Y a las %H:%M}" if appointment_at else f"{appointment.appointment_date:%d/%m/%Y} (por turnos)"
     if restored:
         title = "Cita restaurada por cobertura"
         message = (
             f"La cita por cobertura de {coverage.principal.full_name} para el "
-            f"{appointment_at:%d/%m/%Y a las %H:%M} fue restaurada al médico principal."
+            f"{when} fue restaurada al médico principal."
         )
     else:
         title = "Nueva cita transferida por cobertura"
         message = (
             f"Se te ha transferido una cita por cobertura de {coverage.principal.full_name} para el "
-            f"{appointment_at:%d/%m/%Y a las %H:%M}."
+            f"{when}."
         )
 
     for user_id in _recipient_ids(db, coverage):

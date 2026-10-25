@@ -10,6 +10,16 @@ from app.models.insurance import InsuranceCompany, InsurancePlan, PatientInsuran
 from app.models.administration import SecurityAudit
 from test_organization_isolation import tenant_api, sign_in, PASSWORD
 
+
+def shared_membership(db: Session) -> OrganizationMembership:
+    member = db.scalar(select(OrganizationMembership).join(User).where(
+        OrganizationMembership.organization_id == 1,
+        User.email == 'shared@example.com',
+    ))
+    assert member is not None
+    return member
+
+
 @pytest.fixture
 def insurance_api(tenant_api):
     app, engine, ids = tenant_api
@@ -137,7 +147,7 @@ def test_expiration_primary_and_legacy_update_permissions(insurance_api):
     body=coverage(d[1]); body['patient_insurance_id']=newest['id']
     assert c.put(path(d[1]),headers=h,json=body).status_code==422
     with Session(engine) as db:
-        member=db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id==1))
+        member=shared_membership(db)
         member.roles=[db.scalar(select(Role).where(Role.code=='doctor'))]; db.commit()
     h=sign_in(c)
     assert c.get(url,headers=h).status_code==200
@@ -150,20 +160,20 @@ def test_expiration_primary_and_legacy_update_permissions(insurance_api):
 def test_secretary_scope_and_individual_denials(insurance_api):
     c,h,engine,d=insurance_api
     with Session(engine) as db:
-        member=db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id==1))
+        member=shared_membership(db)
         member.roles=[db.scalar(select(Role).where(Role.code=='secretary'))]
         db.add(SecretaryCenterScope(organization_id=1,secretary_id=member.user_id,center_id=d[1]['center'],manage_all_doctors=True))
         db.commit()
     h=sign_in(c)
     assert c.put(path(d[1]),headers=h,json=coverage(d[1])).status_code==200
     with Session(engine) as db:
-        member=db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id==1))
+        member=shared_membership(db)
         member.denied_permissions=['insurance:manage']; db.commit()
     h=sign_in(c)
     assert c.put(path(d[1]),headers=h,json=coverage(d[1],revision=1)).status_code==403
     assert c.get(path(d[1]),headers=h).status_code==200
     with Session(engine) as db:
-        member=db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id==1))
+        member=shared_membership(db)
         member.denied_permissions=[]
         scope=db.scalar(select(SecretaryCenterScope)); scope.manage_all_doctors=False; db.commit()
     h=sign_in(c)

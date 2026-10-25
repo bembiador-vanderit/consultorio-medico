@@ -98,8 +98,8 @@ def test_two_hosts_isolate_records_roles_and_platform_scope(tenant_api):
 
 def test_membership_suspension_and_scoped_write(tenant_api):
     app, engine, ids = tenant_api
-    with TestClient(app, base_url="http://one.example.test") as one, TestClient(app, base_url="http://two.example.test") as two:
-        h1, h2 = sign_in(one), sign_in(two)
+    with TestClient(app, base_url="http://one.example.test") as one, TestClient(app, base_url="http://two.example.test") as two, TestClient(app, base_url="http://admin.example.test") as platform:
+        h1, h2, hp = sign_in(one), sign_in(two), sign_in(platform)
         with Session(engine) as db:
             bind_scope(db, "tenant", 1)
             assert db.get(Patient, ids[2]) is None
@@ -117,12 +117,40 @@ def test_membership_suspension_and_scoped_write(tenant_api):
                 db.flush()
             db.rollback()
         with Session(engine) as db:
-            member = db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id == 1))
+            member = db.scalar(select(OrganizationMembership).where(
+                OrganizationMembership.organization_id == 1,
+                OrganizationMembership.user_id == user_id,
+            ))
+            assert member is not None
             member.state = "suspended"
             db.commit()
         assert one.get("/api/v1/auth/me", headers=h1).status_code == 401
+        assert one.get("/api/v1/patients", headers=h1).status_code == 401
+        assert one.post("/api/v1/auth/refresh").status_code == 401
+        assert one.post("/api/v1/auth/login", json={"email": "shared@example.com", "password": PASSWORD}).status_code == 401
         assert two.get("/api/v1/auth/me", headers=h2).status_code == 401
         assert two.get("/api/v1/auth/me", headers=sign_in(two)).status_code == 200
+        assert platform.get("/api/v1/auth/me", headers=hp).status_code == 401
+        assert platform.get("/api/v1/auth/me", headers=sign_in(platform)).status_code == 200
+        assert platform.get("/api/v1/patients", headers=sign_in(platform)).status_code == 403
+
+
+def test_split_patient_grants_do_not_expand_tenant_scope_and_audit_stays_scoped(tenant_api):
+    from app.models.clinical_audit import ClinicalAuditLog
+    app, engine, ids = tenant_api
+    with TestClient(app, base_url="http://one.example.test") as one:
+        headers = sign_in(one)
+        assert one.get(f"/api/v1/patients/{ids[2]}", headers=headers).status_code == 404
+        payload = {"first_name": "QA", "last_name": "Patient", "date_of_birth": "1990-01-01", "phone": "5550022", "email": None}
+        assert one.put(f"/api/v1/patients/{ids[2]}", json=payload, headers=headers).status_code == 404
+        assert one.put(f"/api/v1/patients/{ids[1]}", json=payload, headers=headers).status_code == 200
+        with Session(engine) as db:
+            bind_scope(db, "tenant", 1)
+            row = db.scalar(select(ClinicalAuditLog).where(ClinicalAuditLog.resource_type == "patient"))
+            assert row.resource_id == ids[1] and row.organization_id == 1
+        with Session(engine) as db:
+            bind_scope(db, "tenant", 2)
+            assert db.scalar(select(ClinicalAuditLog).where(ClinicalAuditLog.resource_type == "patient")) is None
 
 
 def test_platform_admin_cannot_discover_other_organizations_from_tenant(tenant_api):

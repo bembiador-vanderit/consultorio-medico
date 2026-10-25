@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
 import type { Patient } from "../types/patient";
 import type { User } from "../types/user";
+import FollowUpInbox,{type ClinicalFollowUp} from "../components/FollowUpInbox";
 
 type FollowUp = {
   id: number;
@@ -18,9 +19,9 @@ type FollowUp = {
   completed_at: string | null;
 };
 
-type Props = { user: User; onBack: () => void };
+type Props = { user: User; onBack: () => void; onSchedule?: (task:ClinicalFollowUp)=>void };
 
-export default function FollowUps({ user, onBack }: Props) {
+export default function FollowUps({ user, onBack, onSchedule }: Props) {
   const [items, setItems] = useState<FollowUp[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [query, setQuery] = useState("");
@@ -41,7 +42,7 @@ export default function FollowUps({ user, onBack }: Props) {
     setPatients(patientResponse.data);
   }
 
-  useEffect(() => { void load().catch(() => setError("No fue posible cargar los seguimientos.")); }, []);
+  useEffect(() => { if(user.roles.includes("doctor"))void load().catch(() => setError("No fue posible cargar los seguimientos.")); }, []);
 
   const filteredPatients = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -81,7 +82,8 @@ export default function FollowUps({ user, onBack }: Props) {
         <div><p className="text-sm font-medium text-teal-700">Seguimientos</p><h2 className="mt-1 text-3xl font-bold">Seguimiento de pacientes</h2><p className="mt-2 text-slate-500">Programa recordatorios clínicos y genera automáticamente una notificación para el médico responsable.</p></div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,420px)_1fr]">
+      <FollowUpInbox user={user} onSchedule={onSchedule}/>
+      {user.roles.includes("doctor")&&<div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,420px)_1fr]">
         <form onSubmit={submit} className="rounded-xl border bg-white p-6 shadow-sm">
           <h3 className="font-bold">Nuevo seguimiento</h3>
           {error && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -105,14 +107,14 @@ export default function FollowUps({ user, onBack }: Props) {
               const patient = patients.find((p) => p.id === item.patient_id);
               return <div key={item.id} className={`rounded-lg border p-4 ${item.status === "completed" ? "opacity-60" : ""}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{patient ? `${patient.first_name} ${patient.last_name}` : `Paciente #${item.patient_id}`}</p><p className="text-sm text-slate-600">{item.reason}</p></div><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold uppercase">{item.priority}</span></div>
-                <p className="mt-2 text-sm text-slate-500">{new Date(item.due_at).toLocaleString("es-DO")}</p>
+                <p className="mt-2 text-sm text-slate-500">{item.due_at?new Date(item.due_at).toLocaleString("es-DO"):"Retorno al disponer de estudios"}</p>
                 {item.notes && <p className="mt-2 text-sm text-slate-600">{item.notes}</p>}
                 {item.status !== "completed" && <button onClick={() => void complete(item.id)} className="mt-3 text-sm font-semibold text-teal-700 hover:underline">Marcar como completado</button>}
               </div>;
             })}
           </div>
         </div>
-      </div>
+      </div>}
     </section>
   );
 }

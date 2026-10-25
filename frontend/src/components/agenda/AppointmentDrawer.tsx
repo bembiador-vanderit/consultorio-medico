@@ -3,6 +3,7 @@ import type { Appointment } from "../../types/appointment";
 import type { User } from "../../types/user";
 import { Alert, Button, Divider, Modal } from "../../ui";
 import { AppointmentStatusBadge } from "./AppointmentStatusBadge";
+import { AppointmentArrivalAction } from "./AppointmentArrivalAction";
 import { appointmentRules, formatDate, formatTime } from "./agenda";
 
 type Props = {
@@ -11,6 +12,8 @@ type Props = {
   onClose: () => void;
   user: User;
   canAccessClinical: boolean;
+  canAccessArrivalPair: boolean;
+  onArrivalChanged: () => void;
   onEdit: (appointment: Appointment) => void;
   onAttend: (appointment: Appointment) => void;
   onSetStatus: (
@@ -28,6 +31,8 @@ export function AppointmentDrawer({
   onClose,
   user,
   canAccessClinical,
+  canAccessArrivalPair,
+  onArrivalChanged,
   onEdit,
   onAttend,
   onSetStatus,
@@ -61,12 +66,20 @@ export function AppointmentDrawer({
         </div>
         <dl className="agenda-details">
           <div>
+            <dt>Teléfono</dt>
+            <dd>{appointment.patient_phone?.trim() || "Sin teléfono"}</dd>
+          </div>
+          <div>
             <dt>Fecha</dt>
             <dd>{formatDate(appointment.appointment_date)}</dd>
           </div>
           <div>
-            <dt>Hora</dt>
-            <dd>{formatTime(appointment.appointment_time)}</dd>
+            <dt>Modalidad</dt>
+            <dd>{appointment.schedule_mode === "queue" ? "Por turno" : "Por hora"}</dd>
+          </div>
+          <div>
+            <dt>{appointment.schedule_mode === "queue" ? "Orden de agenda" : "Hora"}</dt>
+            <dd>{appointment.schedule_mode === "queue" ? appointment.daily_booking_order ?? "—" : formatTime(appointment.appointment_time)}</dd>
           </div>
           <div>
             <dt>Especialidad</dt>
@@ -113,6 +126,7 @@ export function AppointmentDrawer({
             </Alert>
           )}
           <div className="agenda-drawer-actions">
+            {open && <AppointmentArrivalAction appointment={appointment} user={user} canAccessPair={canAccessArrivalPair} busy={busy} onChanged={onArrivalChanged} />}
             {!rules.completed && (
               <Button
                 variant="outline"

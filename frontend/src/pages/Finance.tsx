@@ -4,21 +4,28 @@ import { api } from '../services/api';
 import { financeError, kinds, methods, money, states, timestamp, type Invoice, type Method, type Movement, type Register } from '../services/finance';
 import { Alert, Button, Card, FormField, Input, Select } from '../ui';
 import FinanceCharge from '../components/FinanceCharge';
+import FinanceCardBatches from '../components/FinanceCardBatches';
+import FinanceCardCorrection from '../components/FinanceCardCorrection';
 import ArsFinance from '../components/ArsFinance';
+import { financeNavigationGroups, getDefaultFinanceSection, getFinanceNavigationGroups, type FinanceGroupId, type FinanceSection } from '../navigation/navigation';
 import './finance.css';
 
-const tabs = ['Caja', 'Facturación', 'Movimientos del día', 'Cuentas pendientes de pacientes', 'Reclamaciones ARS', 'Pagos ARS / remesas', 'Cuentas por cobrar ARS', 'Conciliación / resumen'];
 type Summary = { collected: Record<Method, string>; reversed: Record<Method, string>; copays: string; private: string; patient_pending: string; ars_expected: string; adjustments: string };
 type Action = { url: string; body: unknown; title: string };
 
-export default function Finance({ user }: { user: User }) {
+export default function Finance({ user, section, onSectionChange }: { user: User; section?: FinanceSection; onSectionChange?: (section: FinanceSection) => void }) {
   const canRead = !!user.permissions?.includes('finance:read');
   const canReadArs = !!user.permissions?.includes('ars:read');
   const canCollect = !!user.permissions?.includes('finance:collect');
   const canManage = !!user.permissions?.includes('finance:manage');
+  const canPdf = !!user.permissions?.includes('documents:view') && !!user.permissions?.includes('documents:pdf');
   const [centers, setCenters] = useState<{ id: number; name: string }[]>([]);
   const [center, setCenter] = useState('');
-  const [tab, setTab] = useState(canRead ? 0 : 4);
+  const [internalTab, setInternalTab] = useState<FinanceSection>(canRead ? 0 : 4);
+  const requestedTab = section ?? internalTab;
+  const visibleFinanceGroups = getFinanceNavigationGroups(user);
+  const tab = visibleFinanceGroups.some(group => group.sections.some(option => option.index === requestedTab)) ? requestedTab : getDefaultFinanceSection(user);
+  const [mobileExpandedGroup, setMobileExpandedGroup] = useState<FinanceGroupId | null>(() => financeNavigationGroups.find(group => group.sections.some(option => option.index === (section ?? (canRead ? 0 : 4))))?.id ?? null);
   const [day, setDay] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
   const [registers, setRegisters] = useState<Register[]>([]);
   const [registerId, setRegisterId] = useState('');
@@ -42,6 +49,10 @@ export default function Finance({ user }: { user: User }) {
   const [action, setAction] = useState<Action | null>(null);
   const register = registers.find(r => String(r.id) === registerId);
   const active = register?.state === 'open' && (register.opened_by === user.id || canManage) ? register : undefined;
+  const activeFinanceGroup = visibleFinanceGroups.find(group => group.sections.some(option => option.index === tab));
+  useEffect(() => {
+    if (section !== undefined) setMobileExpandedGroup(financeNavigationGroups.find(group => group.sections.some(option => option.index === section))?.id ?? null);
+  }, [section]);
   useEffect(() => {
     if (!canRead && !canReadArs) return;
     const controller = new AbortController();
@@ -63,6 +74,13 @@ export default function Finance({ user }: { user: User }) {
     return () => controller.abort();
   }, [center, day, tab, offset, version, canRead, user.id]);
   function resetContext() { setOffset(0); setCharge(null); setDetail(null); setAction(null); setSuccess(''); setReason(''); }
+  function selectSection(next: FinanceSection) {
+    resetContext();
+    if (onSectionChange) onSectionChange(next);
+    else setInternalTab(next);
+    const nextGroup = financeNavigationGroups.find(group => group.sections.some(option => option.index === next));
+    if (nextGroup) setMobileExpandedGroup(nextGroup.id);
+  }
   async function execute() {
     if (!action || busy) return;
     setBusy(true); setError('');
@@ -75,6 +93,21 @@ export default function Finance({ user }: { user: User }) {
     try { const r = await api.get(`/finance/invoices/${id}`); setDetail(r.data); }
     catch (e) { setError(financeError(e)); } finally { setBusy(false); }
   }
+  async function financialPdf(kind: 'invoice' | 'receipt' | 'cash_close', id: number, action: 'view' | 'download' | 'print' | 'reprint') {
+    setError('');
+    try {
+      const { data } = await api.get(`/documents/finance/${kind}/${id}/pdf`, { params: { action }, responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
+      if (action === 'download') {
+        const link = document.createElement('a'); link.href = url; link.download = `atlas-${kind}-${id}.pdf`; link.click();
+      } else {
+        const opened = window.open(url, '_blank');
+        if (!opened) { setError('Permita ventanas emergentes para abrir el documento.'); URL.revokeObjectURL(url); return; }
+        if (action === 'print' || action === 'reprint') window.setTimeout(() => opened.print(), 900);
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    } catch (e) { setError(financeError(e)); }
+  }
   if (!canRead && !canReadArs) return <Alert tone="danger" title="Sin permiso para Finanzas" />;
   return <section className="finance-workspace">
     <header><h1>Finanzas</h1><p>Caja y facturación interna · DOP</p></header>
@@ -84,7 +117,29 @@ export default function Finance({ user }: { user: User }) {
       <Button variant="outline" disabled={loading || busy} onClick={() => setVersion(v => v + 1)}>Actualizar</Button>
       {canCollect && <Button disabled={!center || loading || busy || !!action || !!charge} onClick={() => { setDetail(null); setCharge('new'); }}>Nuevo cobro</Button>}
     </div>
-    <nav aria-label="Secciones de Finanzas" className="finance-tabs">{tabs.map((t, i) => (i < 4 ? canRead : canReadArs) ? <Button key={t} variant={tab === i ? 'primary' : 'outline'} aria-current={tab === i ? 'page' : undefined} disabled={busy || !!action || !!charge} onClick={() => { resetContext(); setTab(i); }}>{t}</Button> : null)}</nav>
+    <div className="finance-navigation" data-active-group={activeFinanceGroup?.id}>
+      <nav aria-label="Grupos de Finanzas" className="finance-group-navigation">{visibleFinanceGroups.map(group => {
+        const isActive = activeFinanceGroup?.id === group.id;
+        return <Button key={group.id} type="button" variant={isActive ? 'primary' : 'outline'} aria-expanded={isActive} aria-controls="finance-desktop-options" aria-pressed={isActive} onClick={() => {
+          if (!isActive) { selectSection(group.sections[0].index); setMobileExpandedGroup(group.id); }
+          else setMobileExpandedGroup(current => current === group.id ? null : group.id);
+        }}>{group.label}</Button>;
+      })}</nav>
+      <div className="finance-mobile-groups">{visibleFinanceGroups.map(group => {
+        const isOpen = mobileExpandedGroup === group.id;
+        const isActive = activeFinanceGroup?.id === group.id;
+        return <section key={group.id} className={`finance-mobile-group${isActive ? ' is-active' : ''}`}>
+          <button type="button" className="finance-mobile-group-toggle" aria-expanded={isOpen} aria-controls={`finance-options-${group.id}`} onClick={() => {
+            if (!isActive) { selectSection(group.sections[0].index); setMobileExpandedGroup(group.id); }
+            else setMobileExpandedGroup(current => current === group.id ? null : group.id);
+          }} aria-pressed={isActive}><span>{group.label}</span><span className="finance-chevron" aria-hidden="true" /></button>
+          <div id={`finance-options-${group.id}`} className="finance-section-options" hidden={!isOpen}>{group.sections.map(option => <Button key={option.index} type="button" variant={tab === option.index ? 'primary' : 'outline'} aria-current={tab === option.index ? 'page' : undefined} disabled={busy || !!action || !!charge} onClick={() => selectSection(option.index)}>{option.label}</Button>)}</div>
+        </section>;
+      })}</div>
+      {activeFinanceGroup && <section id="finance-desktop-options" className="finance-desktop-options" aria-label={`Opciones de ${activeFinanceGroup.label}`}>
+        <div className="finance-section-options">{activeFinanceGroup.sections.map(option => <Button key={option.index} type="button" variant={tab === option.index ? 'primary' : 'outline'} aria-current={tab === option.index ? 'page' : undefined} disabled={busy || !!action || !!charge} onClick={() => selectSection(option.index)}>{option.label}</Button>)}</div>
+      </section>}
+    </div>
     {error && <Alert tone="danger" title={error} />}{success && <Alert tone="success" title={success} />}
     {loading && <p role="status">Cargando Finanzas…</p>}
     {action && <Card><h2>{action.title}</h2><p>Confirme para registrar esta operación en el historial.</p><Button loading={busy} onClick={() => void execute()}>Confirmar</Button><Button variant="outline" disabled={busy} onClick={() => setAction(null)}>Cancelar</Button></Card>}
@@ -99,12 +154,13 @@ export default function Finance({ user }: { user: User }) {
         <FormField label="Caja"><Select value={registerId} onChange={e => { setRegisterId(e.target.value); setCounted(''); setNotes(''); }} disabled={busy || !!charge || !!action}><option value="">Seleccione</option>{registers.map(r => <option key={r.id} value={r.id}>#{r.id} · {r.state === 'open' ? 'Abierta' : 'Cerrada'} · Responsable #{r.opened_by} · {timestamp(r.opened_at)}</option>)}</Select></FormField>
         {register && <><p>Fondo inicial: {money(register.opening_amount)} · Efectivo esperado: <strong>{money(register.totals.expected_cash)}</strong></p><MethodTotals collected={register.totals.collected} reversed={register.totals.reversed} />
           <p>Ajustes: entradas {money(register.totals.adjustments_in)} / salidas {money(register.totals.adjustments_out)}</p>
-          {register.state === 'closed' && <p>Cerrada por #{register.closed_by} · {timestamp(register.closed_at!)}<br />Efectivo contado: {money(register.counted_cash!)} · Diferencia: {money(register.difference!)}<br />{register.closing_notes}</p>}
+          {register.state === 'closed' && <><p>Cerrada por #{register.closed_by} · {timestamp(register.closed_at!)}<br />Efectivo contado: {money(register.counted_cash!)} · Diferencia: {money(register.difference!)}<br />{register.closing_notes}</p>{canPdf && <div className="finance-pdf-actions"><Button variant="outline" onClick={() => void financialPdf('cash_close', register.id, 'view')}>Ver PDF cierre</Button><Button variant="outline" onClick={() => void financialPdf('cash_close', register.id, 'download')}>Descargar cierre</Button>{user.permissions?.includes('documents:print') && <Button variant="outline" onClick={() => void financialPdf('cash_close', register.id, 'print')}>Imprimir cierre</Button>}</div>}</>}
         </>}
         {canCollect && active && <form onSubmit={e => { e.preventDefault(); setAction({ url: `/finance/registers/${active.id}/close`, body: { counted_cash: counted, notes }, title: `Cerrar caja #${active.id} · Contado ${money(counted)}` }); }}>
           <FormField label="Efectivo contado" required><Input type="number" min="0" step="0.01" value={counted} onChange={e => setCounted(e.target.value)} /></FormField>
           <p>Diferencia: {money(Number(counted || 0) - Number(active.totals.expected_cash))}</p>
           <FormField label="Observación de cierre" required={Number(counted) !== Number(active.totals.expected_cash)}><Input maxLength={1000} value={notes} onChange={e => setNotes(e.target.value)} /></FormField>
+          <p>Cierre primero todos los lotes de tarjeta de esta caja.</p>
           <Button type="submit" disabled={busy || !!action || !!charge}>Cerrar caja</Button>
         </form>}
         {canCollect && !registers.some(r => r.state === 'open' && r.opened_by === user.id) && <form onSubmit={e => { e.preventDefault(); setAction({ url: '/finance/registers', body: { center_id: Number(center), opening_amount: opening, notes }, title: `Abrir caja con ${money(opening)}` }); }}>
@@ -112,18 +168,24 @@ export default function Finance({ user }: { user: User }) {
           <Button type="submit" disabled={!center || loading || busy || !!action}>Abrir caja</Button>
         </form>}
       </Card>
+      {register && <FinanceCardBatches key={register.id} centerId={Number(center)} register={register}
+        canManage={canManage} canCollect={canCollect && (register.opened_by === user.id || canManage)}
+        onChanged={() => setVersion(v => v + 1)} />}
       {canManage && active && <Card><h2>Ajuste autorizado de efectivo</h2><form onSubmit={e => { e.preventDefault(); setAction({ url: `/finance/registers/${active.id}/adjustments`, body: { request_key: crypto.randomUUID(), kind: direction, amount: adjustment, reason }, title: `${kinds[direction]} · ${money(adjustment)}` }); }}>
         <FormField label="Tipo de ajuste"><Select value={direction} onChange={e => setDirection(e.target.value)}><option value="adjustment_in">Entrada</option><option value="adjustment_out">Salida</option></Select></FormField>
         <FormField label="Importe del ajuste" required><Input type="number" min="0.01" step="0.01" value={adjustment} onChange={e => setAdjustment(e.target.value)} /></FormField>
         <FormField label="Motivo del ajuste" required><Input maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></FormField><Button type="submit" disabled={busy || !!action}>Registrar ajuste</Button>
       </form></Card>}
     </>}
-    {(tab === 1 || tab === 3) && <Card><h2>{tabs[tab]}</h2><div className="finance-table"><table><thead><tr><th>Documento / fecha</th><th>Paciente / concepto</th><th>Total</th><th>ARS esperada</th><th>Pagado por paciente</th><th>Saldo paciente</th><th>Estado</th><th>Acción</th></tr></thead><tbody>
+    {(tab === 1 || tab === 3) && <Card><h2>{financeNavigationGroups.flatMap(group => group.sections).find(option => option.index === tab)?.label}</h2><div className="finance-table"><table><thead><tr><th>Documento / fecha</th><th>Paciente / concepto</th><th>Total</th><th>ARS esperada</th><th>Pagado por paciente</th><th>Saldo paciente</th><th>Estado</th><th>Acción</th></tr></thead><tbody>
       {invoices.map(i => <tr key={i.id}><td>{i.number}<br />{timestamp(i.created_at)}</td><td>{i.patient_name}<br />{i.concept}</td><td>{money(i.base_amount)}</td><td>{money(i.expected_ars)}</td><td>{money(i.paid_amount)}</td><td>{money(i.balance)}</td><td>{states[i.state]}</td><td><Button variant="ghost" disabled={busy} onClick={() => void showInvoice(i.id)}>Ver {i.number}</Button>{canCollect && Number(i.balance) > 0 && <Button disabled={busy || !!charge} onClick={() => { setDetail(null); setCharge(i); }}>Aplicar pago</Button>}</td></tr>)}
     </tbody></table></div>{!invoices.length && !loading && <p>No hay documentos en esta vista.</p>}<Pager offset={offset} count={invoices.length} change={setOffset} disabled={loading || busy} /></Card>}
-    {(tab === 0 || tab === 2) && <Card><h2>Movimientos del día</h2><MovementList items={movements} onInvoice={id => void showInvoice(id)} />{!movements.length && !loading && <p>Sin movimientos.</p>}<Pager offset={offset} count={movements.length} change={setOffset} disabled={loading || busy} /></Card>}
+    {(tab === 0 || tab === 2) && <Card><h2>Movimientos del día</h2><MovementList items={movements} onInvoice={id => void showInvoice(id)} onReceipt={canPdf ? id => void financialPdf('receipt', id, 'view') : undefined} />{!movements.length && !loading && <p>Sin movimientos.</p>}<Pager offset={offset} count={movements.length} change={setOffset} disabled={loading || busy} /></Card>}
     {detail && <Card><h2>{detail.number} · Documento interno</h2><p>{detail.patient_name} · {detail.concept} · {timestamp(detail.created_at)}</p><p>Total: {money(detail.base_amount)} · ARS: {money(detail.expected_ars)} · Obligación del paciente: {money(detail.patient_amount)}</p><p>Pagos netos: {money(detail.paid_amount)} · Saldo: {money(detail.balance)} · {states[detail.state]}</p><p>Sin validez fiscal DGII / e-CF.</p>
-      <MovementList items={detail.movements || []} />
+      {canPdf && <div className="finance-pdf-actions"><Button variant="outline" onClick={() => void financialPdf('invoice', detail.id, 'view')}>Ver PDF</Button><Button variant="outline" onClick={() => void financialPdf('invoice', detail.id, 'download')}>Descargar PDF</Button>{user.permissions?.includes('documents:print') && <Button variant="outline" onClick={() => void financialPdf('invoice', detail.id, 'print')}>Imprimir</Button>}{user.permissions?.includes('documents:reprint') && <Button variant="outline" onClick={() => void financialPdf('invoice', detail.id, 'reprint')}>Reimprimir</Button>}</div>}
+      <MovementList items={detail.movements || []} onReceipt={canPdf ? id => void financialPdf('receipt', id, 'view') : undefined} />
+      {canManage && (detail.movements || []).filter(m => m.kind === 'payment' && m.parts.some(p => p.method === 'card')).map(m =>
+        <FinanceCardCorrection key={m.id} centerId={detail.center_id} movement={m} onDone={() => { setVersion(v => v + 1); void showInvoice(detail.id); }} />)}
       {canManage && detail.state !== 'void' && <><FormField label="Motivo de reverso o anulación" required><Input maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></FormField>
         {(detail.movements || []).filter(m => m.kind === 'payment' && !detail.movements?.some(x => x.reverses_id === m.id)).map(m => <Button key={m.id} variant="outline" disabled={!active || !reason.trim() || busy || !!action} onClick={() => setAction({ url: `/finance/movements/${m.id}/reverse`, body: { register_id: active!.id, request_key: crypto.randomUUID(), reason }, title: `Revertir cobro #${m.id} · ${money(m.amount)} usando los métodos originales` })}>Revertir cobro #{m.id}</Button>)}
         {Number(detail.paid_amount) === 0 && <Button variant="danger" disabled={!reason.trim() || busy || !!action} onClick={() => setAction({ url: `/finance/invoices/${detail.id}/void`, body: { reason }, title: `Anular ${detail.number}` })}>Anular factura</Button>}
@@ -136,8 +198,8 @@ export default function Finance({ user }: { user: User }) {
 function MethodTotals({ collected, reversed }: { collected: Record<Method, string>; reversed: Record<Method, string> }) {
   return <div className="finance-table"><table><thead><tr><th>Método</th><th>Cobrado</th><th>Revertido</th><th>Neto</th></tr></thead><tbody>{(Object.keys(methods) as Method[]).map(m => <tr key={m}><td>{methods[m]}</td><td>{money(collected[m])}</td><td>{money(reversed[m])}</td><td>{money(Number(collected[m]) - Number(reversed[m]))}</td></tr>)}</tbody></table></div>;
 }
-function MovementList({ items, onInvoice }: { items: Movement[]; onInvoice?: (id: number) => void }) {
-  return <div className="finance-table"><table><thead><tr><th>Movimiento / fecha</th><th>Tipo / caja</th><th>Importe</th><th>Métodos / motivo</th><th>Documento</th></tr></thead><tbody>{items.map(m => <tr key={m.id}><td>#{m.id} · {timestamp(m.created_at)}</td><td>{kinds[m.kind]} · Caja #{m.register_id}</td><td>{money(m.amount)}</td><td>{m.parts.map(p => `${methods[p.method]} ${money(p.amount)}`).join(' + ')}<br />{m.reason}{m.reverses_id && ` · Reversa de #${m.reverses_id}`}</td><td>{m.invoice_id && (onInvoice ? <Button variant="ghost" onClick={() => onInvoice(m.invoice_id!)}>Factura #{m.invoice_id}</Button> : `#${m.invoice_id}`)}</td></tr>)}</tbody></table></div>;
+function MovementList({ items, onInvoice, onReceipt }: { items: Movement[]; onInvoice?: (id: number) => void; onReceipt?: (id: number) => void }) {
+  return <div className="finance-table"><table><thead><tr><th>Movimiento / fecha</th><th>Tipo / caja</th><th>Importe</th><th>Métodos / motivo</th><th>Documento</th></tr></thead><tbody>{items.map(m => <tr key={m.id}><td>#{m.id} · {timestamp(m.created_at)}</td><td>{kinds[m.kind]} · Caja #{m.register_id}</td><td>{money(m.amount)}</td><td>{m.parts.map(p => `${methods[p.method]} ${money(p.amount)}${p.method === 'card' && p.batch_number ? ` · ${p.provider || 'Prestadora pendiente'} · Lote ${p.batch_number}` : ''}`).join(' + ')}<br />{m.reason}{m.reverses_id && ` · Reversa de #${m.reverses_id}`}</td><td>{m.invoice_id && (onInvoice ? <Button variant="ghost" onClick={() => onInvoice(m.invoice_id!)}>Factura #{m.invoice_id}</Button> : `#${m.invoice_id}`)}{m.kind === 'payment' && onReceipt && <Button variant="outline" onClick={() => onReceipt(m.id)}>Recibo PDF</Button>}</td></tr>)}</tbody></table></div>;
 }
 function Pager({ offset, count, change, disabled }: { offset: number; count: number; change: (n: number) => void; disabled: boolean }) {
   return <div className="finance-controls"><Button variant="outline" disabled={disabled || offset === 0} onClick={() => change(Math.max(0, offset - 50))}>Anterior</Button><span>Página {offset / 50 + 1}</span><Button variant="outline" disabled={disabled || count < 50} onClick={() => change(offset + 50)}>Siguiente</Button></div>;

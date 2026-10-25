@@ -282,6 +282,10 @@ def test_history_exposes_specialty_doctor_and_center(specialty_context):
 
 def test_specialty_cannot_change_after_consultation_starts_or_completes(specialty_context):
     db, patient, center, cardiology, pediatrics, _, _, doctor, _, admin = specialty_context
+    # Direct route calls bypass Depends(require_permission("clinical:access")).
+    # Model the authorized completing physician, not a role-only test identity.
+    doctor.roles[0].permissions.append(Permission(code="clinical:access", description="Atención clínica QA"))
+    db.commit()
     appointment = create_appointment(appointment_payload(patient.id, doctor.id, center.id, pediatrics.id), admin, db)
     history = create_clinical_history(
         patient.id,

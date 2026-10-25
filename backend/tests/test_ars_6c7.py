@@ -8,13 +8,15 @@ from app.api.routes import ars, finance
 from app.models import Appointment, OrganizationMembership, Role
 from app.models.ars import ArsClaim, ArsApplication, ArsRemittance
 from app.models.administration import SecurityAudit
-from test_insurance_6c5 import insurance_api, coverage, path
+from test_insurance_6c5 import insurance_api, coverage, path, shared_membership
 from test_organization_isolation import sign_in, tenant_api
 
 PREFIX = '/api/v1/ars'
 
 
 def post(c, h, url, data, status=200):
+    if url.endswith('/apply') and 'request_key' not in data:
+        data = {**data, 'request_key': str(uuid4())}
     r = c.post(PREFIX + url, headers=h, json=data)
     assert r.status_code == status, r.text
     return r.json()
@@ -163,7 +165,7 @@ def test_cross_tenant_claims_payments_applications_and_reports(insurance_api):
 def test_doctor_has_no_ars_permissions(insurance_api):
     c, h, engine, d = setup(insurance_api)
     with Session(engine) as db:
-        member = db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id == 1))
+        member = shared_membership(db)
         member.roles = [db.scalar(select(Role).where(Role.code == 'doctor'))]
         db.commit()
     h = sign_in(c)

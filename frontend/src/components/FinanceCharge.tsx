@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
-import { cents, financeError, methods, money, sumParts, type Invoice, type Part, type Preview, type Register } from '../services/finance';
+import { cents, financeError, methods, money, sumParts, type CardProvider, type Invoice, type Part, type Preview, type ProviderSetting, type Register } from '../services/finance';
 import { Alert, Button, Card, FormField, Input, Select } from '../ui';
 import FinancePaymentFields from './FinancePaymentFields';
 
@@ -15,12 +15,20 @@ export default function FinanceCharge({ centerId, register, invoice, onDone, onC
   const [concept, setConcept] = useState('Consulta');
   const [base, setBase] = useState('');
   const [parts, setParts] = useState<Part[]>([]);
+  const [providers, setProviders] = useState<CardProvider[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState<Confirmation | null>(null);
   const [attempted, setAttempted] = useState(false);
   const existing = invoice || preview?.invoice;
+  useEffect(() => {
+    const controller = new AbortController();
+    api.get<ProviderSetting[]>(`/finance/centers/${centerId}/card-providers`, { signal: controller.signal })
+      .then(r => setProviders(r.data.filter(p => p.enabled).map(p => p.provider)))
+      .catch(e => { if (!controller.signal.aborted) setError(financeError(e)); });
+    return () => controller.abort();
+  }, [centerId]);
   useEffect(() => {
     if (query.trim().length < 2) { setPatients([]); return; }
     const controller = new AbortController();
@@ -49,6 +57,8 @@ export default function FinanceCharge({ centerId, register, invoice, onDone, onC
     const received = sumParts(parts);
     const amount = existing?.balance ?? preview?.coverage?.patient_amount ?? base;
     if ((!existing && (!preview || !patient || !concept.trim())) || !Number.isFinite(cents(amount)) || !Number.isFinite(received) || parts.some(p => !(cents(p.amount) > 0)) || received > cents(amount)) { setError('Revise los importes. El pago no puede exceder el saldo del paciente.'); return; }
+    if (parts.some(p => p.method === 'card' && !p.batch_number?.trim())) { setError('Indique el número de lote del voucher para pagos con tarjeta.'); return; }
+    if (parts.some(p => p.method === 'card' && (!p.provider || !providers.includes(p.provider)))) { setError('Seleccione una prestadora de tarjeta habilitada.'); return; }
     if (parts.length && !register) { setError('Abra una caja para registrar el cobro.'); return; }
     if (existing && !parts.length) { setError('Añada al menos un método de pago.'); return; }
     const payment = parts.length ? { register_id: register!.id, request_key: crypto.randomUUID(), parts } : null;
@@ -71,7 +81,7 @@ export default function FinanceCharge({ centerId, register, invoice, onDone, onC
       <h3>Confirmar operación · {confirm.label}</h3>
       <p>Tarifa base: {money(confirm.base)} · ARS esperada: {money(confirm.ars)}</p>
       <p>Saldo del paciente antes del pago: {money(confirm.patient)}</p>
-      <ul>{parts.map(p => <li key={p.method}>{methods[p.method]}: {money(p.amount)}</li>)}</ul>
+      <ul>{parts.map(p => <li key={p.method}>{methods[p.method]}: {money(p.amount)}{p.method === 'card' && p.batch_number && ` · ${p.provider} · Lote ${p.batch_number}`}</li>)}</ul>
       <p>Monto recibido: <strong>{money(confirm.received / 100)}</strong> · Saldo restante: <strong>{money(confirm.balance / 100)}</strong></p>
       <p>El monto ARS no ingresa a Caja. Documento interno sin comprobante fiscal.</p>
       <Button loading={busy} onClick={() => void save()}>{attempted ? 'Reintentar misma operación' : 'Confirmar operación'}</Button>
@@ -88,7 +98,7 @@ export default function FinanceCharge({ centerId, register, invoice, onDone, onC
         <FormField label="Tarifa base" required><Input type="number" min="0" step="0.01" max="9999999999.99" value={base} disabled={!!preview?.coverage} onChange={e => setBase(e.target.value)} /></FormField>
         {preview?.coverage && <p>Cobertura: {preview.coverage.insurance.company_name || 'Particular'} · Autorización: {preview.coverage.authorization_status}<br />Cubierto por ARS: {money(preview.coverage.ars_amount)} · Copago / obligación del paciente: {money(preview.coverage.patient_amount)}</p>}
       </>}
-      <FinancePaymentFields parts={parts} onChange={setParts} />
+      <FinancePaymentFields parts={parts} providers={providers} onChange={setParts} />
       {!register && <p>Sin caja abierta. Puede emitir una factura pendiente; para recibir pagos debe abrir Caja.</p>}
       <Button type="submit" disabled={loading || (!invoice && !preview)}>Revisar cobro</Button>
     </form>}

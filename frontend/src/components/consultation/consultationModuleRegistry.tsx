@@ -12,6 +12,7 @@ import type {
 } from "../../types/clinical";
 import type { User } from "../../types/user";
 import AnamnesisModule from "./AnamnesisModule";
+import CardiologyModule from "./CardiologyModule";
 import DiagnosesModule from "./DiagnosesModule";
 import PrescriptionsModule from "./PrescriptionsModule";
 import VitalSignsModule from "./VitalSignsModule";
@@ -60,7 +61,7 @@ type ConsultationModuleDefinition = {
 export const consultationModuleRegistry: Record<ConsultationModuleKey, ConsultationModuleDefinition> = {
   "core.anamnesis": {
     key: "core.anamnesis",
-    render: (item) => <AnamnesisModule
+    render: (item) => item.context.cardiology_enabled ? <CardiologyModule key={`cardiology:${item.appointment.id}:${item.bootstrapVersion}`} item={item}/> : <AnamnesisModule
       key={`anamnesis:${item.appointment.id}:${item.bootstrapVersion}`}
       patientDateOfBirth={item.appointment.patient_date_of_birth}
       episodeId={item.appointment.id}

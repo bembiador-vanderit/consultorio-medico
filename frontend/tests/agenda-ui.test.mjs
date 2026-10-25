@@ -1,5 +1,6 @@
 import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createServer } from "vite";
 import { createBrowser } from "./browser.mjs";
 const { dom, setDesktop } = createBrowser();
@@ -29,6 +30,7 @@ const fixture = {
   status: "scheduled",
   notes: "Nota",
   patient_name: "Ana Torres",
+  patient_phone: "809-555-0101",
   patient_date_of_birth: "1988-01-01",
   doctor_name: "Dr. Osiris Valdés",
   center_name: "Centro Norte",
@@ -67,7 +69,7 @@ const defaultScope = {
     },
   ],
 };
-let root, calls, items, scope, intercept, attended;
+let root, calls, items, scope, intercept, attended, queueLines, queueTickets;
 function response(config, data) {
   return { data, status: 200, statusText: "OK", headers: {}, config };
 }
@@ -90,6 +92,8 @@ beforeEach(() => {
   scope = structuredClone(defaultScope);
   intercept = null;
   attended = [];
+  queueLines = [{ id: 3, center_id: 1, doctor_id: 2, specialty_id: 3, name: "Consulta QA", prefix: "C", is_active: true, call_on_consultation_start: false }];
+  queueTickets = [];
   api.defaults.adapter = async (config) => {
     calls.push(config);
     if (intercept) {
@@ -98,6 +102,19 @@ beforeEach(() => {
     }
     if (config.url === "/appointments/scope-options" && config.method === "get")
       return response(config, scope);
+    if (config.url === "/appointments/effective-mode" && config.method === "get")
+      return response(config, { schedule_mode: "timed" });
+    if (config.url === "/appointments/queue-capabilities" && config.method === "get")
+      return response(config, { booking_order_enabled: true });
+    if (config.url === "/queue-lines" && config.method === "get") return response(config, queueLines);
+    if (config.url === "/queue-tickets" && config.method === "get") return response(config, queueTickets);
+    if (config.url === "/waiting-rooms" && config.method === "get") return response(config, []);
+    if (config.url === "/queue-tickets/arrivals/8" && config.method === "post") {
+      if (queueTickets.some((ticket) => ticket.appointment_id === 8)) throw { response: { status: 409, data: { detail: "Esta cita ya tiene un turno emitido" } } };
+      const ticket = { id: 11, appointment_id: 8, queue_line_id: 3, public_code: "C-021", status: "waiting", arrived_at: "2026-09-14T12:05:00", sequence_number: 21 };
+      queueTickets.push(ticket);
+      return response(config, ticket);
+    }
     if (config.url === "/appointments/doctors" && config.method === "get")
       return response(
         config,
@@ -232,6 +249,26 @@ async function edit() {
   await open();
   await click(button("Editar cita", detailSurface()));
 }
+
+test("409 al reprogramar conserva datos y permite cambiar solo Hora", async () => {
+  await mount(); await edit();
+  const before = ["Centro", "Médico", "Fecha", "Especialidad", "Motivo", "Observaciones"]
+    .map((name) => [name, control(name).value]);
+  intercept = (config) => {
+    if (config.method === "put" && config.url === "/appointments/8")
+      throw { response: { status: 409, data: { detail: "El médico ya tiene una cita activa en ese horario." } } };
+  };
+  await click(button("Guardar cita", dialog()));
+  assert.match(dialog().textContent, /El médico ya tiene una cita activa en ese horario\./);
+  assert.match(dialog().textContent, /Ana Torres/);
+  for (const [name, value] of before) assert.equal(control(name).value, value, name);
+  assert.equal(button("Guardar cita", dialog()).disabled, false);
+  await change(control("Hora"), "11:30");
+  intercept = null;
+  await click(button("Guardar cita", dialog()));
+  assert.equal(items[0].appointment_time, "11:30");
+  assert.equal(items[0].patient_id, fixture.patient_id);
+});
 function navigateDay(day) {
   return click(
     [...host.querySelectorAll(".agenda-calendar-day")].find(
@@ -640,14 +677,15 @@ test("homónimos no se fusionan y cada cita conserva especialidad y estado en la
     ["Programada", "Confirmada"],
   );
 });
-test("búsqueda de identidad tiene IDs únicos y labels propios; Agenda no crea main", async () => {
+test("selector de paciente tiene IDs únicos, búsqueda principal y verificación secundaria; Agenda no crea main", async () => {
   await mount();
   await click(button("+ Nueva cita", host));
   const inputs = dialog().querySelectorAll("input");
   const ids = [...inputs].map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.match(inputs[0].labels[0].textContent, /Teléfono o correo exacto/);
-  assert.match(inputs[1].labels[0].textContent, /Fecha de nacimiento/);
+  assert.match(inputs[0].labels[0].textContent, /Paciente/);
+  assert.match(inputs[0].placeholder, /nombre, cédula, teléfono o correo/);
+  assert.match(dialog().querySelector(".agenda-patient-verification").textContent, /Teléfono o correo exacto/);
   assert.equal(host.querySelector("main"), null);
 });
 
@@ -826,6 +864,48 @@ test("calendario/filtros móvil se despliegan y conservan filtro al cerrar detal
   assert.equal(document.activeElement,trigger);
 });
 
+test("cada vista muestra el teléfono de su paciente y tolera la ausencia de contacto", async () => {
+  items = [
+    { ...fixture, id: 8, patient_id: 6, patient_name: "Ana Torres", patient_phone: "809-555-0101" },
+    { ...fixture, id: 9, patient_id: 7, patient_name: "Berta Díaz", patient_phone: "829-555-0202", appointment_time: "09:30:00" },
+    { ...fixture, id: 10, patient_id: 8, patient_name: "Carlos Pérez", patient_phone: null, appointment_time: "10:30:00" },
+  ];
+  await mount();
+  const expected = [
+    ["Ana Torres", "809-555-0101"],
+    ["Berta Díaz", "829-555-0202"],
+    ["Carlos Pérez", "Sin teléfono"],
+  ];
+  for (const [view, selector] of [
+    [null, ".agenda-appointment-card--day"],
+    ["Semana", ".agenda-week-appointment-card"],
+    ["Mes", ".agenda-month-entry"],
+    ["Médicos", ".agenda-appointment-card--doctor"],
+  ]) {
+    if (view) await click(button(view, host));
+    const cards = [...host.querySelectorAll(selector)];
+    assert.equal(cards.length, 3);
+    for (const [index, [name, phone]] of expected.entries()) {
+      assert.match(cards[index].textContent, new RegExp(name));
+      assert.equal(cards[index].querySelector(".agenda-patient-phone").textContent, phone);
+      for (const [otherName, otherPhone] of expected) {
+        if (otherName !== name && otherPhone !== "Sin teléfono") assert.doesNotMatch(cards[index].textContent, new RegExp(otherPhone));
+      }
+    }
+    if (view === "Mes") {
+      await click(cards[1]);
+      assert.match(host.querySelector(".agenda-details").textContent, /Teléfono[\s\S]*829-555-0202/);
+      await click(host.querySelector('[aria-label="Cerrar detalle de cita"]'));
+      const day = [...host.querySelectorAll(".agenda-month-day")].find((item) => item.querySelector(".agenda-month-date").textContent === "14" && !item.classList.contains("agenda-month-day--outside"));
+      await click(day);
+      assert.deepEqual([...host.querySelectorAll(".agenda-day-list-item .agenda-patient-phone")].map((item) => item.textContent), expected.map(([, phone]) => phone));
+      await click(host.querySelector('[aria-label="Cerrar panel del día"]'));
+    }
+  }
+  await click(host.querySelectorAll(".agenda-appointment-card--doctor")[2]);
+  assert.match(host.querySelector(".agenda-details").textContent, /Teléfono[\s\S]*Sin teléfono/);
+});
+
 test("Mes móvil usa el mismo Drawer para lista/detalle, volver, Escape y contexto", async () => {
   await mount();await act(async () => setDesktop(false));await click(button("Mes",host));
   const trigger = [...host.querySelectorAll(".agenda-month-day")].find((item) => item.querySelector(".agenda-month-date").textContent === "14" && !item.classList.contains("agenda-month-day--outside"));
@@ -843,4 +923,509 @@ test("Mes móvil usa el mismo Drawer para lista/detalle, volver, Escape y contex
   assert.equal(document.activeElement,trigger);
   assert.equal(gets().length,before);
   assert.equal(host.querySelector('[aria-pressed="true"]').textContent,"Mes");
+});
+
+test("bloques independientes separan fecha, llegadas y controles de vista con estado accesible", async () => {
+  await mount();
+  const page = host.querySelector(".agenda-page");
+  const stack = page.querySelector(".agenda-controls-stack");
+  const operations = page.querySelector(".agenda-operational-panels");
+  const dateNavigation = page.querySelector('[aria-label="Navegación de fechas"]');
+  const contacts = page.querySelector(".agenda-contacts-block");
+  const arrivalsBlock = page.querySelector(".agenda-arrivals-block");
+  const viewControls = page.querySelector('[aria-label="Controles de vista de Agenda"]');
+  const todayAction = viewControls.querySelector(".agenda-today-action");
+  const viewSwitch = viewControls.querySelector('[aria-label="Modo de visualización de Agenda"]');
+  const content = page.querySelector(".agenda-layout");
+  assert.ok(dateNavigation);
+  assert.ok(arrivalsBlock);
+  assert.ok(viewControls);
+  assert.ok(content);
+  assert.ok(stack);
+  assert.ok(operations);
+  assert.equal(stack.parentElement, page);
+  assert.equal(dateNavigation.parentElement, stack);
+  assert.equal(viewControls.parentElement, stack);
+  assert.equal(operations.parentElement, page);
+  assert.equal(contacts.parentElement, operations);
+  assert.equal(arrivalsBlock.parentElement, operations);
+  assert.equal(content.parentElement, page);
+  assert.ok(stack.compareDocumentPosition(operations) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(operations.compareDocumentPosition(content) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(contacts.compareDocumentPosition(arrivalsBlock) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(viewControls.compareDocumentPosition(content) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.equal(operations.contains(todayAction), false);
+  assert.equal(arrivalsBlock.contains(viewSwitch), false);
+  assert.ok(todayAction);
+  assert.ok(viewSwitch);
+  assert.equal(todayAction.contains(viewSwitch), false);
+  assert.equal(dateNavigation.contains(viewSwitch), false);
+  assert.deepEqual([...viewSwitch.querySelectorAll("button")].map(item => item.textContent.trim()), ["Día", "Semana", "Mes", "Médicos"]);
+  assert.equal(button("Día", viewSwitch).getAttribute("aria-pressed"), "true");
+  assert.equal(button("Día", viewSwitch).getAttribute("aria-current"), "true");
+  await click(button("Semana", viewSwitch));
+  assert.equal(button("Semana", viewSwitch).getAttribute("aria-pressed"), "true");
+  assert.equal(button("Día", viewSwitch).hasAttribute("aria-current"), false);
+  await click(button("Mes", viewSwitch));
+  assert.equal(button("Mes", viewSwitch).getAttribute("aria-current"), "true");
+  await click(dateNavigation.querySelector('[aria-label="Fecha siguiente"]'));
+  assert.match(dateNavigation.querySelector(".agenda-date-context span").textContent, /octubre/i);
+  assert.equal(todayAction.querySelector('[aria-label="Ir a hoy"]').textContent.trim(), "Hoy");
+  await click(dateNavigation.querySelector('[aria-label="Fecha anterior"]'));
+  assert.match(dateNavigation.querySelector(".agenda-date-context span").textContent, /septiembre/i);
+});
+
+test("Agenda blocks have stable IDs and responsive structure for future personalization", async () => {
+  await mount();
+  const css = await readFile(new URL("../src/index.css", import.meta.url), "utf8");
+  const shellCss = await readFile(new URL("../src/layouts/operational-shell.css", import.meta.url), "utf8");
+  assert.match(css, /\.agenda-date-navigation\s*\{/);
+  assert.match(css, /\.agenda-controls-stack\s*\{/);
+  assert.match(css, /\.agenda-operational-panels\s*\{/);
+  assert.match(css, /\.agenda-arrivals-panel\s*\{/);
+  assert.match(css, /\.agenda-view-controls\s*\{/);
+  assert.match(css, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /@media\(max-width:1199px\)/);
+  assert.match(css, /@media\(max-width:639px\)/);
+  assert.match(css, /@media\s*\(max-width:\s*1023px\)/);
+  assert.match(css, /@media\s*\(max-width:\s*639px\)/);
+  assert.match(css, /min-height:44px/);
+  assert.match(css, /\.agenda-controls-stack\{grid-template-columns:minmax\(0,1fr\) auto;align-items:center\}/);
+  assert.match(css, /\.agenda-operational-panels>\.is-expanded\{grid-column:1\/-1\}/);
+  const viewSwitchRule = css.match(/\.agenda-view-switch\s*\{[^}]*\}/)?.[0] ?? "";
+  assert.ok(viewSwitchRule);
+  assert.doesNotMatch(viewSwitchRule, /position\s*:/);
+  assert.match(shellCss, /\.agenda-page \.agenda-mobile-filter-toggle/);
+  assert.match(shellCss, /\.atlas-operational-workspace--agenda:has\(\.agenda-page--operational-expanded\)/);
+  const page = host.querySelector(".agenda-page");
+  for (const id of ["agenda.controls", "agenda.date-navigation", "agenda.view-controls", "agenda.contacts", "agenda.arrivals", "agenda.sidebar", "agenda.calendar", "agenda.filters", "agenda.legend", "agenda.schedule"]) {
+    assert.ok(page.querySelector(`[data-atlas-block-id="${id}"]`), id);
+  }
+  for (const selector of [".agenda-controls-stack", ".agenda-operational-panels", ".agenda-contacts-block", ".agenda-arrivals-block", ".agenda-layout"]) {
+    const block = page.querySelector(selector);
+    assert.ok(block);
+    assert.equal(block.parentElement, selector === ".agenda-contacts-block" || selector === ".agenda-arrivals-block"
+      ? page.querySelector(".agenda-operational-panels") : page);
+    assert.equal(block.closest(".agenda-toolbar"), null);
+    assert.doesNotMatch(block.getAttribute("style") ?? "", /position\s*:/);
+  }
+});
+
+test("Contactos previos y Llegadas y turnos se expanden en flujo con aria controls", async () => {
+  await mount();
+  const contactsToggle = host.querySelector(".agenda-contacts-block .agenda-operational-toggle");
+  const contactsPanel = document.getElementById(contactsToggle.getAttribute("aria-controls"));
+  assert.equal(contactsToggle.getAttribute("aria-expanded"), "false");
+  assert.equal(contactsPanel.hidden, true);
+  assert.equal(host.querySelector(".agenda-page--operational-expanded"), null);
+  await click(contactsToggle);
+  assert.equal(contactsToggle.getAttribute("aria-expanded"), "true");
+  assert.equal(contactsPanel.hidden, false);
+  assert.ok(host.querySelector(".agenda-page--operational-expanded"));
+
+  const arrivalsToggle = host.querySelector(".agenda-arrivals-block .agenda-operational-toggle");
+  const arrivalsPanel = document.getElementById(arrivalsToggle.getAttribute("aria-controls"));
+  const schedule = host.querySelector('[data-atlas-block-id="agenda.schedule"]');
+  assert.equal(arrivalsToggle.getAttribute("aria-expanded"), "false");
+  assert.equal(arrivalsPanel.hidden, true);
+  await click(arrivalsToggle);
+  assert.equal(arrivalsToggle.getAttribute("aria-expanded"), "true");
+  assert.equal(arrivalsPanel.hidden, false);
+  assert.ok(host.querySelector(".agenda-page--operational-expanded"));
+  assert.ok(arrivalsPanel.querySelector('[aria-label="Llegadas y turnos"]'));
+  assert.ok(arrivalsPanel.compareDocumentPosition(schedule) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.equal(arrivalsPanel.closest(".agenda-view-controls"), null);
+});
+
+test("empty appointments render a composed empty-state block", async () => {
+  items = [];
+  await mount();
+  assert.ok(host.querySelector(".agenda-empty-state"));
+  assert.ok(host.querySelector(".agenda-empty-state-icon svg[aria-hidden='true']"));
+  assert.match(host.querySelector(".agenda-empty-state").textContent, /No hay citas para esta fecha/);
+});
+
+test("detalle Día registra una sola llegada, muestra código real y conserva las otras acciones", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  await mount(); await open();
+  const actions = dialog().querySelector(".agenda-drawer-actions");
+  assert.ok(button("Registrar llegada", actions));
+  assert.ok(button("Editar cita", actions));
+  assert.ok(button("Reprogramar", actions));
+  assert.ok(button("Cancelar", actions));
+  assert.ok(button("Marcar No asistió", actions));
+  assert.ok(button("Eliminar cita", actions));
+  assert.ok([...actions.querySelectorAll("button")].indexOf(button("Registrar llegada", actions)) <
+    [...actions.querySelectorAll("button")].indexOf(button("Editar cita", actions)));
+  const previousGets = gets().length;
+  await click(button("Registrar llegada", actions));
+  assert.deepEqual(JSON.parse(calls.find((call) => call.url === "/queue-tickets/arrivals/8").data), { queue_line_id: 3 });
+  assert.equal(queueTickets.length, 1);
+  assert.equal(queueTickets[0].status, "waiting");
+  assert.match(dialog().textContent, /Llegada registrada · Turno C-021 · Estado: En espera/);
+  assert.equal(button("Registrar llegada", dialog()), undefined);
+  assert.ok(gets().length > previousGets, "la Agenda se refresca sin recargar la página");
+  await click(button("Cerrar", dialog())); await open();
+  assert.match(dialog().textContent, /Turno C-021/);
+  assert.equal(button("Registrar llegada", dialog()), undefined);
+  assert.equal(calls.filter((call) => call.url === "/queue-tickets/arrivals/8").length, 1);
+});
+
+test("doble clic y conflicto 409 recuperan el turno existente sin duplicarlo", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  intercept = (config) => {
+    if (config.method !== "post" || config.url !== "/queue-tickets/arrivals/8") return;
+    queueTickets.push({ id: 11, appointment_id: 8, queue_line_id: 3, public_code: "C-021", status: "waiting", arrived_at: "2026-09-14T12:05:00" });
+    throw { response: { status: 409, data: { detail: "Esta cita ya tiene un turno emitido" } } };
+  };
+  await mount(); await open();
+  const control = button("Registrar llegada", dialog());
+  await act(async () => { control.click(); control.click(); });
+  assert.equal(calls.filter((call) => call.url === "/queue-tickets/arrivals/8").length, 1);
+  assert.equal(queueTickets.length, 1);
+  assert.match(dialog().textContent, /Llegada registrada · Turno C-021/);
+  assert.equal(button("Registrar llegada", dialog()), undefined);
+});
+
+test("cancelada, no asistió y llegada por hora pendiente de activación no ofrecen acción", async () => {
+  items = [
+    { ...fixture, id: 8, schedule_mode: "queue", status: "cancelled" },
+    { ...fixture, id: 9, schedule_mode: "queue", status: "no_show" },
+    { ...fixture, id: 10, schedule_mode: "timed", status: "scheduled", arrival_enabled: false },
+  ];
+  await mount();
+  for (const card of [...host.querySelectorAll(".agenda-appointment-card--day")]) {
+    await click(card);
+    assert.equal(button("Registrar llegada", dialog()), undefined);
+    await click(button("Cerrar", dialog()));
+  }
+  assert.equal(calls.filter((call) => call.method === "post" && call.url?.includes("/arrivals/")).length, 0);
+});
+
+test("sin línea activa no muestra Registrar llegada", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  queueLines = [];
+  await mount(); await open();
+  assert.equal(button("Registrar llegada", dialog()), undefined);
+});
+
+test("rol sin permiso efectivo no puede registrar llegada", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  await mount(["secretary"], { user: {
+    id: 2, full_name: "Usuario", email: "u@example.test", roles: ["secretary"],
+    is_active: true, permissions: [], denied_permissions: ["patients:access"],
+  } });
+  await open();
+  assert.equal(button("Registrar llegada", dialog()), undefined);
+  assert.equal(calls.some((call) => call.url === "/queue-tickets/arrivals/8"), false);
+});
+
+test("fuera del alcance de centro y médico no ofrece llegada", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  scope.doctors = [];
+  await mount();
+  await open();
+  assert.equal(button("Registrar llegada", dialog()), undefined);
+  assert.equal(calls.some((call) => call.url === "/queue-lines"), false);
+});
+
+test("fecha distinta a la jornada actual no ofrece registrar llegada", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  globalThis.Date = class extends NativeDate {
+    constructor(...args) { super(...(args.length ? args : ["2026-09-15T12:00:00"])); }
+    static now() { return new NativeDate("2026-09-15T12:00:00").getTime(); }
+  };
+  await mount();
+  await click(host.querySelector('[aria-label="Fecha anterior"]'));
+  await open();
+  assert.equal(button("Registrar llegada", dialog()), undefined);
+});
+
+test("varias líneas requieren selección explícita antes de emitir el turno", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  queueLines.push({ ...queueLines[0], id: 4, name: "Consulta QA 2", prefix: "D" });
+  await mount(); await open();
+  assert.equal(button("Registrar llegada", dialog()).disabled, true);
+  const select = [...dialog().querySelectorAll("label")].find((item) => item.textContent.startsWith("Línea de turnos")).querySelector("select");
+  await change(select, "3");
+  assert.equal(button("Registrar llegada", dialog()).disabled, false);
+  await click(button("Registrar llegada", dialog()));
+  assert.equal(queueTickets.length, 1);
+});
+
+test("Semana y Mes ofrecen la misma llegada en el detalle contextual", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  await mount();
+  await click(button("Semana", host));
+  await click(host.querySelector(".agenda-week-appointment-card"));
+  assert.ok(button("Registrar llegada", panel()));
+  await click(host.querySelector('[aria-label="Cerrar detalle de cita"]'));
+  await click(button("Mes", host));
+  await click(host.querySelector(".agenda-month-entry"));
+  assert.ok(button("Registrar llegada", panel()));
+  await click(button("Registrar llegada", panel()));
+  assert.match(panel().textContent, /Turno C-021 · Estado: En espera/);
+  assert.equal(button("Registrar llegada", panel()), undefined);
+});
+
+test("Día registra llegada desde la fila y muestra código y estado sin abrir detalle", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  await mount();
+  const row = host.querySelector(".agenda-appointment-entry--day");
+  assert.ok(row);
+  assert.match(row.textContent, /Programada/);
+  assert.ok(button("Registrar llegada", row));
+  assert.equal(dialog(), null);
+  const action = button("Registrar llegada", row);
+  await act(async () => { action.click(); action.click(); });
+  assert.equal(calls.filter((call) => call.url === "/queue-tickets/arrivals/8").length, 1);
+  assert.equal(queueTickets.length, 1);
+  assert.equal(queueTickets[0].status, "waiting");
+  const updated = host.querySelector(".agenda-appointment-entry--day");
+  assert.match(updated.textContent, /✓ Llegada registrada[\s\S]*Turno C-021[\s\S]*Estado: En espera/);
+  assert.equal(button("Registrar llegada", updated), undefined);
+  assert.equal(dialog(), null);
+  await click(host.querySelector(".agenda-arrivals-block .agenda-operational-toggle"));
+  assert.match(host.querySelector(".agenda-page").textContent, /C-021/);
+});
+
+test("ticket ya existente oculta la acción en fila, pero conserva su resultado", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  queueTickets = [{ id: 11, appointment_id: 8, queue_line_id: 3, public_code: "C-021", status: "waiting" }];
+  await mount();
+  const row = host.querySelector(".agenda-appointment-entry--day");
+  assert.equal(button("Registrar llegada", row), undefined);
+  assert.match(row.textContent, /Turno C-021[\s\S]*Estado: En espera/);
+  assert.equal(calls.filter((call) => call.url === "/queue-tickets/arrivals/8").length, 0);
+});
+
+test("Agenda administrativa avisa cuando la cita queue no tiene línea válida", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  queueLines = [];
+  await mount(["admin"]);
+  const row = host.querySelector(".agenda-appointment-entry--day");
+  assert.equal(button("Registrar llegada", row), undefined);
+  assert.match(row.textContent, /Este médico no tiene una línea de turnos configurada para este centro/);
+  assert.equal(calls.filter((call) => call.url === "/queue-tickets/arrivals/8").length, 0);
+});
+
+test("queue sin hora muestra Orden de agenda y Turno independiente en Día, Semana y Mes", async () => {
+  items = [{ ...fixture, schedule_mode: "queue", appointment_time: null, daily_booking_order: 7 }];
+  await mount();
+  const row = host.querySelector(".agenda-queue-table-row");
+  assert.ok(row);
+  assert.match(host.querySelector(".agenda-queue-table-head").textContent, /Orden de agenda[\s\S]*Turno/);
+  assert.match(row.textContent, /7[\s\S]*Ana Torres[\s\S]*—[\s\S]*Programada/);
+  assert.equal(host.querySelector(".agenda-day-grid"), null);
+  await click(button("Registrar llegada", row));
+  assert.match(host.querySelector(".agenda-queue-table-row").textContent, /C-021[\s\S]*En espera/);
+  await click(button("Semana", host));
+  assert.equal(host.querySelector(".agenda-week-grid"), null);
+  assert.match(host.querySelector(".agenda-week-queue").textContent, /1 cita por turno/);
+  await click(button("Mes", host));
+  assert.match(host.querySelector(".agenda-month-queue-count").textContent, /1 por turno/);
+});
+
+test("Agenda Día muestra citas por hora y por turno de la misma fecha en secciones distintas", async () => {
+  items = [
+    { ...fixture, id: 8, schedule_mode: "timed" },
+    { ...fixture, id: 9, patient_name: "Paciente por turno", schedule_mode: "queue", appointment_time: null, daily_booking_order: 1 },
+  ];
+  await mount();
+  assert.match(host.querySelector(".agenda-day-grid").textContent, /Ana Torres/);
+  assert.match(host.querySelector(".agenda-queue-table-row").textContent, /Paciente por turno/);
+  assert.doesNotMatch(host.querySelector(".agenda-day-grid").textContent, /Paciente por turno/);
+  assert.doesNotMatch(host.querySelector(".agenda-queue-table-row").textContent, /08:30/);
+});
+
+test("formulario queue activo oculta Hora y envía null al editar", async () => {
+  items = [{ ...fixture, schedule_mode: "queue", appointment_time: null, daily_booking_order: 1 }];
+  intercept = (config) => {
+    if (config.url === "/appointments/queue-capabilities") return response(config, { booking_order_enabled: true });
+    if (config.url === "/appointments/effective-mode") return response(config, { schedule_mode: "queue" });
+  };
+  await mount(); await edit();
+  assert.equal([...dialog().querySelectorAll("label")].some((item) => item.textContent.startsWith("Hora")), false);
+  assert.match(dialog().textContent, /Cita por turno\. El turno se asigna al registrar llegada/);
+  await click(button("Guardar cita", dialog()));
+  const payload = JSON.parse(calls.find((call) => call.method === "put").data);
+  assert.equal(payload.appointment_time, null);
+});
+
+test("Tipo de cita se resuelve por centro, médico y fecha sin permitir elección incompatible", async () => {
+  intercept = (config) => {
+    if (config.url === "/appointments/effective-mode") return response(config, {
+      schedule_mode: config.params.day === "2026-09-15" ? "queue" : "timed",
+    });
+  };
+  await mount(["secretary"], { initialPatient: {
+    id: 6, first_name: "Ana", last_name: "Torres", date_of_birth: "1988-01-01", selection_token: "fixture-selection-proof",
+  } });
+  const mode = () => dialog().querySelector(".agenda-appointment-mode");
+  const timed = () => mode().querySelector('input[value="timed"]');
+  const queue = () => mode().querySelector('input[value="queue"]');
+  const hour = () => [...dialog().querySelectorAll("label")].find((item) => item.textContent.startsWith("Hora"));
+  assert.match(mode().textContent, /Tipo de cita/);
+  assert.equal(timed().checked, false);
+  assert.equal(queue().checked, false);
+  assert.equal(hour(), undefined);
+  assert.equal(button("Guardar cita", dialog()).disabled, true);
+
+  await change(control("Centro"), "1");
+  await change(control("Médico"), "2");
+  assert.equal(timed().checked, true);
+  assert.equal(queue().checked, false);
+  assert.equal(timed().closest("fieldset").disabled, true);
+  assert.ok(hour());
+  assert.match(hour().textContent, /Hora\s*\*/);
+  assert.doesNotMatch(hour().textContent, /\(obligatorio\)/);
+  assert.equal(button("Guardar cita", dialog()).disabled, false);
+
+  await change(control("Fecha"), "2026-09-15");
+  assert.equal(timed().checked, false);
+  assert.equal(queue().checked, true);
+  assert.equal(hour(), undefined);
+  assert.match(dialog().textContent, /El turno se asigna al registrar llegada/);
+  await change(control("Especialidad"), "3");
+  await click(button("Guardar cita", dialog()));
+  const created = JSON.parse(calls.find((call) => call.url === "/appointments" && call.method === "post").data);
+  assert.equal(created.appointment_time, null);
+});
+
+test("configuración multimodal permite alternar sin conservar Hora y envía snapshot elegido", async () => {
+  intercept = (config) => {
+    if (config.url === "/appointments/effective-mode") return response(config, {
+      schedule_mode: "timed", default_mode: "timed", allowed_timed: true,
+      allowed_queue: true, queue_line_available: true, multimode_enabled: true,
+    });
+  };
+  await mount(["secretary"], { initialPatient: {
+    id: 6, first_name: "Ana", last_name: "Torres", date_of_birth: "1988-01-01", selection_token: "fixture-selection-proof",
+  } });
+  await change(control("Centro"), "1");
+  await change(control("Médico"), "2");
+  const mode = dialog().querySelector(".agenda-appointment-mode");
+  assert.equal(mode.disabled, false);
+  assert.equal(mode.querySelector('input[value="timed"]').checked, true);
+  assert.ok(control("Hora"));
+  await click(mode.querySelector('input[value="queue"]'));
+  assert.equal(mode.querySelector('input[value="queue"]').checked, true);
+  assert.equal([...dialog().querySelectorAll("label")].some(item => item.textContent.startsWith("Hora")), false);
+  await change(control("Especialidad"), "3");
+  await click(button("Guardar cita", dialog()));
+  const payload = JSON.parse(calls.find(call => call.url === "/appointments" && call.method === "post").data);
+  assert.equal(payload.schedule_mode, "queue");
+  assert.equal(payload.appointment_time, null);
+});
+
+test("al volver de una fecha por turno a una por hora reaparece Hora obligatoria", async () => {
+  intercept = (config) => {
+    if (config.url === "/appointments/effective-mode") return response(config, {
+      schedule_mode: config.params.day === "2026-09-15" ? "queue" : "timed",
+    });
+  };
+  await mount(); await edit();
+  await change(control("Fecha"), "2026-09-15");
+  assert.equal(dialog().querySelector('input[value="queue"]').checked, true);
+  assert.equal([...dialog().querySelectorAll("label")].some((item) => item.textContent.startsWith("Hora")), false);
+  await change(control("Fecha"), "2026-09-14");
+  assert.equal(dialog().querySelector('input[value="timed"]').checked, true);
+  assert.ok(control("Hora"));
+  assert.equal(control("Hora").required, true);
+});
+
+test("cambiar centro y médico descarta la modalidad anterior antes de resolver la nueva", async () => {
+  intercept = (config) => {
+    if (config.url === "/appointments/effective-mode") return response(config, {
+      schedule_mode: config.params.doctor_id === 9 ? "queue" : "timed",
+    });
+  };
+  await mount(["secretary"], { initialPatient: {
+    id: 6, first_name: "Ana", last_name: "Torres", date_of_birth: "1988-01-01", selection_token: "fixture-selection-proof",
+  } });
+  await change(control("Centro"), "1");
+  await change(control("Médico"), "2");
+  assert.equal(dialog().querySelector('input[value="timed"]').checked, true);
+  await change(control("Centro"), "5");
+  assert.equal(dialog().querySelector('input[value="timed"]').checked, false);
+  assert.equal(dialog().querySelector('input[value="queue"]').checked, false);
+  assert.equal([...dialog().querySelectorAll("label")].some((item) => item.textContent.startsWith("Hora")), false);
+  await change(control("Médico"), "9");
+  assert.equal(dialog().querySelector('input[value="queue"]').checked, true);
+  assert.match(dialog().textContent, /El turno se asigna al registrar llegada/);
+});
+
+test("Agenda y detalle identifican la cita por turno sin mostrar Hora vacía", async () => {
+  items = [{ ...fixture, schedule_mode: "queue", appointment_time: null, daily_booking_order: 2 }];
+  await mount();
+  assert.match(host.querySelector(".agenda-queue-table-row").textContent, /Cita por turno/);
+  assert.doesNotMatch(host.textContent, /Sin hora/);
+  await open();
+  const details = detailSurface().querySelector(".agenda-details");
+  assert.match(details.textContent, /ModalidadPor turno/);
+  assert.equal([...details.querySelectorAll("dt")].some((item) => item.textContent === "Hora"), false);
+  await click(closeDetail());
+  await click(button("Semana", host));
+  assert.match(host.querySelector(".agenda-week-queue").textContent, /Cita por turno/);
+  await click(button("Mes", host));
+  assert.match(host.querySelector(".agenda-month-entry").textContent, /Por turno/);
+  assert.doesNotMatch(host.textContent, /Sin hora/);
+});
+
+test("fila no ofrece llegada a canceladas, ausentes, llegada por hora no activada ni usuario sin permiso", async () => {
+  items = [
+    { ...fixture, id: 8, schedule_mode: "queue", status: "cancelled" },
+    { ...fixture, id: 9, schedule_mode: "queue", status: "no_show" },
+    { ...fixture, id: 10, schedule_mode: "timed", status: "scheduled", arrival_enabled: false },
+  ];
+  await mount();
+  assert.equal(button("Registrar llegada", host), undefined);
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  await mount(["secretary"], { user: {
+    id: 2, full_name: "Usuario", email: "u@example.test", roles: ["secretary"],
+    is_active: true, permissions: [], denied_permissions: ["patients:access"],
+  } });
+  assert.equal(button("Registrar llegada", host), undefined);
+  assert.equal(calls.some((call) => call.url === "/queue-tickets/arrivals/8"), false);
+});
+
+test("Semana y lista de Mes ofrecen la misma acción rápida sin anidar botones", async () => {
+  items = [{ ...fixture, schedule_mode: "queue" }];
+  await mount();
+  await click(button("Semana", host));
+  const week = host.querySelector(".agenda-appointment-entry--week");
+  assert.ok(button("Registrar llegada", week));
+  assert.equal(week.querySelector("button button"), null);
+  await click(button("Mes", host));
+  const day = [...host.querySelectorAll(".agenda-month-day")].find((item) =>
+    item.querySelector(".agenda-month-date")?.textContent === "14" && !item.classList.contains("agenda-month-day--outside"));
+  await click(day);
+  const list = panel().querySelector(".agenda-appointment-entry--list");
+  assert.ok(button("Registrar llegada", list));
+  assert.equal(list.querySelector("button button"), null);
+  await click(button("Registrar llegada", list));
+  assert.match(panel().textContent, /Turno C-021[\s\S]*Estado: En espera/);
+  assert.equal(queueTickets.length, 1);
+});
+
+test("Agenda Por hora registra presencia y refresca sin emitir turno en móvil", async () => {
+  setDesktop(false);
+  items = [{ ...fixture, schedule_mode: "timed", arrival_enabled: true, arrived_at: null }];
+  intercept = (config) => {
+    if (config.method === "post" && config.url === "/appointments/8/arrival") {
+      items = [{ ...items[0], arrived_at: "2026-09-14T12:05:00", arrival_registered_by: 2 }];
+      return response(config, items[0]);
+    }
+  };
+  await mount();
+  assert.ok(button("Registrar llegada", host));
+  await click(button("Registrar llegada", host));
+  assert.equal(calls.filter(call => call.method === "post" && call.url === "/appointments/8/arrival").length, 1);
+  assert.match(host.textContent, /Llegó · En espera/);
+  assert.equal(button("Registrar llegada", host), undefined);
+  assert.equal(items[0].appointment_time, fixture.appointment_time);
+  assert.equal(items[0].schedule_mode, "timed");
+  assert.equal(queueTickets.length, 0);
 });

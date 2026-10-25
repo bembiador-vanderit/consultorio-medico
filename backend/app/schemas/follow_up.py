@@ -20,7 +20,7 @@ class FollowUpRead(BaseModel):
     doctor_id: int
     clinical_history_id: int | None
     center_id: int | None
-    due_at: datetime
+    due_at: datetime | None
     reason: str
     priority: str
     status: str

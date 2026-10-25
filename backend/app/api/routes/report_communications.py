@@ -44,7 +44,7 @@ def appointment_report_whatsapp(
 
     period = f"{fmt_date(start) if start else 'Inicio'} - {fmt_date(end) if end else 'Fin'}"
     filename = report_filename(start, end)
-    caption = f"Reporte de citas de Atlas Consultorio. Período: {period}. Total de citas: {len(appointments)}."
+    caption = f"Reporte de citas de Atlas Pérgamo. Período: {period}. Total de citas: {len(appointments)}."
     content = build_appointment_report_pdf(appointments, start, end)
 
     try:

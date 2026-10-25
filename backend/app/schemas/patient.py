@@ -99,6 +99,7 @@ class PatientResponse(BaseModel):
 
 
 class PatientDetailResponse(PatientResponse, PatientDemographics):
+    shared_read_only: bool = False
     locality_name: str | None = None
     country_name: str | None = None
     territorial_path: list[dict] = []

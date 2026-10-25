@@ -1,4 +1,5 @@
 """Financial HTTP contracts against real tenant sessions, synthetic data only."""
+import hashlib
 from datetime import date
 from uuid import uuid4
 from decimal import Decimal
@@ -8,10 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.routes import finance
 from app.models import Appointment, CareCenter, Patient, Role, User, OrganizationMembership, SecretaryCenterScope
-from app.models.finance import CashRegister, Invoice, CashMovement
+from app.models.finance import CashRegister, Invoice, CashMovement, CardProviderSetting
 from app.models.administration import SecurityAudit
+from app.schemas.finance import Payment
+from app.services.finance import digest
 from test_organization_isolation import tenant_api, sign_in
-from test_insurance_6c5 import insurance_api, coverage, path
+from test_insurance_6c5 import insurance_api, coverage, path, shared_membership
 
 PREFIX = '/api/v1/finance'
 
@@ -20,6 +23,12 @@ PREFIX = '/api/v1/finance'
 def financial_api(insurance_api):
     c, h, engine, d = insurance_api
     c.app.include_router(finance.router, prefix='/api/v1')
+    with Session(engine) as db:
+        actor = db.scalar(select(User).where(User.email == 'shared@example.com'))
+        for org in (1, 2):
+            db.add(CardProviderSetting(organization_id=org, center_id=d[org]['center'],
+                provider='CARDNET', enabled=True, updated_by=actor.id))
+        db.commit()
     return c, h, engine, d
 
 
@@ -34,11 +43,19 @@ def open_cash(c, h, d):
 
 
 def payment(register, *amounts):
-    return {'request_key': str(uuid4()), 'register_id': register['id'], 'parts': [dict(method=m, amount=a) for m, a in amounts]}
+    return {'request_key': str(uuid4()), 'register_id': register['id'], 'parts': [dict(method=m, amount=a,
+        **({'batch_number': 'QA-LOTE-001', 'provider': 'CARDNET'} if m == 'card' else {})) for m, a in amounts]}
 
 
 def bill(d, **changes):
     return dict(request_key=str(uuid4()), center_id=d['center'], patient_id=d['patient'], concept='Consulta general', base_amount='1500', **changes)
+
+
+def test_cash_payment_retry_keeps_legacy_fingerprint():
+    key = '00000000-0000-0000-0000-000000000001'
+    payload = Payment(register_id=7, request_key=key, parts=[{'method': 'cash', 'amount': '12.00'}])
+    previous_wire = f'{{"register_id":7,"request_key":"{key}","parts":[{{"method":"cash","amount":"12.00"}}]}}'
+    assert digest(payload, 'pay:1:') == hashlib.sha256(('pay:1:' + previous_wire).encode()).hexdigest()
 
 
 def test_open_close_difference_and_closed_register(financial_api):
@@ -71,10 +88,28 @@ def test_private_mixed_partial_later_payment_and_idempotency(financial_api):
     post(c, h, f"/invoices/{i['id']}/payments", p, 409)
     detail = c.get(PREFIX + f"/invoices/{i['id']}", headers=h).json()
     assert len(detail['movements']) == 2 and len(detail['movements'][0]['parts']) == 2
+    assert detail['movements'][0]['parts'][1]['batch_number'] == 'QA-LOTE-001'
     cash = c.get(PREFIX + f"/registers/{r['id']}", headers=h).json()
     assert cash['totals']['expected_cash'] == '300.00'
     assert cash['totals']['collected']['card'] == '300.00'
     assert c.get(PREFIX + '/invoices', params={'center_id': d[1]['center'], 'pending': True}, headers=h).json() == []
+
+
+def test_card_payment_requires_voucher_batch_without_changing_other_methods(financial_api):
+    c, h, engine, d = financial_api
+    register = open_cash(c, h, d[1])
+    missing_batch = payment(register, ('card', '100'))
+    del missing_batch['parts'][0]['batch_number']
+    post(c, h, '/invoices', bill(d[1], payment=missing_batch), 422)
+    blank_batch = payment(register, ('card', '100'))
+    blank_batch['parts'][0]['batch_number'] = '  '
+    post(c, h, '/invoices', bill(d[1], payment=blank_batch), 422)
+    cash_with_batch = payment(register, ('cash', '100'))
+    cash_with_batch['parts'][0]['batch_number'] = 'QA-LOTE-001'
+    post(c, h, '/invoices', bill(d[1], payment=cash_with_batch), 422)
+    with Session(engine) as db:
+        assert db.scalar(select(Invoice.id)) is None
+        assert db.scalar(select(CashMovement.id)) is None
 
 
 def test_insured_snapshot_ars_not_cash_and_clinical_state_independent(financial_api):
@@ -111,7 +146,7 @@ def test_pending_invoice_without_cash_and_stale_coverage(financial_api):
 def test_reversal_reapplication_adjustment_void_and_audit(financial_api):
     c, h, engine, d = financial_api
     r = open_cash(c, h, d[1])
-    i = post(c, h, '/invoices', bill(d[1], payment=payment(r, ('cash', '100'), ('card', '400'))))
+    i = post(c, h, '/invoices', bill(d[1], payment=payment(r, ('cash', '100'))))
     post(c, h, f"/invoices/{i['id']}/void", {'reason': 'Prueba'}, 409)
     detail = c.get(PREFIX + f"/invoices/{i['id']}", headers=h).json(); original = detail['movements'][0]
     post(c, h, f"/registers/{r['id']}/close", {'counted_cash': '200'}, 200)
@@ -192,20 +227,20 @@ def test_wrong_center_and_patient_and_staff_permissions(financial_api):
     body = bill(d[1], payment=payment(r, ('cash', '1'))); body['center_id'] = center_id
     post(c, h, '/invoices', body, 409)
     with Session(engine) as db:
-        member = db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id == 1))
+        member = shared_membership(db)
         member.roles = [db.scalar(select(Role).where(Role.code == 'doctor'))]; db.commit()
     h = sign_in(c)
     assert c.get(PREFIX + '/centers', headers=h).status_code == 403
     post(c, h, '/registers', {'center_id': d[1]['center'], 'opening_amount': '0'}, 403)
     with Session(engine) as db:
-        member = db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id == 1))
+        member = shared_membership(db)
         member.roles = [db.scalar(select(Role).where(Role.code == 'secretary'))]; db.commit()
     h = sign_in(c)
     assert c.get(PREFIX + '/centers', headers=h).status_code == 200
     assert c.get(PREFIX + f'/registers?center_id={center_id}', headers=h).status_code == 404
     post(c, h, f"/registers/{r['id']}/adjustments", dict(request_key=str(uuid4()), kind='adjustment_in', amount='1', reason='Prueba'), 403)
     with Session(engine) as db:
-        member = db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id == 1))
+        member = shared_membership(db)
         member.denied_permissions = ['finance:collect']; db.commit()
     post(c, sign_in(c), f"/registers/{r['id']}/close", {'counted_cash': '100'}, 403)
 
@@ -214,7 +249,7 @@ def test_secretary_collects_only_assigned_cash_and_cannot_reverse(financial_api)
     c, h, engine, d = financial_api
     r = open_cash(c, h, d[1])
     with Session(engine) as db:
-        member = db.scalar(select(OrganizationMembership).where(OrganizationMembership.organization_id == 1))
+        member = shared_membership(db)
         member.roles = [db.scalar(select(Role).where(Role.code == 'secretary'))]
         db.add(SecretaryCenterScope(organization_id=1, secretary_id=member.user_id, center_id=d[1]['center'], manage_all_doctors=True))
         other = User(email='second.cash@example.test', full_name='Synthetic Cashier', password_hash='unused', memberships=[OrganizationMembership(organization_id=1, roles=[db.scalar(select(Role).where(Role.code == 'secretary'))])])

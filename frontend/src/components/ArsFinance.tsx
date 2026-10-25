@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { financeError, money } from '../services/finance';
 import type { User } from '../types/user';
 import { Alert, Button, Card, FormField, Input, Select } from '../ui';
+import ArsRemittanceDetail, { type Remittance, type RemittanceApplication as Application } from './ArsRemittanceDetail';
+import './arsRemittances.css';
 
 type Company = { id: number; name: string };
 type Claim = { id: number; center_id: number; patient_id: number; appointment_id: number; patient_name: string; insurance_company_id: number; service_date: string; state: string; display_state: string; claimed_amount: string; approved_amount: string | null; disputed_amount: string; paid_amount: string; balance: string; snapshot: { insurance?: { company_name?: string; plan_name?: string }; authorization_number?: string; authorization_status?: string; service?: string }; events?: Array<{ id: number; kind: string; note: string | null; code: string | null; amount: string | null; created_at: string }>; applications?: Application[]; aging_bucket?: string; days_open?: number };
-type Remittance = { id: number; center_id: number | null; insurance_company_id: number; company_name: string; received_on: string; reference: string; amount: string; applied_amount: string; unapplied: string; applications?: Application[] };
-type Application = { id: number; claim_id: number; amount: string; reversed_at: string | null; reversal_reason: string | null };
 type Summary = { insurance_company_id: number; company_name: string; claims: number; claimed: string; approved: string; collectible: string; disputed: string; paid: string; pending: string; aging: Record<string, string> };
 const states: Record<string, string> = { draft: 'Borrador', pending: 'Pendiente de enviar', sent: 'Enviada', received: 'Recibida / en revisión', glosed: 'Glosada', rejected: 'Rechazada', corrected: 'Corregida', resent: 'Reenviada', partial: 'Pago parcial', paid: 'Pagada', cancelled: 'Cancelada' };
 const moves: Record<string, string[]> = { draft: ['pending', 'cancelled'], pending: ['sent', 'cancelled'], sent: ['received', 'cancelled'], received: ['cancelled'], glosed: ['corrected', 'cancelled'], rejected: ['corrected', 'cancelled'], corrected: ['resent', 'cancelled'], resent: ['received', 'cancelled'] };
@@ -33,6 +33,10 @@ export default function ArsFinance({ section, centerId, user }: { section: numbe
   const [receivedOn, setReceivedOn] = useState(today);
   const [remittanceAmount, setRemittanceAmount] = useState('');
   const [allocation, setAllocation] = useState<Record<number, string>>({});
+  type ApplyIntent = { remittanceId: number; body: { request_key: string; allocations: { claim_id: number; amount: string }[] } };
+  const applyIntent = useRef<ApplyIntent | null>(null);
+  const applyInFlight = useRef(false);
+  const [pendingApply, setPendingApply] = useState(false);
   const [reason, setReason] = useState('');
   const [glosaAmount, setGlosaAmount] = useState('');
   const [glosaCode, setGlosaCode] = useState('');
@@ -78,6 +82,27 @@ export default function ArsFinance({ section, centerId, user }: { section: numbe
   }
   async function showClaim(id: number) { try { setDetail((await api.get<Claim>(`/ars/claims/${id}`)).data); } catch (e) { setError(financeError(e)); } }
   async function showRemittance(id: number) { try { setRemittance((await api.get<Remittance>(`/ars/remittances/${id}`)).data); } catch (e) { setError(financeError(e)); } }
+  async function applyAllocation() {
+    if (applyInFlight.current || !remittance) return;
+    const intent = applyIntent.current ?? { remittanceId: remittance.id, body: {
+      request_key: crypto.randomUUID(),
+      allocations: Object.entries(allocation).filter(([, amount]) => Number(amount) > 0)
+        .map(([claim_id, amount]) => ({ claim_id: Number(claim_id), amount })),
+    } };
+    applyIntent.current = intent;
+    applyInFlight.current = true;
+    setPendingApply(true); setBusy(true); setError('');
+    try {
+      await api.post(`/ars/remittances/${intent.remittanceId}/apply`, intent.body);
+      applyIntent.current = null; setPendingApply(false); setAllocation({});
+      setVersion(v => v + 1); void showRemittance(intent.remittanceId);
+    } catch (e: any) {
+      setError(financeError(e));
+      // A domain validation rejection rolled back the whole operation; corrections are a new intent.
+      // Network/server errors and conflicts retain the exact immutable request for retry.
+      if (e?.response?.status === 422) { applyIntent.current = null; setPendingApply(false); }
+    } finally { applyInFlight.current = false; setBusy(false); }
+  }
   if (!user.permissions?.includes('ars:read')) return <Alert tone="danger" title="Sin permiso para Reclamaciones ARS" />;
   return <div className="ars-workspace">
     {error && <Alert tone="danger" title={error} />}
@@ -97,11 +122,13 @@ export default function ArsFinance({ section, centerId, user }: { section: numbe
         <Button variant="outline" onClick={() => setDetail(null)}>Cerrar</Button></Card>}
     </>}
     {section === 1 && <>
-      {canPayment && <Card><h2>Registrar pago ARS / remesa</h2><div className="finance-controls"><FormField label="Aseguradora"><Select value={company} onChange={e => setCompany(e.target.value)}><option value="">Seleccione</option>{companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></FormField><FormField label="Fecha de recepción"><Input type="date" value={receivedOn} onChange={e => setReceivedOn(e.target.value)} /></FormField><FormField label="Referencia"><Input value={reference} onChange={e => setReference(e.target.value)} /></FormField><FormField label="Monto DOP"><Input type="number" min="0.01" step="0.01" value={remittanceAmount} onChange={e => setRemittanceAmount(e.target.value)} /></FormField><Button disabled={busy || !company || !reference || !remittanceAmount} onClick={() => void run('/ars/remittances', { center_id: centerId, insurance_company_id: Number(company), received_on: receivedOn, reference, amount: remittanceAmount }, () => { setReference(''); setRemittanceAmount(''); })}>Registrar remesa</Button></div></Card>}
-      <Card><h2>Remesas</h2><div className="ars-table-wrap"><table><thead><tr><th>Fecha</th><th>ARS</th><th>Referencia</th><th>Total</th><th>Aplicado</th><th>Sin aplicar</th><th></th></tr></thead><tbody>{loading ? <tr><td colSpan={7}>Cargando remesas…</td></tr> : remittances.length ? remittances.map(r => <tr key={r.id}><td>{r.received_on}</td><td>{r.company_name}</td><td>{r.reference}</td><td>{money(r.amount)}</td><td>{money(r.applied_amount)}</td><td>{money(r.unapplied)}</td><td><Button variant="outline" onClick={() => void showRemittance(r.id)}>Detalle</Button></td></tr>) : <tr><td colSpan={7}>No hay remesas para los filtros seleccionados.</td></tr>}</tbody></table></div></Card>
-      {remittance && <Card><h2>Remesa {remittance.reference}</h2><p>Disponible para aplicar: {money(remittance.unapplied)}</p><h3>Aplicaciones</h3><ul>{remittance.applications?.map(a => <li key={a.id}>Reclamación #{a.claim_id}: {money(a.amount)} {a.reversed_at ? '· Revertida' : canPayment && <Button variant="outline" onClick={() => { const note = prompt('Motivo del reverso'); if (note) void run(`/ars/applications/${a.id}/reverse`, { reason: note }, () => void showRemittance(remittance.id)); }}>Revertir</Button>}</li>)}</ul>
-        {canPayment && Number(remittance.unapplied) > 0 && <><h3>Distribuir entre reclamaciones</h3>{claims.filter(c => c.insurance_company_id === remittance.insurance_company_id && Number(c.balance) > 0 && ['sent', 'received', 'resent', 'glosed', 'rejected'].includes(c.state)).map(c => <FormField key={c.id} label={`#${c.id} · ${c.patient_name} · saldo ${money(c.balance)}`}><Input type="number" min="0" max={c.balance} step="0.01" value={allocation[c.id] || ''} onChange={e => setAllocation(old => ({ ...old, [c.id]: e.target.value }))} /></FormField>)}<p>Distribuido: {money(String(Object.values(allocation).reduce((sum, value) => sum + (Number(value) || 0), 0)))}</p><Button disabled={busy || Object.values(allocation).every(v => !Number(v))} onClick={() => void run(`/ars/remittances/${remittance.id}/apply`, { allocations: Object.entries(allocation).filter(([, amount]) => Number(amount) > 0).map(([claim_id, amount]) => ({ claim_id: Number(claim_id), amount })) }, () => { setAllocation({}); void showRemittance(remittance.id); })}>Aplicar importes</Button></>}
-        <Button variant="outline" onClick={() => { setRemittance(null); setAllocation({}); }}>Cerrar</Button></Card>}
+      {canPayment && <Card className="ars-remittance-create"><h2>Registrar pago ARS / remesa</h2><p>Registre el importe recibido de la aseguradora. Después podrá distribuirlo entre reclamaciones.</p><div className="finance-controls ars-remittance-create-fields"><FormField label="Aseguradora"><Select value={company} onChange={e => setCompany(e.target.value)}><option value="">Seleccione</option>{companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></FormField><FormField label="Fecha de recepción"><Input type="date" value={receivedOn} onChange={e => setReceivedOn(e.target.value)} /></FormField><FormField label="Referencia"><Input value={reference} onChange={e => setReference(e.target.value)} /></FormField><FormField label="Monto DOP"><Input type="number" min="0.01" step="0.01" value={remittanceAmount} onChange={e => setRemittanceAmount(e.target.value)} /></FormField><Button disabled={busy || !company || !reference || !remittanceAmount} onClick={() => void run('/ars/remittances', { center_id: centerId, insurance_company_id: Number(company), received_on: receivedOn, reference, amount: remittanceAmount }, () => { setReference(''); setRemittanceAmount(''); })}>Registrar remesa</Button></div></Card>}
+      <Card className="ars-remittance-list"><h2>Remesas</h2><p>Consulte los importes recibidos, sus aplicaciones y el saldo disponible.</p><div className="ars-table-wrap"><table><thead><tr><th>Fecha</th><th>ARS</th><th>Referencia</th><th className="ars-remittance-money">Total</th><th className="ars-remittance-money">Aplicado</th><th className="ars-remittance-money">Sin aplicar</th><th></th></tr></thead><tbody>{loading ? <tr><td colSpan={7}>Cargando remesas…</td></tr> : remittances.length ? remittances.map(r => <tr key={r.id} className={remittance?.id === r.id ? 'ars-remittance-selected' : undefined}><td>{r.received_on}</td><td>{r.company_name}</td><td className="ars-remittance-reference">{r.reference}</td><td className="ars-remittance-money">{money(r.amount)}</td><td className="ars-remittance-money">{money(r.applied_amount)}</td><td className="ars-remittance-money">{money(r.unapplied)}</td><td><Button variant="outline" disabled={pendingApply} onClick={() => void showRemittance(r.id)}>Detalle</Button></td></tr>) : <tr><td colSpan={7}>No hay remesas para los filtros seleccionados.</td></tr>}</tbody></table></div></Card>
+      {remittance && <ArsRemittanceDetail remittance={remittance} claims={claims} allocation={allocation} canPayment={Boolean(canPayment)} busy={busy} pendingApply={pendingApply}
+        onAllocationChange={(claimId, value) => setAllocation(old => ({ ...old, [claimId]: value }))}
+        onApply={() => void applyAllocation()}
+        onReverse={applicationId => { const note = prompt('Motivo del reverso'); if (note) void run(`/ars/applications/${applicationId}/reverse`, { reason: note }, () => void showRemittance(remittance.id)); }}
+        onClose={() => { setRemittance(null); setAllocation({}); }} />}
     </>}
     {section === 2 && <Card><h2>Cuentas por cobrar ARS</h2><FormField label="Paciente"><Input value={patientSearch} onChange={e => { setOffset(0); setPatientSearch(e.target.value); }} placeholder="Filtrar por nombre" /></FormField><div className="ars-table-wrap"><table><thead><tr><th>Paciente</th><th>Fecha</th><th>ARS</th><th>Estado</th><th>Reclamado</th><th>Pagado</th><th>Pendiente</th><th>Antigüedad</th></tr></thead><tbody>{loading ? <tr><td colSpan={8}>Cargando cuentas por cobrar…</td></tr> : receivables.length ? receivables.map(c => <tr key={c.id}><td>{c.patient_name}</td><td>{c.service_date}</td><td>{c.snapshot.insurance?.company_name}</td><td>{states[c.display_state] || c.display_state}</td><td>{money(c.claimed_amount)}</td><td>{money(c.paid_amount)}</td><td>{money(c.balance)}</td><td>{c.aging_bucket} ({c.days_open} días)</td></tr>) : <tr><td colSpan={8}>No hay cuentas por cobrar para los filtros seleccionados.</td></tr>}</tbody></table></div></Card>}
     {section === 3 && <Card><h2>Conciliación por ARS y período</h2><div className="ars-table-wrap"><table><thead><tr><th>ARS</th><th>Reclamaciones</th><th>Reclamado</th><th>Aprobado</th><th>Cobrable</th><th>Glosado</th><th>Pagado</th><th>Pendiente</th><th>Aging</th></tr></thead><tbody>{loading ? <tr><td colSpan={9}>Cargando conciliación…</td></tr> : summary.length ? summary.map(s => <tr key={s.insurance_company_id}><td>{s.company_name}</td><td>{s.claims}</td><td>{money(s.claimed)}</td><td>{money(s.approved)}</td><td>{money(s.collectible)}</td><td>{money(s.disputed)}</td><td>{money(s.paid)}</td><td>{money(s.pending)}</td><td>{Object.entries(s.aging).map(([key, value]) => `${key}: ${money(value)}`).join(' · ')}</td></tr>) : <tr><td colSpan={9}>No hay datos de conciliación para el período seleccionado.</td></tr>}</tbody></table></div></Card>}

@@ -34,4 +34,5 @@ export type Patient = PatientDemographics & {
   email: string | null;
   created_at: string;
   selection_token?: string;
+  shared_read_only?: boolean;
 };

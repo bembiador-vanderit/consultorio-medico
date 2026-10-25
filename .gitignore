@@ -32,3 +32,33 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+# Local evidence and generated output
+/artifacts/
+/evidence/
+/screenshots/
+/recordings/
+**/TestResults/
+**/publish/
+**/coverage/
+coverage.xml
+.coverage
+.coverage.*
+
+# Local databases, dumps and logs
+*.dump
+*.backup
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.log
+
+# Locally generated certificates and private material
+*.pfx
+*.p12
+*.key
+*.pem
+*.crt
+*.cer

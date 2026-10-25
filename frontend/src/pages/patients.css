@@ -64,6 +64,8 @@
 .patients-error { display:grid; gap:var(--atlas-space-3); padding:var(--atlas-space-4); }
 .patient-form { display:grid; gap:var(--atlas-space-5); min-width:0; }
 .patient-form-actions { display:flex; gap:var(--atlas-space-2); flex-wrap:wrap; }
+.patient-form-controls { min-width:0; margin:0; padding:0; border:0; }
+.patient-form-controls:disabled .atlas-input { opacity:1; color:var(--atlas-text-primary); background:var(--atlas-surface-secondary); cursor:default; }
 .patient-form-wide { grid-column:1/-1; }
 .patient-identity-matches { display:grid; gap:var(--atlas-space-2); }
 .patient-identity-matches>.atlas-button { display:block; text-align:left; white-space:normal; overflow-wrap:anywhere; }

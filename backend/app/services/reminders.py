@@ -20,11 +20,12 @@ def _appointment_message(appointment: Appointment) -> str:
     doctor = appointment.doctor
     center = appointment.center
     center_text = center.name if center else "Centro de atención pendiente"
+    time_text = f"Hora: {appointment.appointment_time:%I:%M %p}\n" if appointment.appointment_time else "Modalidad: Por turnos (sin hora asignada)\n"
     return (
         f"Estimado/a {patient.first_name} {patient.last_name},\n\n"
         "Le recordamos su próxima cita médica:\n"
         f"Fecha: {appointment.appointment_date:%d/%m/%Y}\n"
-        f"Hora: {appointment.appointment_time:%I:%M %p}\n"
+        f"{time_text}"
         f"Médico: Dr. {doctor.full_name}\n"
         f"Centro: {center_text}\n\n"
         "Si necesita reprogramar su cita, comuníquese con el consultorio."
@@ -71,6 +72,8 @@ def sync_in_app_appointment_reminder(
 ) -> int:
     """Upsert the in-app reminder for one future appointment without committing."""
     now = now or installation_now()
+    if appointment.appointment_time is None:
+        return 0  # No exact instant exists for the 24-hour timed reminder.
     appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
     if (
         appointment.status not in {"scheduled", "confirmed"}
@@ -155,6 +158,8 @@ def sync_appointment_reminders(db: Session, *, now: datetime | None = None, hori
 
     created = 0
     for appointment in appointments:
+        if appointment.appointment_time is None:
+            continue
         appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
         if appointment_at < now or appointment_at > horizon:
             continue

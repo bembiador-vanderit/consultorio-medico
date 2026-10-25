@@ -3,7 +3,7 @@ import json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    app_name: str = "Consultorio Médico API"
+    app_name: str = "Atlas Pérgamo API"
     environment: str = "development"
     database_url: str
     secret_key: str

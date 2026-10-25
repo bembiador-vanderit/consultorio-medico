@@ -22,8 +22,10 @@ export function AgendaMonthView({ appointments, date, selectedDay, onSelectDay, 
       {days.map((day) => {
         const inMonth = parseDate(day).getMonth() === month;
         const entries = sortByTime(appointments.filter((item) => item.appointment_date === day));
+        const queueCount = entries.filter((item) => item.schedule_mode === "queue").length;
         return <div key={day} role="gridcell" tabIndex={inMonth ? 0 : -1} aria-selected={selectedDay === day} className={`agenda-month-day${inMonth ? "" : " agenda-month-day--outside"}${selectedDay === day ? " agenda-month-day--selected" : ""}`} onClick={() => inMonth && onSelectDay(day)} onKeyDown={(event) => { if (inMonth && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onSelectDay(day); } }}>
           <span className="agenda-month-date">{parseDate(day).getDate()}</span>
+          {queueCount > 0 && <span className="agenda-month-queue-count">{queueCount} por turno</span>}
           <div className="agenda-month-entries">{entries.slice(0, 3).map((item) => <AgendaAppointmentCard key={item.id} appointment={item} variant="month" onSelect={onSelectAppointment} />)}</div>
           {entries.length > 3 && <button type="button" className="agenda-month-more" onClick={(event) => { event.stopPropagation(); onSelectDay(day); }}>+{entries.length - 3} más</button>}
         </div>;

@@ -1,0 +1,36 @@
+ATLAS LOCAL AGENT - GUÍA PARA LA SEGUNDA PC
+
+1. Copie AtlasLocalAgent-Setup-1.2.0-win-x64.exe a la segunda PC.
+2. Abra el instalador con su usuario habitual de Windows.
+3. Termine la instalación. No se abre ni se vincula automáticamente.
+4. En Inicio busque "Atlas Local Agent" y ábralo.
+5. Abra la pestaña "Vincular con Atlas".
+6. Use la dirección HTTPS autorizada por su administrador y un código NUEVO.
+   No use localhost: en la segunda PC apuntaría a esa misma PC, no a Atlas.
+7. Compruebe nombre propio de estación, Agent ID propio y sus impresoras.
+
+Si Atlas usa Tailscale, la segunda PC necesita su propia conexión autorizada
+a la red Tailscale para acceder al servidor HTTPS. Este instalador no instala
+Tailscale, no cambia permisos de red ni agrega certificados.
+
+No comparta códigos ni contraseñas en el chat. No copie datos de otra estación.
+No pulse imprimir: esta distribución mantiene impresión y routing apagados.
+
+Cerrar con la X oculta el panel. Para terminar agente y panel use
+"Salir del panel" desde la ventana o el icono junto al reloj.
+Al cerrar sesión de Windows no queda configurado autoarranque.
+
+Ubicación del programa:
+%LOCALAPPDATA%\Programs\Atlas\LocalAgent
+
+Datos propios de este usuario y estación (NO COPIAR a otra PC):
+%LOCALAPPDATA%\Atlas\LocalAgent
+
+Para actualizar, cierre el panel y vuelva a ejecutar el instalador.
+Para desinstalar, use Aplicaciones de Windows > Atlas Local Agent.
+La desinstalación conserva los datos y no revoca la estación en Atlas Web.
+
+Incluye runtimes .NET distribuidos con sus avisos de licencia y componentes
+Microsoft.Data.Sqlite. Instalador construido con Inno Setup (jrsoftware.org).
+Este paquete piloto no está firmado por un certificado Authenticode de Atlas.
+No eluda bloqueos de seguridad ni desactive antivirus para ejecutarlo.

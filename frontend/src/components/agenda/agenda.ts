@@ -66,6 +66,7 @@ export function appointmentRules(appointment: Appointment | null, user: User) {
   );
   const history = Boolean(appointment?.has_clinical_history);
   const coverage = Boolean(appointment?.coverage_id);
+  const arrived = Boolean(appointment?.arrived_at);
   const pureDoctor =
     user.roles.includes("doctor") &&
     !user.roles.includes("admin") &&
@@ -75,22 +76,23 @@ export function appointmentRules(appointment: Appointment | null, user: User) {
   return {
     completed,
     identityLocked: Boolean(
-      appointment && (completed || history || coverage || pureDoctor),
+      appointment && (completed || history || coverage || pureDoctor || arrived),
     ),
-    specialtyLocked: completed || history || coverage,
+    specialtyLocked: completed || history || coverage || arrived,
     scheduleLocked:
       completed ||
+      arrived ||
       history ||
       (coverage &&
         (!user.roles.includes("secretary") || user.roles.includes("admin"))),
-    canCancel: active && !history,
+    canCancel: active && !history && !arrived,
     canAttend: Boolean(
       active &&
         user.is_active &&
         user.roles.includes("doctor") &&
         appointment?.doctor_id === user.id,
     ),
-    canDelete: Boolean(appointment && !completed && !history && !coverage),
+    canDelete: Boolean(appointment && !completed && !history && !coverage && !arrived),
     canAddAddendum: Boolean(
       completed &&
         appointment?.clinical_history_id &&
@@ -161,15 +163,15 @@ export function formatDate(
 ) {
   return new Intl.DateTimeFormat("es-DO", options).format(parseDate(value));
 }
-export function formatTime(value: string) {
-  return value.slice(0, 5);
+export function formatTime(value: string | null) {
+  return value?.slice(0, 5) ?? "Por turno";
 }
 export function timeToMinutes(value: string) {
   const [hour = "0", minute = "0"] = value.split(":");
   return Number(hour) * 60 + Number(minute);
 }
 export function weekTimelineBounds(items: Appointment[]) {
-  const times = items.map((item) => timeToMinutes(item.appointment_time));
+  const times = items.filter((item) => item.appointment_time !== null).map((item) => timeToMinutes(item.appointment_time!));
   if (!times.length) return null;
   const startMinutes = Math.floor(Math.min(...times) / 60) * 60;
   const endMinutes = Math.max(
@@ -183,10 +185,11 @@ export function formatTimelineHour(minutes: number) {
 }
 export function sortByTime(items: Appointment[]) {
   return [...items].sort(
-    (a, b) =>
-      `${a.appointment_date}T${a.appointment_time}`.localeCompare(
-        `${b.appointment_date}T${b.appointment_time}`,
-      ) || a.id - b.id,
+    (a, b) => a.appointment_date.localeCompare(b.appointment_date) ||
+      (a.appointment_time === null && b.appointment_time === null
+        ? (a.daily_booking_order ?? a.id) - (b.daily_booking_order ?? b.id)
+        : a.appointment_time === null ? 1 : b.appointment_time === null ? -1
+          : a.appointment_time.localeCompare(b.appointment_time)) || a.id - b.id,
   );
 }
 export function filterAppointments(

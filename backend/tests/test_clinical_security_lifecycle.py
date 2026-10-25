@@ -54,7 +54,12 @@ def clinical_app():
     db = Session(engine)
 
     doctor_role = Role(code="doctor", name="Doctor", permissions=[Permission(code="clinical:access", description="Clinical access")])
-    admin_role = Role(code="admin", name="Administrador")
+    # Patient identity creation now has its own explicit permission dependency;
+    # the clinical read override below must not implicitly authorize it.
+    admin_role = Role(code="admin", name="Administrador", permissions=[
+        Permission(code="patients:view", description="Ver pacientes"),
+        Permission(code="patients:edit", description="Editar pacientes"),
+    ])
     center = CareCenter(name="Centro Seguro", city="Santo Domingo", is_active=True)
     specialty = Specialty(name="Medicina familiar", is_active=True)
     doctor_a = User(

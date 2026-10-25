@@ -74,6 +74,22 @@ docker compose exec backend python -m pytest -q
 - Health check: <http://localhost:8000/api/v1/health>
 - Documentación OpenAPI: <http://localhost:8000/docs>
 
+### Instancia local oficial Atlas Pérgamo
+
+Cada instalación usa su propio directorio de trabajo, proyecto Compose y puertos.
+Los valores de la plantilla anterior son orientativos; consulte su `.env` y
+`docker compose config` antes de operar una instancia.
+
+La base y el target permanente de arranque deben mantenerse sincronizados.
+Compose ejecuta ese target antes de Uvicorn;
+no se usa `upgrade head` ni se aplica una revisión posterior automáticamente.
+No hace falta el override temporal de Uvicorn utilizado durante la recuperación.
+
+Usar únicamente el Compose aprobado para cada instalación. No cambiar el target a
+otra revisión sin una activación expresamente autorizada. La idempotencia ARS
+y el diseñador de documentos se describen en sus módulos y pruebas; los
+informes históricos de activación se conservan fuera del repositorio.
+
 ## Validación integrada pre-piloto
 
 La fase reproducible de staging para 6C3–6C7 usa un proyecto Docker y una base PostgreSQL desechable separados. El procedimiento, los datos sintéticos, la matriz PASS/FAIL y la recomendación de readiness están en [`docs/pre-pilot-validation.md`](docs/pre-pilot-validation.md). No ejecutar los scripts de pre-piloto contra una instalación real.
@@ -96,6 +112,10 @@ Si se ejecuta Vite fuera de Docker, el backend predeterminado del reenvío es
 `http://localhost:8000`; `API_PROXY_TARGET` permite cambiarlo. Una configuración
 explícita `VITE_API_URL` sigue disponible para una API separada. Para servir el
 bundle con otro servidor web, configurar también el reenvío de `/api/v1`.
+Para exponer Vite de desarrollo o staging detrás de un host HTTPS, configurar
+`VITE_ALLOWED_HOSTS` en el entorno del proceso frontend con una lista de nombres
+exactos separados por comas. No admite comodines; no aplica al build ni al preview.
+Verificar el host autorizado antes de reiniciar el frontend de una instalación.
 
 ## Configuración y seguridad
 
@@ -119,6 +139,38 @@ No se deben incorporar pacientes reales, datos clínicos, contraseñas ni archiv
 
 Consulta [la arquitectura inicial](docs/architecture.md).
 
+## Atlas Local Agent
+
+La [impresión local controlada V1](docs/atlas-local-agent-local-printing-v1.md)
+describe una prueba física sintética de una sola hoja. La siguiente fase de
+[pairing y registro de estaciones](docs/atlas-local-agent-pairing-registry-v1.md)
+incorpora registro, credenciales propias y catálogo de impresoras. Su migración
+`0067_local_agent_registry` incorpora la persistencia del registro. El
+[diseño de comunicación segura](docs/atlas-local-agent-secure-communication-v1.md)
+explica pairing, heartbeat, catálogo y reconexión con HTTPS; ninguna identidad
+de estación debe versionarse en Git.
+La [foundation de comunicación segura V1](docs/atlas-local-agent-secure-communication-v1.md)
+agrega aislamiento de la excepción, backoff, rutas y orígenes móvil/tablet.
+No certifica TLS productivo sin una URL HTTPS real ni ejecuta trabajos remotos.
+La [foundation HTTPS con Tailscale Serve](docs/atlas-https-tailscale-serve-v1.md)
+y la [frontera explícita del proxy](docs/atlas-trusted-proxy-v1.md) validan el
+endpoint tailnet HTTPS. Serve usa la entrada privada loopback 8002 (perfil
+Compose `tailscale`), mientras el backend directo 8001 ignora proxy headers.
+El agente ya conserva el endpoint HTTPS en DPAPI; su ejecución QA manual es
+temporal y no equivale a instalación productiva permanente ni routing remoto.
+
+La [persistencia de trabajos de impresión](docs/atlas-print-job-persistence-v1.md)
+se valida primero en PostgreSQL temporal. La revisión
+`0068_print_job_persistence` define el esquema correspondiente.
+Incluye inbox SQLite durable del agente; no habilita polling, routing ni impresión.
+No usar `upgrade head` para activar revisiones futuras no autorizadas.
+
+La [extensión del contrato PrintJob V1](docs/print-job-contract-extension-v1.md)
+preparó `0069_print_job_contract` en PostgreSQL temporal: estados
+Received/Ready/Printing, intención inmutable v2 y compatibilidad SQLite.
+Su activación requiere alinear current/head/target. No habilita routing ni impresión; el inbox
+SQLite sigue pendiente de integración con el runtime real.
+
 La fundación visual, componentes y contratos del shell están documentados en
 [Atlas UI V2 — Fase 0](docs/ui-v2/FOUNDATION.md), incluyendo el catálogo exclusivo de desarrollo.
 
@@ -127,6 +179,17 @@ La política implementada para autorización clínica, contexto inmutable, final
 El flujo de solicitudes estructuradas, sus reglas de contexto, seguridad e impresión está documentado en [Órdenes clínicas estructuradas](docs/clinical-orders.md).
 
 Las garantías de una consulta por cita, revisión optimista y serialización de escrituras clínicas están documentadas en [Integridad y concurrencia de consultas](docs/clinical/CONSULTATION_CONCURRENCY.md).
+
+El [workspace cardiológico V1 (6C2B / 0061)](docs/cardiology-workspace-v1.md) amplía
+la consulta existente con captura estructurada y seguimiento operativo para
+secretaría. Su implementación se validó en PostgreSQL temporal y su activación
+local controlada dejó la base oficial en `0061_cardiology_workspace`.
+
+La [visibilidad contextual de capacidades V1](docs/contextual-feature-visibility-v1.md)
+separa presentación, permisos y contratación futura. Implementación 0062 con
+switches independientes de panel Safety y alerta crítica, organización/centro y
+audiencias médico/secretaría. Los defaults son restrictivos y la activación
+de cada revisión debe verificarse por separado.
 
 ## Seguridad administrativa pre-piloto (6C3)
 
@@ -149,3 +212,14 @@ La [fase 6C5](docs/6c5-insurance-authorizations.md) incorpora planes, afiliacion
 ## Reclamaciones y cuentas por cobrar ARS (6C7)
 
 [6C7](docs/6c7-ars-receivables.md) convierte el importe esperado de ARS en reclamaciones con fotografía histórica, glosas, correcciones, remesas, aplicaciones, reversos, aging y conciliación. Estos cobros permanecen separados de Caja y del saldo del paciente. Migración aditiva `0039_ars_receivables`, sin reclamaciones sembradas.
+
+## Validación aislada de impresión post-0069
+
+Las pruebas de routing con fakes integran navegador, HTTPS, PostgreSQL y SQLite del Agent usando exclusivamente documentos sintéticos y un ejecutor simulado. No habilitan impresión física.
+
+La integración post-0069 añade API autenticada y consumidor HTTPS del Agent con SQLite real. La acción de validación segura es **sin papel** y no usa documentos reales.
+
+La [compatibilidad de cuenta de servicio y DPAPI](docs/service-account-dpapi-compatibility-v1.md)
+documenta la conservación de identidad, el traspaso protegido de credenciales
+y el almacenamiento SQLite durable. La instalación del servicio y la activación
+física requieren validaciones y autorizaciones independientes por estación.

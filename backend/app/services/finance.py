@@ -54,7 +54,9 @@ def flush(db):
 
 
 def digest(payload, context=''):
-    return hashlib.sha256((context + payload.model_dump_json()).encode()).hexdigest()
+    # Preserve hashes of pre-lot cash/transfer requests, including retries still in flight.
+    serialized = payload.model_dump_json().replace(',"batch_number":null', '').replace(',"provider":null', '')
+    return hashlib.sha256((context + serialized).encode()).hexdigest()
 
 
 def replay(db, model, payload, fingerprint, user):
@@ -131,6 +133,8 @@ def register_totals(db, row):
 def close_register(db, user, register_id, payload):
     row = register_access(db, user, register_id, lock=True, write=True)
     require_open(row)
+    from app.services.card_batches import ensure_register_batches_closed
+    ensure_register_batches_closed(db, row)
     totals = register_totals(db, row)
     difference = payload.counted_cash - totals['expected_cash']
     if difference and not (payload.notes or '').strip():
@@ -178,8 +182,14 @@ def apply_payment(db, user, invoice, register, payload):
     amount = sum((part.amount for part in payload.parts), Decimal('0.00'))
     if amount > invoice.balance:
         raise HTTPException(422, 'El pago excede el saldo del paciente')
+    from app.services.card_batches import require_enabled, require_new_payment_batch
+    for part in payload.parts:
+        if part.method == 'card':
+            require_enabled(db, register.center_id, part.provider)
+            require_new_payment_batch(db, register.id, part.provider, part.batch_number)
     row = CashMovement(center_id=invoice.center_id, register_id=register.id, invoice_id=invoice.id,
-        kind='payment', amount=amount, parts=[{'method': p.method, 'amount': str(p.amount)} for p in payload.parts],
+        kind='payment', amount=amount, parts=[{'method': p.method, 'amount': str(p.amount),
+            **({'batch_number': p.batch_number, 'provider': p.provider} if p.method == 'card' else {})} for p in payload.parts],
         request_key=str(payload.request_key), request_hash=digest(payload, f'pay:{invoice.id}:'), created_by=user.id)
     invoice.paid_amount += amount
     db.add(row); flush(db)
@@ -254,6 +264,10 @@ def reverse_payment(db, user, movement_id, payload):
     center_access(db, user, original.center_id)
     if original.kind != 'payment' or original.center_id != register.center_id:
         raise HTTPException(422, 'Solo puede revertir un cobro del mismo centro')
+    from app.services.card_batches import ensure_pos_not_closed
+    ensure_pos_not_closed(db, original)
+    if any(part['method'] == 'card' for part in original.parts) and original.register_id != register.id:
+        raise HTTPException(409, 'La devolución con tarjeta antes del cierre debe hacerse en la misma caja')
     invoice = invoice_access(db, user, original.invoice_id, lock=True)
     if db.scalar(select(CashMovement.id).where(CashMovement.reverses_id == original.id)):
         raise HTTPException(409, 'El cobro ya fue revertido')

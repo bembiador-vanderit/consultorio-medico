@@ -23,14 +23,37 @@ services:
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set in .env}
       INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Administrador inicial}
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      ALEMBIC_TARGET_REVISION: ${ALEMBIC_TARGET_REVISION:-head}
+    command: sh -c 'alembic upgrade "$${ALEMBIC_TARGET_REVISION}" && uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers --reload'
     ports: ["${BACKEND_PORT:-8000}:8000"]
     volumes: ["./backend:/app"]
     depends_on: { postgres: { condition: service_healthy } }
+  backend-tailscale:
+    profiles: [tailscale]
+    build: { context: ./backend }
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Santo_Domingo}
+      TENANT_HOSTS_JSON: ${TENANT_HOSTS_JSON:-}
+      PLATFORM_HOSTS_JSON: ${PLATFORM_HOSTS_JSON:-}
+      ATLAS_TRUSTED_PROXY_IP: ${ATLAS_TRUSTED_PROXY_IP:-}
+      ATLAS_TRUSTED_PROXY_HOST: ${ATLAS_TRUSTED_PROXY_HOST:-}
+    # Private ingress only; never migrate/bootstrap/start duplicate workers.
+    command: uvicorn app.proxy_ingress:app --host 0.0.0.0 --port 8000 --no-proxy-headers --lifespan off
+    ports: ["127.0.0.1:${ATLAS_PROXY_PORT:-8002}:8000"]
+    volumes: ["./backend:/app"]
+    depends_on: [backend]
   frontend:
     build: { context: ./frontend }
     environment:
       API_PROXY_TARGET: http://backend:8000
+      VITE_PROVIDER_PAUSES_ENABLED: ${VITE_PROVIDER_PAUSES_ENABLED:-false}
+      VITE_CLINICAL_DOCUMENTS_ENABLED: ${VITE_CLINICAL_DOCUMENTS_ENABLED:-false}
+      VITE_CLINICAL_FORM_DESIGNER_ENABLED: ${VITE_CLINICAL_FORM_DESIGNER_ENABLED:-false}
+      VITE_QUEUE_CALL_POLICY_ENABLED: ${VITE_QUEUE_CALL_POLICY_ENABLED:-false}
+      VITE_QUEUE_DISPLAYS_ENABLED: ${VITE_QUEUE_DISPLAYS_ENABLED:-false}
+      VITE_WAITING_ROOMS_ENABLED: ${VITE_WAITING_ROOMS_ENABLED:-false}
     ports: ["${FRONTEND_PORT:-5173}:5173"]
     volumes: ["./frontend:/app", "frontend_node_modules:/app/node_modules"]
     depends_on: [backend]

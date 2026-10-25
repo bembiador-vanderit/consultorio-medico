@@ -21,14 +21,16 @@ test("navigation preserves baseline visibility for every combination of roles", 
   for (let mask = 0; mask < 8; mask++) {
     const selected = roles.filter((_, index) => mask & (1 << index));
     const expected = ["dashboard", "appointments", "reports", "patients"];
-    if (selected.includes("doctor")) expected.push("follow-ups", "availability");
+    if (selected.includes("doctor") || selected.includes("secretary")) expected.push("follow-ups");
+    if (selected.includes("doctor")) expected.push("availability");
     if (selected.includes("doctor") || selected.includes("secretary")) expected.push("clinical-coverages");
     if (selected.includes("admin")) expected.push("users", "care-context");
-    expected.push("security");
+    expected.push("personalization", "security");
     assert.deepEqual(navigation.getNavigationItems({ roles: selected }).map((item) => item.view), expected);
   }
   assert.deepEqual(navigation.getNavigationItems(null), []);
-  assert.equal(navigation.getNavigationItems({ roles: ["unknown"] }).length, 5);
+  assert.equal(navigation.getNavigationItems({ roles: ["unknown"] }).length, 6);
+  assert.equal(navigation.getNavigationItems({ roles: ["doctor"] }).find((item) => item.view === "personalization")?.label, "Personalización");
   assert.ok(!navigation.navigationItems.some((item) => item.view === "consultation"));
 });
 
@@ -43,11 +45,17 @@ test("FormField associates label, required, help and error with each control", (
     assert.match(html, /id="sample"/);
     assert.match(html, /aria-describedby="sample-help sample-error"/);
     assert.match(html, /aria-invalid="true"/);
+    assert.match(html, /aria-required="true"/);
     assert.match(html, /required=""/);
+    assert.match(html, /class="atlas-required-mark"> \*<\/span>/);
+    assert.doesNotMatch(html, /\(obligatorio\)/);
     assert.doesNotMatch(html, /ignored-override/);
   }
   assert.match(render(ui.FormField, { id: "styled", label: "Campo", className: "patient-form-wide" }, h(ui.Input)), /class="atlas-field patient-form-wide"/);
   assert.match(render(ui.FormSection, { title: "Grupo", className: "patient-form-contact-section" }, h(ui.Input)), /class="atlas-form-section patient-form-contact-section"/);
+  const optional = render(ui.FormField, { label: "Opcional" }, h(ui.Input));
+  assert.doesNotMatch(optional, /atlas-required-mark|aria-required="true"/);
+  assert.match(render(ui.RequiredFieldsLegend, {}), /\*<\/span> Campos obligatorios/);
 });
 
 test("automatically generated field IDs are unique and match labels", () => {

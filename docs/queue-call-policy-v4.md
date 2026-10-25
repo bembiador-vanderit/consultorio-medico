@@ -1,0 +1,17 @@
+# 0046 — Política de llamada por línea
+
+0046 se prepara sin aplicar la migración a la base oficial (que permanece en 0045). La UI nueva permanece deshabilitada hasta migrar y activar `VITE_QUEUE_CALL_POLICY_ENABLED=true` en una tarea operativa posterior. El `ALEMBIC_TARGET_REVISION` local fija el arranque de Docker en 0045 para impedir que un reinicio aplique 0046 por accidente; antes de activar 0046 debe revisarse explícitamente ese valor.
+
+## Configuración y decisión
+
+`queue_call_policies` contiene una fila opcional por `organization_id` y `queue_line_id`, con centro, modo y preparación. Sin fila se usa `manual`, 60 segundos y el valor existente `QueueLine.call_on_consultation_start` (por defecto `false`). No se duplicó ese booleano. El límite de preparación es 0–3600 segundos, también protegido en PostgreSQL. La migración no modifica tickets ni genera llamadas históricas.
+
+`GET/PUT /queue-lines/{id}/call-policy` lee o establece la política; la escritura exige administración y la reautenticación ya exigida a `centers:manage`. `GET /queue-lines/{id}/next-call-state?day=...` devuelve el estado derivado sin datos clínicos. `POST /queue-lines/{id}/call-next?day=...` realiza una transición explícita; la selección es por `sequence_number, id` de la línea, centro, organización y jornada. En PostgreSQL, el médico y la línea se bloquean antes de revalidar la política, pausa, paciente ya llamado/en servicio, preparación y siguiente ticket. Una segunda solicitud concurrente recibe 409.
+
+Manual nunca dispara llamada automática y no exige cuenta regresiva. Asistido muestra preparación y habilita “Llamar ahora” al estar listo, pero no llama solo. Automático usa el trabajador periódico del backend: cada ciclo consulta PostgreSQL, vuelve a evaluar dentro de la transacción y llama solo si sigue permitido. No depende de una pestaña abierta ni de un temporizador en memoria como fuente de verdad. El ciclo se repite tras reinicio; varias instancias se serializan sobre la misma fila de línea. El intervalo actual es de cinco segundos, por lo que una llamada puede ocurrir unos segundos después de `ready_at`. La finalización de servicio o pausa no llama directamente a nadie.
+
+`ready_at` se deriva del último `consultation_finished_at` del mismo médico, centro y fecha más `preparation_seconds` de la línea. Si no hubo servicio previo, no hay espera de preparación. Se bloquea si la jornada no es hoy, la línea está inactiva, el médico está en pausa, hay un ticket `called` o `in_service` para ese médico y centro (incluso en otra línea), no hay nadie en espera, o aún no vence la preparación. La acción explícita de iniciar consulta puede llamar desde `waiting` solo si la configuración existente lo permite y se revalida la misma línea; abrir una ficha no lo hace.
+
+Un evento `CALLED` automático lleva `actor_user_id=NULL` y `QueueTicket.called_by_user_id=NULL`. El API expone `call_source=automatic` derivado inequívocamente de ese actor nulo para `CALLED`; los eventos manuales tienen actor real y `call_source=manual`. Ninguna persona ficticia se atribuye la acción. El evento, ticket y hora del servidor preservan la trazabilidad. No hay display, audio, chat, notificación externa ni cambio de numeración.
+
+La base oficial sigue en 0045 y sus endpoints operativos conservan el contrato previo hasta la aplicación controlada de 0046. El nuevo trabajador omite la tabla si todavía no existe. No activar la flag de UI antes de migrar.

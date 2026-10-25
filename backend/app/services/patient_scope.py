@@ -4,15 +4,23 @@ from hashlib import blake2b
 import jwt
 
 from fastapi import HTTPException
-from sqlalchemy import Select, exists, func, or_, select
+from sqlalchemy import Select, exists, func, inspect, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Appointment, AppointmentCoverageTransfer, ClinicalHistory, Patient, User
 from app.core.config import get_settings
-from app.services.appointment_scope import apply_appointment_scope, is_role, secretary_can_manage
+from app.services.appointment_scope import apply_appointment_scope, assigned_center_ids, is_role, secretary_can_manage, secretary_doctor_ids_by_center
 
 
 VISIBLE_APPOINTMENT_STATUSES = {"scheduled", "confirmed", "completed"}
+
+
+def _has_clinical_document_tables(db: Session) -> bool:
+    get_bind = getattr(db, "get_bind", None)
+    if get_bind is None:
+        return False
+    inspector = inspect(get_bind())
+    return inspector.has_table("preoperative_evaluations") and inspector.has_table("physical_examinations")
 
 
 def scope_patient_identities(query: Select, user: User, db: Session) -> Select:
@@ -23,7 +31,23 @@ def scope_patient_identities(query: Select, user: User, db: Session) -> Select:
         return query
     if is_role(user, "secretary"):
         appointment_ids = apply_appointment_scope(select(Appointment.patient_id), user, db)
-        return query.where(Patient.id.in_(appointment_ids))
+        visibility = [Patient.id.in_(appointment_ids)]
+        if _has_clinical_document_tables(db):
+            # A scoped document prepared before scheduling is a patient
+            # relationship, but never grants clinical-content access.
+            from app.models.clinical_patient_document import PhysicalExamination, PreoperativeEvaluation
+            org_id = db.info.get("organization_id")
+            for center_id, doctor_ids in secretary_doctor_ids_by_center(user, db).items():
+                for model in (PreoperativeEvaluation, PhysicalExamination):
+                    document = select(model.id).where(
+                        model.patient_id == Patient.id, model.center_id == center_id,
+                    )
+                    if org_id is not None:
+                        document = document.where(model.organization_id == org_id)
+                    if doctor_ids is not None:
+                        document = document.where(model.doctor_id.in_(doctor_ids))
+                    visibility.append(exists(document))
+        return query.where(or_(*visibility))
     if is_role(user, "doctor"):
         own_appointment = exists(
             select(Appointment.id).where(
@@ -46,7 +70,19 @@ def scope_patient_identities(query: Select, user: User, db: Session) -> Select:
                 AppointmentCoverageTransfer.original_doctor_id == user.id,
             )
         )
-        return query.where(or_(own_appointment, own_history, transferred_as_principal))
+        relationships = [own_appointment, own_history, transferred_as_principal]
+        if _has_clinical_document_tables(db):
+            from app.models.clinical_patient_document import PhysicalExamination, PreoperativeEvaluation
+            org_id = db.info.get("organization_id")
+            for model in (PreoperativeEvaluation, PhysicalExamination):
+                document = select(model.id).where(
+                    model.patient_id == Patient.id, model.doctor_id == user.id,
+                    model.center_id.in_(assigned_center_ids(user)),
+                )
+                if org_id is not None:
+                    document = document.where(model.organization_id == org_id)
+                relationships.append(exists(document))
+        return query.where(or_(*relationships))
     raise HTTPException(status_code=403, detail="No tiene acceso a pacientes")
 
 
@@ -79,6 +115,18 @@ def doctor_has_patient_relationship(db: Session, user: User, patient_id: int) ->
     )
     if transferred_as_principal is not None:
         return True
+    if _has_clinical_document_tables(db):
+        from app.models.clinical_patient_document import PhysicalExamination, PreoperativeEvaluation
+        org_id = db.info.get("organization_id")
+        for model in (PreoperativeEvaluation, PhysicalExamination):
+            document = select(model.id).where(
+                model.patient_id == patient_id, model.doctor_id == user.id,
+                model.center_id.in_(assigned_center_ids(user)),
+            )
+            if org_id is not None:
+                document = document.where(model.organization_id == org_id)
+            if db.scalar(document.limit(1)) is not None:
+                return True
     return db.scalar(
         select(ClinicalHistory.id).where(
             ClinicalHistory.patient_id == patient_id,

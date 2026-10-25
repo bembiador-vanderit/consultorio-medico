@@ -195,9 +195,9 @@ En consulta se explicita **ficha actual** y no se presenta como resultado histó
 
 ### Runtime local del PR #44
 
-La comprobación de `localhost:5174` verificó el contenedor temporal
+La comprobación de `localhost:<FRONTEND_PORT>` verificó el contenedor temporal
 `consultorio-44-manual`, su bind mount
-`C:\\proyectoconsultorio\\consultorio-medico\\frontend => /app`, la rama y el
+`<WORKSPACE> => /app`, la rama y el
 HEAD `ac1c19d7cb5656adcce126ee5a20717e8f8c4839`. Aunque el HTML respondía
 `Cache-Control: no-cache`, Vite conservaba en memoria módulos transformados de la
 versión anterior porque Chokidar no recibió los cambios del bind mount de Docker

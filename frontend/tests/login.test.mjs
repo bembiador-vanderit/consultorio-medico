@@ -58,8 +58,9 @@ after(async () => { await server.close(); dom.window.close(); });
 
 test("real Login renders foundation form, associated labels and existing email/password contract", async () => {
   await mount();
-  assert.match(host.textContent, /Atlas Consultorio/);
-  assert.equal(host.querySelector("h1").textContent, "Bienvenido a Atlas");
+  assert.match(host.textContent, /Atlas Pérgamo/);
+  assert.doesNotMatch(host.textContent, /Atlas Consultorio/);
+  assert.equal(host.querySelector("h1").textContent, "Bienvenido a Atlas Pérgamo");
   const email = host.querySelector('[name="email"]');
   const password = host.querySelector('[name="password"]');
   assert.equal(email.type, "email");

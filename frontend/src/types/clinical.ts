@@ -77,6 +77,8 @@ export type ConsultationWorkspaceTemplate = {
 };
 
 export type ConsultationContext = {
+  cardiology_enabled?: boolean;
+  patient_registered_sex?: string | null;
   appointment_id: number;
   patient_id: number;
   doctor_id: number;
@@ -84,7 +86,7 @@ export type ConsultationContext = {
   specialty_id: number | null;
   specialty_name: string;
   appointment_date: string;
-  appointment_time: string;
+  appointment_time: string | null;
   appointment_reason: string | null;
   appointment_status: AppointmentStatus;
   patient_blood_type?: string | null;

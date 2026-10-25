@@ -48,6 +48,9 @@ def list_follow_ups(db: Session = Depends(get_db), user: User = Depends(require_
     if not _is_doctor(user):
         return []
     stmt = stmt.where(FollowUp.doctor_id == user.id)
+    from app.services.cardiology import ready
+    from app.models.cardiology import ClinicalFollowUpPlan
+    if ready(db): stmt=stmt.where(FollowUp.id.not_in(select(ClinicalFollowUpPlan.follow_up_id)))
     return list(db.scalars(stmt).all())
 
 
@@ -85,6 +88,13 @@ def create_follow_up(payload: FollowUpCreate, db: Session = Depends(get_db), use
 
 @router.post("/{follow_up_id}/complete", response_model=FollowUpRead)
 def complete_follow_up(follow_up_id: int, db: Session = Depends(get_db), user: User = Depends(require_permission("clinical:access"))):
+    from app.services.cardiology import ready
+    from app.models.cardiology import ClinicalFollowUpPlan
+    if ready(db) and db.scalar(select(ClinicalFollowUpPlan.id).where(ClinicalFollowUpPlan.follow_up_id==follow_up_id)):
+        from app.api.routes.clinical_follow_up import complete
+        complete(follow_up_id,user,db)
+        # Preserve this legacy route's FollowUpRead response contract.
+        return db.get(FollowUp, follow_up_id)
     follow_up = db.get(FollowUp, follow_up_id)
     if not follow_up:
         raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
@@ -140,6 +150,8 @@ def sync_notifications(db: Session = Depends(get_db), user: User = Depends(curre
         Appointment.appointment_date >= now.date(),
     )).all()
     for appointment in appointments:
+        if appointment.appointment_time is None:
+            continue
         appointment_at = datetime.combine(appointment.appointment_date, appointment.appointment_time)
         if appointment_at < now or appointment_at > horizon:
             continue
@@ -210,6 +222,7 @@ def list_notifications(
         if item.notification_type != "appointment_due"
         or (
             item.appointment_id in visible_appointments
+            and visible_appointments[item.appointment_id].appointment_time is not None
             and now <= datetime.combine(
                 visible_appointments[item.appointment_id].appointment_date,
                 visible_appointments[item.appointment_id].appointment_time,

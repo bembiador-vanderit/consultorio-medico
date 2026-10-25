@@ -145,7 +145,7 @@ def remittance(remittance_id: int, user: User = Depends(read), db: Session = Dep
 
 @router.post('/remittances/{remittance_id}/apply')
 def apply(remittance_id: int, payload: ApplyInput, user: User = Depends(require_permission('ars:payment')), db: Session = Depends(get_db)):
-    return service.serialize(service.apply(db, user, remittance_id, payload))
+    return service.apply(db, user, remittance_id, payload)
 
 
 @router.post('/applications/{application_id}/reverse')

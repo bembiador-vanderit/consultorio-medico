@@ -2,10 +2,20 @@ import { useEffect, useState } from "react";
 import { api, logoutSession } from "../services/api";
 import type { User } from "../types/user";
 import AccessSchedules from "../components/AccessSchedules";
+import { QueueDisplayVoiceSettings } from "../components/agenda/QueueDisplayVoiceSettings";
+import ClinicalSharingPolicySettings from "../components/ClinicalSharingPolicySettings";
+import FeatureVisibilitySettings from "../components/FeatureVisibilitySettings";
 
 type Transfer = { id: number; initiator_id: number; target_id: number; initiator_name?: string; target_name?: string; replace_initiator: boolean; expires_at: string };
 type Audit = { id: number; actor_id: number; action: string; outcome: string; created_at: string };
-const capabilities = [{ code: "finance:read", label: "Consultar finanzas" }, { code: "finance:collect", label: "Caja y cobros" }, { code: "finance:manage", label: "Ajustes, reversos y anulaciones" }, { code: "ars:read", label: "Consultar reclamaciones ARS" }, { code: "ars:claim", label: "Crear y corregir reclamaciones" }, { code: "ars:send", label: "Enviar y cambiar estado de reclamaciones" }, { code: "ars:glosa", label: "Registrar glosas y rechazos" }, { code: "ars:payment", label: "Remesas, aplicaciones y reversos ARS" }, { code: "ars:reconcile", label: "Conciliar ARS" }, { code: "ars:report", label: "Cuentas por cobrar ARS" }, { code: "insurance:manage", label: "Seguros y coberturas administrativas" }, { code: "patients:access", label: "Pacientes, agenda y reportes" }, { code: "clinical:access", label: "Trabajo clínico (requiere rol médico)" }];
+const capabilities = [{ code: "finance:read", label: "Consultar finanzas" }, { code: "finance:collect", label: "Caja y cobros" }, { code: "finance:manage", label: "Ajustes, reversos y anulaciones" }, { code: "ars:read", label: "Consultar reclamaciones ARS" }, { code: "ars:claim", label: "Crear y corregir reclamaciones" }, { code: "ars:send", label: "Enviar y cambiar estado de reclamaciones" }, { code: "ars:glosa", label: "Registrar glosas y rechazos" }, { code: "ars:payment", label: "Remesas, aplicaciones y reversos ARS" }, { code: "ars:reconcile", label: "Conciliar ARS" }, { code: "ars:report", label: "Cuentas por cobrar ARS" }, { code: "insurance:manage", label: "Seguros y coberturas administrativas" }, { code: "patients:access", label: "Acceso operativo heredado: agenda y reportes (denegarlo bloquea también pacientes)" }, { code: "patients:view", label: "Consultar ficha de pacientes" }, { code: "patients:edit", label: "Crear y editar ficha de pacientes (requiere consulta)" }, { code: "clinical:access", label: "Trabajo clínico (requiere rol médico)" }, { code: "clinical_documents:create", label: "Crear documentos clínicos" }, { code: "clinical_documents:view", label: "Ver documentos clínicos autorizados" }, { code: "clinical_documents:prepare", label: "Preparar documentos clínicos" }, { code: "clinical_documents:edit_clinical", label: "Completar documentos (requiere rol médico)" }, { code: "clinical_documents:sign", label: "Firmar documentos (requiere rol médico)" }, { code: "clinical_forms:view", label: "Ver plantillas clínicas" }, { code: "clinical_forms:create", label: "Crear plantillas clínicas" }, { code: "clinical_forms:edit_draft", label: "Editar borradores de plantillas" }, { code: "clinical_forms:publish", label: "Publicar versiones de plantillas" }, { code: "clinical_forms:retire", label: "Retirar plantillas" }, { code: "clinical_forms:assign", label: "Asignar plantillas y permisos documentales" }];
+
+capabilities.push(
+  { code: "patient_care:view", label: "Consultar médicos relacionados (sin acceso clínico adicional)" },
+  { code: "patient_care:manage", label: "Administrar relaciones asistenciales (requiere administración)" },
+  { code: "patient_safety:view", label: "Consultar seguridad clínica (requiere rol médico y alcance clínico)" },
+  { code: "patient_safety:edit", label: "Modificar seguridad clínica (requiere consulta y permiso clínico)" },
+);
 
 export default function AdministrationSecurity({ user }: { user: User }) {
   const admin = user.roles.includes("admin");
@@ -38,6 +48,9 @@ export default function AdministrationSecurity({ user }: { user: User }) {
   return <section className="space-y-5">
     <h2 className="text-2xl font-bold">Seguridad y administración</h2>
     {admin && <AccessSchedules users={users} />}
+    {admin && user.permissions?.includes("users:manage") && <ClinicalSharingPolicySettings />}
+    {admin && user.permissions?.includes("users:manage") && <FeatureVisibilitySettings />}
+    {admin && <QueueDisplayVoiceSettings />}
     <p>El administrador gestiona todos los centros de esta instalación. El acceso clínico requiere un rol médico y una relación asistencial autorizada.</p>
     <p>La verificación en dos pasos (MFA) y la recuperación automática de cuenta todavía no están habilitadas.</p>
     {error && <p role="alert" className="text-red-700">{error}</p>}{message && <p role="status" className="text-teal-800">{message}</p>}

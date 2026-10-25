@@ -57,7 +57,7 @@ for org,c in clients.items():
     request(c,'POST',f"/ars/claims/{claim['id']}/transition",{'state':'resent'})
     rem=request(c,'POST','/ars/remittances',{'insurance_company_id':row['company'],'center_id':row['center'],'received_on':date.today().isoformat(),'reference':f'SYN-{org}','amount':'1000'},201)
     for amount,balance in [('400','600.00'),('600','0.00')]:
-        request(c,'POST',f"/ars/remittances/{rem['id']}/apply",{'allocations':[{'claim_id':claim['id'],'amount':amount}]})
+        request(c,'POST',f"/ars/remittances/{rem['id']}/apply",{'request_key':str(uuid4()),'allocations':[{'claim_id':claim['id'],'amount':amount}]})
         assert request(c,'GET',f"/ars/claims/{claim['id']}")['balance']==balance
     app=request(c,'GET',f"/ars/remittances/{rem['id']}")['applications'][0]
     request(c,'POST',f"/ars/applications/{app['id']}/reverse",{'reason':'Reverso sintético'})

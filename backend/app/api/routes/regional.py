@@ -6,7 +6,7 @@ from app.db import get_db
 from app.models import Country, RegionalSettings, TerritorialLevel, TerritorialUnit, User
 from app.schemas.regional import CountryResponse, RegionalSettingsResponse, RegionalSettingsUpdate, TerritorialLevelResponse, TerritorialUnitResponse
 router = APIRouter(prefix="/regional", tags=["Configuración regional"])
-access = require_permission("patients:access")
+access = require_permission("patients:view")
 manage = require_permission("users:manage")
 
 def _settings(db: Session) -> RegionalSettings:

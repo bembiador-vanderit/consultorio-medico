@@ -91,10 +91,25 @@ class ArsRemittance(TenantOwned, Base):
         return self.amount - self.applied_amount
 
 
+class ArsApplyOperation(TenantOwned, Base):
+    """One user intent; response is immutable even after subsequent reversals."""
+    __tablename__ = 'ars_apply_operations'
+    __table_args__ = (UniqueConstraint('organization_id', 'request_key', name='uq_ars_apply_operation_key'),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_key: Mapped[str] = mapped_column(String(36))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    remittance_id: Mapped[int] = mapped_column(ForeignKey('ars_remittances.id', ondelete='RESTRICT'))
+    created_by: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    response: Mapped[dict] = mapped_column(JSON)
+
+
 class ArsApplication(TenantOwned, Base):
     __tablename__ = 'ars_applications'
     __table_args__ = (CheckConstraint('amount > 0', name='ck_ars_application_amount'),)
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Keep historical reads compatible while 0065 awaits controlled activation.
+    operation_id: Mapped[int | None] = mapped_column(ForeignKey('ars_apply_operations.id', ondelete='RESTRICT'), index=True, deferred=True)
     center_id: Mapped[int] = mapped_column(ForeignKey('care_centers.id', ondelete='RESTRICT'))
     remittance_id: Mapped[int] = mapped_column(ForeignKey('ars_remittances.id', ondelete='RESTRICT'), index=True)
     claim_id: Mapped[int] = mapped_column(ForeignKey('ars_claims.id', ondelete='RESTRICT'), index=True)

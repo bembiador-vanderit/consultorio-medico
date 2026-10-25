@@ -51,7 +51,7 @@ def _build_clinical_order_pdf(
         topMargin=18 * mm,
         bottomMargin=18 * mm,
         title=f"{order_kind} #{order_id}",
-        author="Atlas Consultorio",
+        author="Atlas Pérgamo",
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
@@ -68,7 +68,7 @@ def _build_clinical_order_pdf(
     )
     safe_center = escape(center_name or "Centro de atención no especificado")
     story = [
-        Paragraph("Atlas Consultorio", title_style),
+        Paragraph("Atlas Pérgamo", title_style),
         Paragraph(escape(order_kind.upper()), styles["Heading2"]),
         Paragraph(safe_center, subtitle_style),
         Spacer(1, 7 * mm),
@@ -119,7 +119,7 @@ def _build_clinical_order_pdf(
         canvas.saveState()
         canvas.setFillColor(colors.HexColor("#64748b"))
         canvas.setFont("Helvetica", 8)
-        canvas.drawString(20 * mm, 10 * mm, f"Atlas Consultorio - Orden #{order_id}")
+        canvas.drawString(20 * mm, 10 * mm, f"Atlas Pérgamo - Orden #{order_id}")
         canvas.drawRightString(A4[0] - 20 * mm, 10 * mm, f"Página {doc.page}")
         canvas.restoreState()
 
@@ -155,7 +155,7 @@ def build_requested_tests_pdf(
         topMargin=18 * mm,
         bottomMargin=18 * mm,
         title=f"Orden de estudios #{history_id}",
-        author="Atlas Consultorio",
+        author="Atlas Pérgamo",
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
@@ -197,7 +197,7 @@ def build_requested_tests_pdf(
     safe_center = escape(center_name or "Centro de atención no especificado")
     safe_address = escape(center_address or "")
     story = [
-        Paragraph("Atlas Consultorio", title_style),
+        Paragraph("Atlas Pérgamo", title_style),
         Paragraph("ORDEN DE ESTUDIOS Y ANÁLISIS", order_title_style),
         Paragraph(
             f"{safe_center}{f' - {safe_address}' if safe_address else ''}",
@@ -261,7 +261,7 @@ def build_requested_tests_pdf(
         canvas.saveState()
         canvas.setFillColor(colors.HexColor("#64748b"))
         canvas.setFont("Helvetica", 8)
-        canvas.drawString(20 * mm, 10 * mm, f"Atlas Consultorio - Orden #{history_id}")
+        canvas.drawString(20 * mm, 10 * mm, f"Atlas Pérgamo - Orden #{history_id}")
         canvas.drawRightString(A4[0] - 20 * mm, 10 * mm, f"Página {doc.page}")
         canvas.restoreState()
 
@@ -289,7 +289,7 @@ def build_prescription_pdf(
         topMargin=18 * mm,
         bottomMargin=18 * mm,
         title=f"Receta médica #{history_id}",
-        author="Atlas Consultorio",
+        author="Atlas Pérgamo",
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
@@ -331,7 +331,7 @@ def build_prescription_pdf(
     safe_center = escape(center_name or "Centro de atención no especificado")
     safe_address = escape(center_address or "")
     story = [
-        Paragraph("Atlas Consultorio", title_style),
+        Paragraph("Atlas Pérgamo", title_style),
         Paragraph("RECETA MÉDICA", document_title_style),
         Paragraph(
             f"{safe_center}{f' - {safe_address}' if safe_address else ''}",
@@ -424,7 +424,7 @@ def build_prescription_pdf(
         canvas.saveState()
         canvas.setFillColor(colors.HexColor("#64748b"))
         canvas.setFont("Helvetica", 8)
-        canvas.drawString(16 * mm, 10 * mm, f"Atlas Consultorio - Receta #{history_id}")
+        canvas.drawString(16 * mm, 10 * mm, f"Atlas Pérgamo - Receta #{history_id}")
         canvas.drawRightString(A4[0] - 16 * mm, 10 * mm, f"Página {doc.page}")
         canvas.restoreState()
 
@@ -458,7 +458,7 @@ def build_consultation_summary_pdf(
         topMargin=18 * mm,
         bottomMargin=18 * mm,
         title=f"Resumen de consulta #{history_id}",
-        author="Atlas Consultorio",
+        author="Atlas Pérgamo",
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
@@ -510,7 +510,7 @@ def build_consultation_summary_pdf(
     safe_address = escape(center_address or "")
     footer_doctor = doctor_name if len(doctor_name) <= 60 else f"{doctor_name[:57]}..."
     story = [
-        Paragraph("Atlas Consultorio", title_style),
+        Paragraph("Atlas Pérgamo", title_style),
         Paragraph("RESUMEN DE CONSULTA", styles["Heading2"]),
         Paragraph(
             f"{safe_center}{f' - {safe_address}' if safe_address else ''}",
@@ -649,7 +649,7 @@ def build_consultation_summary_pdf(
         canvas.setFont("Helvetica", 7)
         canvas.drawCentredString(A4[0] / 2, 12 * mm, footer_doctor)
         canvas.setFont("Helvetica", 8)
-        canvas.drawString(16 * mm, 7 * mm, f"Atlas Consultorio - Consulta #{history_id}")
+        canvas.drawString(16 * mm, 7 * mm, f"Atlas Pérgamo - Consulta #{history_id}")
         canvas.drawRightString(A4[0] - 16 * mm, 7 * mm, f"Página {doc.page}")
         canvas.restoreState()
 

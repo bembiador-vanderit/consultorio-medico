@@ -33,11 +33,12 @@ def appointment_message(appointment: Appointment) -> str:
     center_text = center.name if center else "Centro de atención pendiente"
     city_text = f" ({center.city})" if center and center.city else ""
     reason_text = f"\nMotivo: {appointment.reason}" if appointment.reason else ""
+    time_text = f"Hora: {appointment.appointment_time.strftime('%I:%M %p')}\n" if appointment.appointment_time else "Modalidad: Por turnos (sin hora asignada)\n"
     return (
         f"Estimado/a {patient_name},\n\n"
         "Le recordamos los datos de su cita médica:\n"
         f"Fecha: {appointment.appointment_date.strftime('%d/%m/%Y')}\n"
-        f"Hora: {appointment.appointment_time.strftime('%I:%M %p')}\n"
+        f"{time_text}"
         f"Médico: Dr. {doctor.full_name}\n"
         f"Centro: {center_text}{city_text}"
         f"{reason_text}\n\n"

@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Atlas.LocalAgent.Core/Atlas.LocalAgent.Core.csproj" />
+  <Project Path="Atlas.LocalAgent.Service/Atlas.LocalAgent.Service.csproj" />
+  <Project Path="Atlas.LocalAgent.Tray/Atlas.LocalAgent.Tray.csproj" />
+  <Project Path="Atlas.LocalAgent.Tests/Atlas.LocalAgent.Tests.csproj" />
+  <Project Path="Atlas.LocalAgent.RoutingQa/Atlas.LocalAgent.RoutingQa.csproj" />
+  <Project Path="qa/Atlas.LocalAgent.IdentityLab/Atlas.LocalAgent.IdentityLab.csproj" />
+</Solution>

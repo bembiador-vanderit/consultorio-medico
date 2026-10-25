@@ -157,6 +157,7 @@ def test_doctor_appointment_list_is_filtered_by_current_user():
 
     compiled_query = str(db.query.compile(compile_kwargs={"literal_binds": True}))
     assert "appointments.doctor_id = 11" in compiled_query
+    assert "JOIN patients" in compiled_query
 
 
 def test_doctor_creates_appointment_for_self():

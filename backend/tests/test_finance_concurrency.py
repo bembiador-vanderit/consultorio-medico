@@ -6,13 +6,13 @@ from threading import Barrier
 from uuid import uuid4
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, MetaData
 from sqlalchemy.orm import Session
 from app.db import Base
 from app.models import CareCenter, User, Role, Patient
-from app.models.finance import CashMovement, Invoice
-from app.schemas.finance import OpenRegister, CloseRegister, NewInvoice, Payment
-from app.services import finance
+from app.models.finance import CashMovement, Invoice, CardProviderSetting, CardBatch, CardBatchAudit
+from app.schemas.finance import OpenRegister, CloseRegister, CloseCardBatch, NewInvoice, Payment
+from app.services import finance, card_batches
 from app.services.bootstrap import seed_identity
 
 
@@ -31,9 +31,15 @@ def postgres():
         center = CareCenter(name='Synthetic', city='Test')
         patient = Patient(first_name='Synthetic', last_name='Finance', date_of_birth=date(1990,1,1))
         db.add_all([*users, center, patient]); db.commit()
+        db.add(CardProviderSetting(center_id=center.id, provider='CARDNET', enabled=True, updated_by=users[0].id))
+        db.commit()
         uid, uid2, cid, pid = users[0].id, users[1].id, center.id, patient.id
     yield engine, (uid, uid2, cid, pid)
-    Base.metadata.drop_all(engine); engine.dispose()
+    # Use actual constraint names for safe cleanup of this guarded disposable database.
+    cleanup = MetaData()
+    cleanup.reflect(engine)
+    cleanup.drop_all(engine)
+    engine.dispose()
 
 
 def race(engine, functions):
@@ -86,13 +92,29 @@ def test_two_cashiers_cannot_overpay_one_invoice(postgres):
 def test_concurrent_retry_has_one_mixed_operation(postgres):
     engine, ids = postgres
     r1, _, iid = setup_payment(engine, ids)
-    p = Payment(register_id=r1, request_key=uuid4(), parts=[{'method':'cash','amount':'40'}, {'method':'card','amount':'60'}])
+    p = Payment(register_id=r1, request_key=uuid4(), parts=[{'method':'cash','amount':'40'}, {'method':'card','amount':'60','batch_number':'QA-LOTE-001','provider':'CARDNET'}])
     def pay(db):
         finance.pay_invoice(db, db.get(User, ids[0]), iid, p)
     assert race(engine, [pay, pay]) == [200, 200]
     with Session(engine) as db:
         assert db.get(Invoice, iid).paid_amount == 100
         assert len(db.scalars(select(CashMovement)).all()) == 1
+
+
+def test_concurrent_pos_batch_close_has_one_effective_closure(postgres):
+    engine, ids = postgres
+    r1, _, iid = setup_payment(engine, ids)
+    with Session(engine) as db:
+        finance.pay_invoice(db, db.get(User, ids[0]), iid, Payment(register_id=r1, request_key=uuid4(),
+            parts=[{'method': 'card', 'amount': '60', 'provider': 'CARDNET', 'batch_number': 'QA-LOTE-001'}]))
+    body = CloseCardBatch(provider='CARDNET', batch_number='QA-LOTE-001', declared_count=1, declared_amount='60')
+    def close(db):
+        card_batches.close_batch(db, db.get(User, ids[0]), r1, body)
+    assert sorted(race(engine, [close, close])) == [200, 409]
+    with Session(engine) as db:
+        rows = db.scalars(select(CardBatch)).all()
+        assert len(rows) == 1 and rows[0].state == 'closed' and rows[0].atlas_amount == 60
+        assert len(db.scalars(select(CardBatchAudit).where(CardBatchAudit.action == 'close')).all()) == 1
 
 
 def test_payment_vs_close_keeps_frozen_close_consistent(postgres):

@@ -1,5 +1,6 @@
 """HTTP security regression tests; all identities are synthetic."""
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -11,17 +12,23 @@ from sqlalchemy.pool import StaticPool
 from app.api.routes import administration, auth, centers, follow_ups, users
 from app.core.security import hash_password
 from app.db import Base, get_db
-from app.models import Role, User
+from app.models import OrganizationMembership, Role, User
 from app.models.administration import AdminTransfer, ReauthenticationGrant, SecurityAudit
 from app.services.bootstrap import seed_identity
+from app.services.tenancy import bind_scope
 
 PASSWORD = "SyntheticPassword123"
 
 @pytest.fixture
-def api():
+def api(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     with Session(engine) as db:
+        # The security fixture supplies its own administrators; never depend on
+        # an optional INITIAL_ADMIN_* value from the developer environment.
+        monkeypatch.setattr("app.services.bootstrap.get_settings", lambda: SimpleNamespace(
+            initial_admin_email=None, initial_admin_password=None,
+        ))
         seed_identity(db)
         roles = {role.code: role for role in db.scalars(select(Role)).all()}
         for name, role in (("admin", "admin"), ("other", "admin"), ("doctor", "doctor"), ("secretary", "secretary")):
@@ -106,16 +113,49 @@ def test_proof_is_bound_single_use_expiring_and_audited(api):
 
 
 def test_block_unblock_does_not_revive_token_and_last_admin_survives(api):
-    client, _, ids = api
+    client, engine, ids = api
+    with Session(engine) as db:
+        roles = {role.code: role for role in db.scalars(select(Role)).all()}
+        for name, role_code in (("admin", "admin"), ("other", "admin"), ("doctor", "doctor"), ("secretary", "secretary")):
+            db.add(OrganizationMembership(
+                organization_id=1, user_id=ids[name], state="active", roles=[roles[role_code]],
+            ))
+        db.commit()
+
+    def tenant_session():
+        with Session(engine) as db:
+            bind_scope(db, "tenant", 1)
+            yield db
+
+    client.app.dependency_overrides[get_db] = tenant_session
+
+    def active_admin_ids():
+        with Session(engine) as db:
+            bind_scope(db, "tenant", 1)
+            return {user.id for user in db.scalars(select(User)).all()
+                    if user.is_active and any(role.code == "admin" for role in user.roles)}
+
+    assert active_admin_ids() == {ids["admin"], ids["other"]}
     old = login(client, "doctor")
     admin = login(client)
     path = f"/api/v1/users/{ids['doctor']}/status"
     assert mutate(client, admin, "PUT", path, {"is_active": False}).status_code == 200
     assert mutate(client, admin, "PUT", path, {"is_active": True}).status_code == 200
     assert client.get("/api/v1/auth/me", headers=old).status_code == 401
+    assert active_admin_ids() == {ids["admin"], ids["other"]}
+    assert mutate(client, admin, "PUT", f"/api/v1/users/{ids['admin']}/status", {"is_active": False}).status_code == 422
+    assert mutate(client, admin, "PUT", f"/api/v1/users/{ids['admin']}/roles", {"role_codes": ["secretary"]}).status_code == 422
     assert mutate(client, admin, "PUT", f"/api/v1/users/{ids['other']}/status", {"is_active": False}).status_code == 200
+    assert active_admin_ids() == {ids["admin"]}
     assert mutate(client, admin, "PUT", f"/api/v1/users/{ids['admin']}/status", {"is_active": False}).status_code == 409
     assert mutate(client, admin, "PUT", f"/api/v1/users/{ids['admin']}/roles", {"role_codes": ["secretary"]}).status_code == 409
+    with Session(engine) as db:
+        bind_scope(db, "tenant", 1)
+        current = db.get(User, ids["admin"])
+        assert current.is_active and current.tenant_membership().state == "active"
+        assert {role.code for role in current.roles} == {"admin"}
+        other = db.get(User, ids["other"])
+        assert other.tenant_membership().state == "suspended"
 
 
 def test_no_admin_checkbox_or_create_escalation_and_individual_denial(api):

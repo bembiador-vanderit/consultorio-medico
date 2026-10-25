@@ -24,12 +24,12 @@ export function QuickActions({ actions, onNavigate }: { actions: readonly Dashbo
 }
 
 export function TodayAppointments({ appointments, loading, error, onOpenAgenda }: { appointments: Appointment[]; loading: boolean; error: string | null; onOpenAgenda?: () => void }) {
-  const sorted = [...appointments].sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
+  const sorted = [...appointments].sort((a, b) => (a.appointment_time ?? "99:99").localeCompare(b.appointment_time ?? "99:99") || (a.daily_booking_order ?? 0) - (b.daily_booking_order ?? 0));
   return <DashboardCard title="Agenda de hoy" icon="calendar" action={onOpenAgenda && <Button variant="ghost" size="sm" onClick={onOpenAgenda}>Ver agenda</Button>}>
     {loading && <p role="status" className="dashboard-empty">Cargando citas de hoy…</p>}
     {error && <p role="alert" className="dashboard-error">{error}</p>}
     {!loading && !error && !appointments.length && <p className="dashboard-empty">No hay citas para hoy dentro de tu alcance.</p>}
-    {!loading && !error && appointments.length > 0 && <ol className="dashboard-appointments">{sorted.slice(0, 5).map((appointment) => <li key={appointment.id}><time>{appointment.appointment_time.slice(0, 5)}</time><div><strong title={appointment.patient_name}>{appointment.patient_name}</strong><span title={appointment.reason || appointment.doctor_name}>{appointment.reason || appointment.doctor_name}{appointment.center_name ? ` · ${appointment.center_name}` : ""}</span></div><AppointmentStatusBadge status={appointment.status} /></li>)}</ol>}
+    {!loading && !error && appointments.length > 0 && <ol className="dashboard-appointments">{sorted.slice(0, 5).map((appointment) => <li key={appointment.id}><time>{appointment.appointment_time?.slice(0, 5) ?? `Orden de agenda ${appointment.daily_booking_order ?? "—"}`}</time><div><strong title={appointment.patient_name}>{appointment.patient_name}</strong><span title={appointment.reason || appointment.doctor_name}>{appointment.reason || appointment.doctor_name}{appointment.center_name ? ` · ${appointment.center_name}` : ""}</span></div><AppointmentStatusBadge status={appointment.status} /></li>)}</ol>}
     {!loading && !error && appointments.length > 5 && <p className="atlas-help dashboard-list-note">Mostrando 5 de {appointments.length} citas. Consulte el resto en Agenda.</p>}
   </DashboardCard>;
 }

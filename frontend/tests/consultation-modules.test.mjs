@@ -24,3 +24,49 @@ test("vitales envía nulls y adopta el resultado canónico", async () => { let s
 test("vitales informa dirty, conserva el borrador ante error y limpia tras respuesta canónica", async () => { const dirty = []; let fail = true; let saved; api.defaults.adapter = async config => { if (fail) throw Object.assign(new Error("rechazado"), { response: { data: { detail: "Rechazado" } } }); saved = { ...vitalSignsFixture, systolic_pressure: 122, updated_at: "2026-09-16T11:00:00" }; return { data: saved, status: 200, statusText: "OK", headers: {}, config }; }; const props = value => ({ episodeId: 81, historyId: 42, vitalSigns: value, completed: false, loading: false, onSaved() {}, onDirtyChange(value) { dirty.push(value); } }); await act(async () => root.render(h(VitalSignsModule, props(vitalSignsFixture)))); await settle(); const input = host.querySelector("input"); await act(async () => change(input, "122")); await settle(); assert.equal(dirty.at(-1), true); await act(async () => [...host.querySelectorAll("button")].at(-1).click()); await settle(); assert.equal(input.value, "122"); assert.equal(dirty.at(-1), true); fail = false; await act(async () => [...host.querySelectorAll("button")].at(-1).click()); await settle(); await act(async () => root.render(h(VitalSignsModule, props(saved)))); await settle(); assert.equal(dirty.at(-1), false); });
 
 test("vitales reemplaza el episodio y completed no permite mutación", async () => { const props = (episodeId, historyId, value, completed = false) => ({ episodeId, historyId, vitalSigns: value, completed, loading: false, onSaved() {} }); await act(async () => root.render(h(VitalSignsModule, props(81, 42, vitalSignsFixture)))); assert.equal(host.querySelector("input").value, "120"); await act(async () => root.render(h(VitalSignsModule, props(82, 77, null)))); await settle(); assert.equal(host.querySelector("input").value, ""); await act(async () => root.render(h(VitalSignsModule, props(82, 77, null, true)))); assert.equal([...host.querySelectorAll("button")].at(-1), undefined); assert.equal(host.querySelector("input").disabled, true); });
+
+test("IMC se deriva de peso y talla en cm, se actualiza y no se envía al guardar", async () => {
+  let payload;
+  api.defaults.adapter = async (config) => {
+    payload = JSON.parse(config.data);
+    return { data: { ...vitalSignsFixture, ...payload }, status: 200, statusText: "OK", headers: {}, config };
+  };
+  await act(async () => root.render(h(VitalSignsModule, { episodeId: 81, historyId: 42, vitalSigns: null, completed: false, loading: false, onSaved() {} })));
+  const [weight, height] = [...host.querySelectorAll("input")].slice(-2);
+  const bmi = host.querySelector('output[aria-label="IMC"]');
+  assert.equal(bmi.textContent, "—");
+  assert.equal(host.querySelectorAll('input[aria-label="IMC"]').length, 0);
+
+  await act(async () => change(weight, "80"));
+  assert.equal(bmi.textContent, "—");
+  await act(async () => change(height, "175"));
+  assert.equal(bmi.textContent, "26.12");
+  await act(async () => change(weight, "60"));
+  assert.equal(bmi.textContent, "19.59");
+  await act(async () => change(height, "160"));
+  assert.equal(bmi.textContent, "23.44");
+
+  await act(async () => [...host.querySelectorAll("button")].at(-1).click());
+  await settle();
+  assert.equal(payload.weight_kg, 60);
+  assert.equal(payload.height_cm, 160);
+  assert.equal("bmi" in payload, false);
+  assert.equal("imc" in payload, false);
+
+  await act(async () => change(weight, ""));
+  assert.equal(bmi.textContent, "—");
+  await act(async () => change(weight, "0"));
+  assert.equal(bmi.textContent, "—");
+  await act(async () => change(weight, "60"));
+  await act(async () => change(height, "0"));
+  assert.equal(bmi.textContent, "—");
+  await act(async () => change(height, ""));
+  assert.equal(bmi.textContent, "—");
+  assert.doesNotMatch(host.textContent, /NaN|Infinity/);
+});
+
+test("IMC histórico se calcula al leer signos vitales guardados", async () => {
+  await act(async () => root.render(h(VitalSignsModule, { episodeId: 81, historyId: 42, vitalSigns: { ...vitalSignsFixture, weight_kg: 80, height_cm: 175 }, completed: true, loading: false, onSaved() {} })));
+  assert.equal(host.querySelector('output[aria-label="IMC"]').textContent, "26.12");
+  assert.equal(host.querySelector("input").disabled, true);
+});

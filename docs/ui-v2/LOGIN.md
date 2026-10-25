@@ -1,6 +1,6 @@
 # Login — UI V2 fase 1
 
-La entrada real sin sesión de Atlas Consultorio usa ahora la fundación aprobada
+La entrada real sin sesión de Atlas Pérgamo usa ahora la fundación aprobada
 en PR #25. Rama `frontend/ui-v2-login`, creada desde
 `30f5efe429ed630da8a8806c5b67ce10ba00b48e` de `feat/complete-care-context`.
 

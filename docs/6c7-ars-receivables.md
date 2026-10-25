@@ -25,7 +25,62 @@ La remesa identifica aseguradora y opcionalmente centro. Una remesa sin centro s
 
 `GET /api/v1/ars/claims` ofrece filtros por aseguradora, estado, paciente, centro y fechas de servicio; detalle incluye cobertura original, eventos y aplicaciones. `GET /receivables` lista saldos abiertos, fecha, paciente, centro, estado y aging 0–30, 31–60, 61–90, 90+ días. `GET /reconciliation` agrupa por aseguradora y período **de fecha de servicio**, con reclamado, aprobado explícito, cobrable provisional, pagado, glosado y pendiente. La ausencia de aprobación no se reporta como monto aprobado. Una remesa recibida en un período posterior se atribuye en ese resumen al período de servicio de sus reclamaciones; el listado de remesas usa su propia fecha de recepción. Los reportes son operativos, no asientos de contabilidad ni reconocimiento fiscal.
 
-## Permisos, aislamiento y auditoría
+## Aplicación idempotente de remesas (0065)
+
+`POST /ars/remittances/{id}/apply` exige `request_key` UUID además de `allocations`.
+La clave identifica una intención, no un importe. La misma clave con el mismo
+usuario, remesa y distribución devuelve HTTP 200 con el resultado original;
+no crea aplicaciones, eventos ni auditorías contables adicionales. Otra clave
+permite una distribución deliberada idéntica si quedan saldos suficientes.
+Reutilizar una clave para otra distribución, remesa o actor devuelve 409.
+
+`ars_apply_operations` persiste organización, clave, SHA256 canónico de remesa
+y reclamaciones/importes (ordenados, decimales de dos posiciones), actor,
+fecha y respuesta original. `UNIQUE(organization_id, request_key)` protege la
+concurrencia incluso entre remesas distintas. Las aplicaciones nuevas enlazan
+`operation_id`; las históricas conservan NULL, sin inventar claves ni backfill.
+El fingerprint solo detecta un uso contradictorio de la clave: nunca sustituye
+la identidad explícita de la intención.
+
+La operación, aplicaciones, saldos y auditoría se confirman en una transacción.
+Se conserva el bloqueo de remesa y de reclamaciones ordenadas. Un conflicto de
+unicidad concurrente revierte antes de recuperar al ganador. Cualquier fallo
+revierte toda la operación. Cada reintento sigue exigiendo autenticación,
+`ars:payment`, organización y acceso actual a los centros de la remesa y sus
+reclamaciones. Conocer una clave no concede autorización.
+
+Un reverso mantiene su flujo existente y su identidad por aplicación, separado
+de la intención de aplicar. Reintentar una aplicación ya revertida recupera el
+resultado original, pero no vuelve a aplicar dinero ni deshace el reverso.
+La interfaz debe refrescar los saldos actuales después de confirmar el resultado.
+
+El frontend genera la clave al confirmar «Aplicar importes», conserva el cuerpo
+inmutable en memoria durante una respuesta incierta y ofrece «Reintentar
+aplicación». Bloquea doble clic sin esperar al siguiente render; mientras espera
+confirmación no permite alterar importes ni cerrar/cambiar la remesa. Solo un
+éxito confirmado libera la intención; un 422 de validación (transacción revertida)
+permite corregir y formular otra. Errores de red, servidor y 409 conservan la clave.
+No se guardan claves en localStorage ni credenciales nuevas. La conservación es
+durante la vida del formulario, no una recuperación persistente tras cerrar el
+navegador: antes de iniciar otra operación después de abandonar una respuesta
+incierta, hay que verificar el detalle actualizado de la remesa.
+
+La revisión `0065_ars_apply_idempotency`, descendiente de 0064, agrega una tabla y
+una referencia nullable; no modifica importes anteriores. La activación local
+controlada aplicó únicamente esta revisión con respaldo validado y 93 tablas
+históricas preservadas (94 incluyendo la tabla nueva inicialmente vacía).
+El target local de arranque se sincronizó con `0065_ars_apply_idempotency`.
+En instalaciones que aún no la hayan activado, las lecturas históricas siguen
+siendo compatibles y apply falla de forma cerrada con 503 explicativo.
+
+Validación reproducible exclusivamente en PostgreSQL desechable:
+`backend/tests/validate_ars_idempotency_postgres.py` comprueba host/base QA,
+roundtrip 0064 → 0065 → 0064 → 0065, huellas de tablas anteriores (incluida una
+aplicación histórica), clave única, reintentos HTTP autenticados, nuevas
+intenciones, carreras iguales/cross-remesa y rollback inyectado después del
+flush contable. Las suites ARS/finanzas y frontend incluyen regresiones.
+
+## Permisos, aislamiento y auditoría (vigentes)
 
 Se agregan `ars:read`, `ars:claim`, `ars:send`, `ars:glosa`, `ars:payment`, `ars:reconcile` y `ars:report`. El administrador recibe estas capacidades; médico y secretaría no las heredan automáticamente. 6C3 permite denegación individual. Cada ruta exige su capacidad y el backend aplica el contexto de organización del host; listas y búsquedas se limitan además a centros autorizados. Las referencias cruzadas se validan antes de escribir y `TenantOwned` refuerza organización en cada FK. Los eventos y `security_audits` registran actor, organización, centro, tipo de operación y entidad sin copiar números de afiliación o autorización a la auditoría de seguridad.
 

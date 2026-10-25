@@ -4,7 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -43,13 +43,16 @@ from app.services.clinical_access import (
     scope_histories,
 )
 from app.services.clinical_coverage import coverage_status
-from app.services.patient_scope import require_patient_clinical_scope
+from app.services.patient_scope import require_patient_clinical_scope, scope_patient_identities
+from app.services.administration import effective_permissions
 from app.services.specialty_templates import (
     default_module_descriptors,
     module_descriptor,
     resolve_specialty_template,
     validate_template_module_keys,
 )
+
+from app.services import cardiology
 
 router = APIRouter(prefix="/clinical-history", tags=["Historia clínica"])
 access = require_permission("clinical:access")
@@ -78,6 +81,8 @@ class ConsultationWorkspaceResponse(BaseModel):
 
 
 class ConsultationContextResponse(BaseModel):
+    cardiology_enabled: bool = False
+    patient_registered_sex: str | None = None
     appointment_id: int
     patient_id: int
     doctor_id: int
@@ -85,7 +90,7 @@ class ConsultationContextResponse(BaseModel):
     specialty_id: int | None
     specialty_name: str
     appointment_date: str
-    appointment_time: str
+    appointment_time: str | None
     appointment_reason: str | None
     appointment_status: str
     patient_blood_type: str | None = None
@@ -225,10 +230,21 @@ def _ensure_appointment_available(
 def list_clinical_audit_logs(
     history_id: int | None = None,
     limit: int = 100,
-    _=Depends(audit_access),
+    user=Depends(audit_access),
     db: Session = Depends(get_db),
 ):
     query = select(ClinicalAuditLog).order_by(ClinicalAuditLog.created_at.desc()).limit(min(max(limit, 1), 200))
+    # Safety snapshots are clinical content, not generic administrative logs.
+    # They are read only through the patient-scoped medical safety-history API.
+    query = query.where(ClinicalAuditLog.resource_type != "patient_safety_entry")
+    query = query.where(ClinicalAuditLog.resource_type != "patient_care_relationship")
+    # Patient diffs contain confidential demographics. Administrative audit
+    # access alone must not bypass the new patient permission or identity scope.
+    if "patients:view" in effective_permissions(user) and any(role.code in {"admin", "doctor", "secretary"} for role in user.roles):
+        visible_patients = scope_patient_identities(select(Patient.id), user, db)
+        query = query.where(or_(ClinicalAuditLog.resource_type != "patient", ClinicalAuditLog.resource_id.in_(visible_patients)))
+    else:
+        query = query.where(ClinicalAuditLog.resource_type != "patient")
     if history_id is not None:
         query = query.where(ClinicalAuditLog.clinical_history_id == history_id)
     return list(db.scalars(query).all())
@@ -289,6 +305,8 @@ def get_consultation_context(appointment_id: int, user: User = Depends(access), 
         previous_consultations.append(item)
 
     result = ConsultationContextResponse(
+        cardiology_enabled=bool(appointment.specialty and appointment.specialty.code == "cardiology" and cardiology.ready(db)),
+        patient_registered_sex=db.get(Patient, appointment.patient_id).registered_sex,
         appointment_id=appointment.id,
         patient_id=appointment.patient_id,
         doctor_id=appointment.doctor_id,
@@ -296,7 +314,7 @@ def get_consultation_context(appointment_id: int, user: User = Depends(access), 
         specialty_id=appointment.specialty_id,
         specialty_name=appointment.specialty.name if appointment.specialty else "No especificada (registro histórico)",
         appointment_date=appointment.appointment_date.isoformat(),
-        appointment_time=appointment.appointment_time.isoformat(),
+        appointment_time=appointment.appointment_time.isoformat() if appointment.appointment_time else None,
         appointment_reason=appointment.reason,
         appointment_status=appointment.status,
         patient_blood_type=db.get(Patient, appointment.patient_id).blood_type,
@@ -512,6 +530,13 @@ def complete_clinical_history(history_id: int, user: User = Depends(access), db:
         },
     )
     try:
+        # Persist the association in the SAME successful completion transaction.
+        # Bulk UPDATE above leaves the identity-map value stale until refreshed.
+        db.refresh(history)
+        from app.services.patient_care import observe_completed_consultation
+        observe_completed_consultation(db, user, history)
+        from app.services.cardiology import complete_follow_up
+        complete_follow_up(db, user, history)
         db.commit()
     except SQLAlchemyError:
         db.rollback()

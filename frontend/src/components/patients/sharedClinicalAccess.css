@@ -1,0 +1,7 @@
+.shared-clinical-access{border:1px solid #bad8d3;border-radius:.75rem;padding:1rem;min-width:0;background:#f6faf9}
+.shared-clinical-access h4{font-weight:600;color:#245c53}.shared-clinical-access p{font-size:.875rem;margin:.5rem 0}
+.shared-clinical-actions{display:flex;flex-wrap:wrap;gap:.5rem}.shared-clinical-actions button{white-space:normal}
+.shared-clinical-records{min-width:0;overflow-wrap:anywhere}.shared-clinical-records article{border:1px solid #d3e2df;border-radius:.5rem;padding:1rem;margin:1rem 0}
+.shared-clinical-records h3{font-weight:600}.shared-clinical-records dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-top:1rem}
+.shared-clinical-records dt{font-weight:600}.shared-clinical-records dd{margin:0;white-space:pre-wrap}.shared-clinical-records nav{display:flex;gap:.5rem;flex-wrap:wrap}
+@media(max-width:600px){.shared-clinical-records dl{grid-template-columns:minmax(0,1fr)}.shared-clinical-actions{display:grid;grid-template-columns:minmax(0,1fr)}}

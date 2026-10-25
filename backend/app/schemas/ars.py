@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Literal
+from uuid import UUID
 from pydantic import Field
 from app.schemas.finance import Input, Money, PositiveMoney, Reason
 
@@ -41,6 +42,7 @@ class Allocation(Input):
 
 
 class ApplyInput(Input):
+    request_key: UUID
     allocations: list[Allocation] = Field(min_length=1, max_length=100)
 
 

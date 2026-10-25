@@ -9,7 +9,7 @@ export const sexLabels: Record<string, string> = { female: "Femenino", male: "Ma
 export const bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 type Section = "personal" | "clinical-basic" | "clinical-contacts";
-type Props = { value: PatientDemographics; onChange: (value: PatientDemographics) => void; section: Section };
+type Props = { value: PatientDemographics; onChange: (value: PatientDemographics) => void; section: Section; defaultCountry?: boolean };
 type Country = { code: string; name: string };
 type Level = { id: number; position: number; key: string; display_label: string };
 type Unit = { id: number; name: string; parent_id: number | null };
@@ -23,7 +23,7 @@ function InputWithIcon({ icon, ...props }: ComponentProps<typeof Input> & { icon
   return icon ? <span className="patient-form-input-with-icon"><Input {...props} /><PatientFormIcon name={icon} size={18} /></span> : <Input {...props} />;
 }
 
-export default function PatientDemographicFields({ value, onChange, section }: Props) {
+export default function PatientDemographicFields({ value, onChange, section, defaultCountry = true }: Props) {
   const [countries, setCountries] = useState<Country[]>([]);
   const [levels, setLevels] = useState<Level[]>([]);
   const [roots, setRoots] = useState<Unit[]>([]);
@@ -43,7 +43,7 @@ export default function PatientDemographicFields({ value, onChange, section }: P
         if (!active) return;
         setCountries(countryResponse.data);
         // Legacy values must remain untouched until a person explicitly maps them.
-        if (!value.country_code && !value.province && !value.locality_id) {
+        if (defaultCountry && !value.country_code && !value.province && !value.locality_id) {
           onChange({ ...value, country_code: settingsResponse.data.default_country_code });
         }
       })

@@ -1,6 +1,7 @@
 """Check 6C7 additive migration and a real PostgreSQL ARS payment cycle."""
 import subprocess
 from datetime import date, time
+from uuid import uuid4
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session
 from app.core.config import get_settings
@@ -57,7 +58,7 @@ with Session(engine) as db:
         ars.transition(db, actor, claim.id, Transition(state=state))
     rem = ars.create_remittance(db, actor, RemittanceInput(insurance_company_id=company.id,
         center_id=center.id, received_on=date(2026, 10, 5), reference='SYN-ARS-MIGRATION', amount='1000'))
-    ars.apply(db, actor, rem.id, ApplyInput(allocations=[{'claim_id': claim.id, 'amount': '600'}]))
+    ars.apply(db, actor, rem.id, ApplyInput(request_key=uuid4(), allocations=[{'claim_id': claim.id, 'amount': '600'}]))
     assert claim.balance == 400 and rem.unapplied == 400
     from app.models.ars import ArsApplication
     application = db.scalar(select(ArsApplication).where(ArsApplication.claim_id == claim.id))

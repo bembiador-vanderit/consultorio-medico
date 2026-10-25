@@ -15,7 +15,7 @@ export default function PatientInsurancePanel({ patientId, patientName, user, on
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState<number | null>(null);
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
-  const canWrite = !!user.permissions?.includes("insurance:manage") && !!user.permissions?.includes("patients:access");
+  const canWrite = !!user.permissions?.includes("insurance:manage") && !!user.permissions?.includes("patients:view");
   async function load() {
     const [i, c, p] = await Promise.all([api.get(`/insurance/patients/${patientId}`), api.get("/insurance/companies?include_inactive=true"), api.get("/insurance/plans?include_inactive=true")]);
     setItems(i.data); setCompanies(c.data); setPlans(p.data);

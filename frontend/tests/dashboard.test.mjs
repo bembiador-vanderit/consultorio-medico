@@ -40,7 +40,10 @@ afterEach(async () => { await act(async () => root.unmount()); api.defaults.adap
 after(async () => { await server.close(); dom.window.close(); });
 
 async function mount(roles, specialty_names = []) {
-  data.set("/auth/me", { id: 1, full_name: "Dr. Osiris Valdés", email: "osiris@example.com", roles, specialty_names, is_active: true });
+  const permissions = ["patients:access", "patients:view", "patients:edit", "centers:access",
+    ...(roles.includes("doctor") ? ["clinical:access"] : []),
+    ...(roles.includes("admin") ? ["users:manage", "centers:manage"] : [])];
+  data.set("/auth/me", { id: 1, full_name: "Dr. Osiris Valdés", email: "osiris@example.com", roles, permissions, specialty_names, is_active: true });
   await act(async () => { root.render(h(App)); await Promise.resolve(); });
   await act(async () => { await Promise.resolve(); });
 }

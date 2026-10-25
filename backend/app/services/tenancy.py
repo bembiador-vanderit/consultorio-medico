@@ -125,6 +125,10 @@ def scope_writes(db, _context, _instances):
                 if value is None:
                     continue
                 for fk in column.foreign_keys:
+                    if fk.constraint.name in {"fk_queue_line_waiting_room_scope", "fk_queue_display_waiting_room_scope"} and column.key != "waiting_room_id":
+                        # The composite reference is checked as a whole by the DB; its
+                        # organization/center components are not standalone room keys.
+                        continue
                     table = fk.column.table
                     if table.name == "organizations":
                         continue

@@ -51,6 +51,8 @@
 .atlas-skeleton { min-height: 1.25rem; width: 100%; background: var(--atlas-surface-secondary); border-radius: var(--atlas-radius-sm); }
 .atlas-divider { border: 0; border-top: 1px solid var(--atlas-border); margin: var(--atlas-space-4) 0; }
 .atlas-field { display: flex; flex-direction: column; gap: var(--atlas-space-2); min-width: 0; }
+.atlas-required-mark { color: var(--atlas-danger); font-weight: 600; font-size: .9em; }
+.atlas-required-legend { margin: 0; color: var(--atlas-text-muted); font-size: var(--atlas-type-caption); }
 .atlas-input { width: 100%; min-height: 44px; border: 1px solid var(--atlas-control-border); border-radius: var(--atlas-radius-sm); padding: var(--atlas-space-2) var(--atlas-space-3); color: var(--atlas-text-primary); background: var(--atlas-surface); font: inherit; }
 textarea.atlas-input { resize: vertical; }
 .atlas-input::placeholder { color: var(--atlas-text-muted); }

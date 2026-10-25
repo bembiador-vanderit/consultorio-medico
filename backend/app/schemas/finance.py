@@ -7,6 +7,7 @@ Money = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2, allow_in
 PositiveMoney = Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=2, allow_inf_nan=False)]
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 Method = Literal['cash', 'card', 'transfer', 'check', 'other']
+CardProvider = Literal['CARDNET', 'AZUL', 'VISANET']
 
 
 class Input(BaseModel):
@@ -27,6 +28,42 @@ class CloseRegister(Input):
 class Part(Input):
     method: Method
     amount: PositiveMoney
+    batch_number: str | None = Field(default=None, max_length=40)
+    provider: CardProvider | None = None
+
+    @model_validator(mode='after')
+    def card_batch(self):
+        if self.method == 'card':
+            self.batch_number = (self.batch_number or '').strip()
+            if not self.batch_number:
+                raise ValueError('Indique el número de lote del voucher para pagos con tarjeta')
+            if self.provider is None:
+                raise ValueError('Seleccione la prestadora de la tarjeta')
+        elif self.batch_number is not None or self.provider is not None:
+            raise ValueError('La prestadora y el lote solo corresponden a pagos con tarjeta')
+        return self
+
+
+class CardProviderUpdate(Input):
+    enabled: bool
+
+
+class CloseCardBatch(Input):
+    provider: CardProvider
+    batch_number: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    declared_count: int = Field(ge=0, le=100000)
+    declared_amount: Money
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class ReopenCardBatch(Input):
+    reason: Reason
+
+
+class CorrectCardAssignment(Input):
+    provider: CardProvider
+    batch_number: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    reason: Reason
 
 
 class Payment(Input):

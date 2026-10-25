@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { DashboardCard, MetricCard, QuickActions, TodayAppointments } from "../components/dashboard/DashboardBlocks";
-import { getDashboardActions, getDashboardRoleSummaries, roleLabel } from "../components/dashboard/dashboardModel";
+import { getDashboardActions, getDashboardRoleSummaries, getDashboardWidgets, normalizeDashboardWidgetOrder, roleLabel } from "../components/dashboard/dashboardModel";
 import type { AppView } from "../navigation/navigation";
 import { api } from "../services/api";
 import { announceNotificationsChanged, notificationsChangedEvent } from "../services/notificationEvents";
@@ -19,18 +19,19 @@ type Loadable<T> = { loading: boolean; data: T; error: string | null };
 const initial = <T,>(data: T): Loadable<T> => ({ loading: true, data, error: null });
 const today = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; };
 
-export default function Dashboard({ user, patientsVersion, onNavigate, onNewAppointment }: { user: User; patientsVersion: number; onNavigate: (view: AppView) => void; onNewAppointment?: () => void }) {
+export default function Dashboard({ user, patientsVersion, onNavigate, onNewAppointment, widgetOrder = [] }: { user: User; patientsVersion: number; onNavigate: (view: AppView) => void; onNewAppointment?: () => void; widgetOrder?: readonly string[] }) {
   const [patients, setPatients] = useState<Loadable<number | null>>(() => initial(null));
   const [appointments, setAppointments] = useState<Loadable<Appointment[]>>(() => initial([]));
   const [notifications, setNotifications] = useState<Loadable<Notification[]>>(() => initial([]));
   const [followUps, setFollowUps] = useState<Loadable<FollowUp[]>>(() => initial([]));
   const [administration, setAdministration] = useState<Loadable<{ users: AdminUser[]; centers: Center[] }>>(() => initial({ users: [], centers: [] }));
   const canManagePatients = !user.permissions || user.permissions.includes("patients:access");
+  const canViewPatients = !!user.permissions?.includes("patients:view");
   const isDoctor = user.roles.includes("doctor") && (!user.permissions || user.permissions.includes("clinical:access"));
   const isAdmin = user.roles.includes("admin");
 
   async function loadPatients() {
-    if (!canManagePatients) { setPatients({ loading: false, data: null, error: "Sin permiso de pacientes" }); return; }
+    if (!canViewPatients) { setPatients({ loading: false, data: null, error: "Sin permiso de pacientes" }); return; }
     setPatients((current) => ({ ...current, loading: true, error: null }));
     try { const { data } = await api.get<{ count: number }>("/patients/count"); setPatients({ loading: false, data: data.count, error: null }); }
     catch { setPatients({ loading: false, data: null, error: "No fue posible cargar los pacientes disponibles." }); }
@@ -80,6 +81,12 @@ export default function Dashboard({ user, patientsVersion, onNavigate, onNewAppo
   }
 
   const actions = useMemo(() => getDashboardActions(user), [user]);
+  const visibleWidgetIds = getDashboardWidgets(user).map(widget => widget.id);
+  const orderedWidgetIds = normalizeDashboardWidgetOrder(visibleWidgetIds, widgetOrder);
+  const widgetPosition = new Map(orderedWidgetIds.map((id, index) => [id, index]));
+  const byPreference = <T extends { id: string }>(items: T[]) => items.sort((left, right) =>
+    (widgetPosition.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (widgetPosition.get(right.id) ?? Number.MAX_SAFE_INTEGER));
+  const orderedActions = byPreference([...actions]);
   const roleSummaries = useMemo(() => getDashboardRoleSummaries(user), [user]);
   const openFollowUps = followUps.data.filter((item) => item.status !== "completed").length;
   const activeUsers = administration.data.users.filter((item) => item.is_active).length;
@@ -90,23 +97,27 @@ export default function Dashboard({ user, patientsVersion, onNavigate, onNewAppo
       {isDoctor && <div className="dashboard-specialties" aria-label="Especialidades asignadas"><span className="atlas-caption">Especialidades</span>{user.specialty_names?.length ? user.specialty_names.map((name, index) => <span className="atlas-badge atlas-tone--success" key={`${name}-${index}`}>{name}</span>) : <span className="atlas-help">Especialidades pendientes de configurar</span>}</div>}
     </header>
     {roleSummaries.length > 0 && <div className="dashboard-role-context">{roleSummaries.map((summary) => <span key={summary.id} title={summary.description}><NavigationIcon name={summary.id === "admin" ? "users" : summary.id === "doctor" ? "clinical" : "calendar"} />{summary.title}</span>)}</div>}
-    <QuickActions actions={actions} onNavigate={(action) => action.intent === "new-appointment" && onNewAppointment ? onNewAppointment() : onNavigate(action.view)} />
+    <QuickActions actions={orderedActions} onNavigate={(action) => action.intent === "new-appointment" && onNewAppointment ? onNewAppointment() : onNavigate(action.view)} />
     <div className="dashboard-metrics" aria-label="Resumen de actividad">
-      <MetricCard label="Citas de hoy" error={Boolean(appointments.error)} value={appointments.loading ? "…" : appointments.error ? "—" : appointments.data.length} help={appointments.error ?? "Dentro de su alcance"} icon="calendar" tone="sky" />
-      <MetricCard label="Pacientes disponibles" error={Boolean(patients.error)} value={patients.loading ? "…" : patients.data ?? "—"} help={patients.error ?? "Pacientes accesibles"} icon="patient" tone="sage" />
-      <MetricCard label="Notificaciones pendientes" error={Boolean(notifications.error)} value={notifications.loading ? "…" : notifications.error ? "—" : notifications.data.length} help={notifications.error ?? "Avisos para su usuario"} icon="bell" tone="amber" />
-      {isDoctor && <MetricCard label="Seguimientos pendientes" error={Boolean(followUps.error)} value={followUps.loading ? "…" : followUps.error ? "—" : openFollowUps} help={followUps.error ?? "Sin completar"} icon="clinical" tone="mint" />}
-      {isAdmin && <MetricCard label="Usuarios activos" error={Boolean(administration.error)} value={administration.loading ? "…" : administration.error ? "—" : activeUsers} help={administration.error ?? "Cuentas habilitadas"} icon="users" tone="sky" />}
-      {isAdmin && <MetricCard label="Centros activos" error={Boolean(administration.error)} value={administration.loading ? "…" : administration.error ? "—" : activeCenters} help={administration.error ?? "Centros habilitados"} icon="center" tone="sage" />}
+      {byPreference([
+        { id: "metric-appointments", node: <MetricCard label="Citas de hoy" error={Boolean(appointments.error)} value={appointments.loading ? "…" : appointments.error ? "—" : appointments.data.length} help={appointments.error ?? "Dentro de su alcance"} icon="calendar" tone="sky" /> },
+        { id: "metric-patients", node: <MetricCard label="Pacientes disponibles" error={Boolean(patients.error)} value={patients.loading ? "…" : patients.data ?? "—"} help={patients.error ?? "Pacientes accesibles"} icon="patient" tone="sage" /> },
+        { id: "metric-notifications", node: <MetricCard label="Notificaciones pendientes" error={Boolean(notifications.error)} value={notifications.loading ? "…" : notifications.error ? "—" : notifications.data.length} help={notifications.error ?? "Avisos para su usuario"} icon="bell" tone="amber" /> },
+        { id: "metric-follow-ups", node: <MetricCard label="Seguimientos pendientes" error={Boolean(followUps.error)} value={followUps.loading ? "…" : followUps.error ? "—" : openFollowUps} help={followUps.error ?? "Sin completar"} icon="clinical" tone="mint" /> },
+        { id: "metric-users", node: <MetricCard label="Usuarios activos" error={Boolean(administration.error)} value={administration.loading ? "…" : administration.error ? "—" : activeUsers} help={administration.error ?? "Cuentas habilitadas"} icon="users" tone="sky" /> },
+        { id: "metric-centers", node: <MetricCard label="Centros activos" error={Boolean(administration.error)} value={administration.loading ? "…" : administration.error ? "—" : activeCenters} help={administration.error ?? "Centros habilitados"} icon="center" tone="sage" /> },
+      ].filter(item => visibleWidgetIds.includes(item.id))).map(item => <div key={item.id} data-dashboard-widget={item.id}>{item.node}</div>)}
     </div>
     <div className="dashboard-summary-grid">
-      <TodayAppointments appointments={appointments.data} loading={appointments.loading} error={appointments.error} onOpenAgenda={() => onNavigate("appointments")} />
-      <DashboardCard title="Notificaciones pendientes" icon="bell" className="dashboard-notifications">
+      {byPreference([
+        { id: "agenda-today", node: <TodayAppointments appointments={appointments.data} loading={appointments.loading} error={appointments.error} onOpenAgenda={() => onNavigate("appointments")} /> },
+        { id: "notifications-panel", node: <DashboardCard title="Notificaciones pendientes" icon="bell" className="dashboard-notifications">
         {notifications.loading && <p role="status" className="dashboard-empty">Cargando notificaciones…</p>}
         {!notifications.loading && notifications.error && <p role="alert" className="dashboard-error">{notifications.error}</p>}
         {!notifications.loading && !notifications.error && !notifications.data.length && <p className="dashboard-empty">No hay notificaciones pendientes.</p>}
         {!notifications.loading && !notifications.error && notifications.data.length > 0 && <ul className="dashboard-notification-list">{notifications.data.map((notification) => <li key={notification.id}><span className="dashboard-icon dashboard-tone--amber" aria-hidden="true"><NavigationIcon name="bell" /></span><div><strong>{notification.title}</strong><p>{notification.message}</p><Button variant="ghost" size="sm" onClick={() => void markRead(notification.id)}>Marcar leída</Button></div></li>)}</ul>}
-      </DashboardCard>
+        </DashboardCard> },
+      ].filter(item => visibleWidgetIds.includes(item.id))).map(item => <div key={item.id} data-dashboard-widget={item.id}>{item.node}</div>)}
     </div>
   </section>;
 }

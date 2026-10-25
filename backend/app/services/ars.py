@@ -1,12 +1,15 @@
 """ARS claim workflow and remittance ledger; no Caja movements are created."""
 from datetime import datetime
 from decimal import Decimal
+import hashlib
+import json
 from fastapi import HTTPException
-from sqlalchemy import select
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy import select, inspect
 from sqlalchemy.exc import IntegrityError
 from app.models import Appointment, Patient
 from app.models.administration import SecurityAudit
-from app.models.ars import ArsClaim, ArsClaimEvent, ArsRemittance, ArsApplication
+from app.models.ars import ArsClaim, ArsClaimEvent, ArsRemittance, ArsApplication, ArsApplyOperation
 from app.models.finance import Invoice
 from app.models.insurance import AppointmentCoverage, InsuranceCompany
 from app.services.finance import center_access
@@ -199,13 +202,54 @@ def create_remittance(db, user, payload):
 
 
 def apply(db, user, remittance_id, payload):
+    # All errors roll back the intent, applications, balances and audits together.
+    try:
+        return _apply(db, user, remittance_id, payload)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _apply(db, user, remittance_id, payload):
     rem = remittance_access(db, user, remittance_id, lock=True)
+    if not inspect(db.connection()).has_table('ars_apply_operations'):
+        raise HTTPException(503, 'La aplicación segura de remesas requiere activar la migración 0065')
     if len({x.claim_id for x in payload.allocations}) != len(payload.allocations):
         raise HTTPException(422, 'Consolide cada reclamación en una línea')
+    entries = {x.claim_id: x for x in payload.allocations}
+    intent = {'remittance_id': rem.id, 'allocations': [
+        [key, format(entries[key].amount, '.2f')] for key in sorted(entries)]}
+    fingerprint = hashlib.sha256(json.dumps(intent, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    key = str(payload.request_key)
+    query = select(ArsApplyOperation).where(
+        ArsApplyOperation.organization_id == rem.organization_id, ArsApplyOperation.request_key == key)
+    operation = db.scalar(query)
+    if operation is None:
+        # UNIQUE also covers identical keys on different remittances. A loser rolls back
+        # before re-reading the committed winner; no financial write has happened yet.
+        try:
+            operation = ArsApplyOperation(organization_id=rem.organization_id, request_key=key,
+                fingerprint=fingerprint, remittance_id=rem.id, created_by=user.id, response={})
+            db.add(operation)
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            rem = remittance_access(db, user, remittance_id, lock=True)
+            operation = db.scalar(query)
+            if operation is None:
+                raise
+    if operation.response:
+        if operation.remittance_id != rem.id or operation.fingerprint != fingerprint or operation.created_by != user.id:
+            raise HTTPException(409, 'La clave de operación ya corresponde a otra intención o usuario')
+        # Authorization is rechecked on every retry, including all allocated centers.
+        for claim_id in sorted(entries):
+            claim_access(db, user, claim_id)
+        result = operation.response
+        db.rollback()  # Release locks; replay creates no event or financial mutation.
+        return result
     total = sum((x.amount for x in payload.allocations), Decimal('0.00'))
     if total > rem.unapplied:
         raise HTTPException(422, 'Aplicación superior al saldo de la remesa')
-    entries = {x.claim_id: x for x in payload.allocations}
     for claim_id in sorted(entries):
         item = entries[claim_id]
         claim = claim_access(db, user, claim_id, lock=True)
@@ -215,7 +259,7 @@ def apply(db, user, remittance_id, payload):
             raise HTTPException(409, 'La reclamación no está lista para recibir pagos')
         if item.amount > claim.balance:
             raise HTTPException(422, 'Aplicación superior al saldo de la reclamación')
-        row = ArsApplication(center_id=claim.center_id, remittance_id=rem.id, claim_id=claim.id,
+        row = ArsApplication(operation_id=operation.id, center_id=claim.center_id, remittance_id=rem.id, claim_id=claim.id,
                              amount=item.amount, created_by=user.id)
         db.add(row)
         claim.paid_amount += item.amount
@@ -223,8 +267,10 @@ def apply(db, user, remittance_id, payload):
         flush(db)
         event(db, user, claim, 'applied', claim.state, amount=item.amount)
         audit(db, user, 'application_created', row.id, claim.center_id)
+    operation.response = jsonable_encoder(serialize(rem))
+    result = operation.response
     save(db)
-    return rem
+    return result
 
 
 def reverse(db, user, application_id, payload):
@@ -247,7 +293,8 @@ def reverse(db, user, application_id, payload):
 
 
 def serialize(row):
-    result = {c.key: getattr(row, c.key) for c in row.__table__.columns}
+    result = {c.key: getattr(row, c.key) for c in row.__table__.columns
+              if not (isinstance(row, ArsApplication) and c.key == 'operation_id')}
     if isinstance(row, ArsClaim):
         result.update(balance=row.balance, collectible=row.collectible, display_state=row.display_state)
     if isinstance(row, ArsRemittance):

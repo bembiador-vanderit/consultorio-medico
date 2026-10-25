@@ -69,5 +69,5 @@ test("recipient can see pending acceptance without administrative controls", asy
 
 test("capability restrictions remove operational navigation without removing security", () => {
   const visible = getNavigationItems({ roles: ["doctor"], permissions: ["centers:access"] }).map(item => item.view);
-  assert.deepEqual(visible, ["dashboard", "security"]);
+  assert.deepEqual(visible, ["dashboard", "personalization", "security"]);
 });

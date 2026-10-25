@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useId, useState, type ComponentProps } from "react";
-import { Alert, Button, FormField, FormSection, Input, Modal, Radio, Select } from "../../ui";
+import { FormEvent, useEffect, useId, useRef, useState, type ComponentProps } from "react";
+import { Alert, Button, FormField, FormSection, Input, Modal, Radio, RequiredFieldsLegend, Select } from "../../ui";
 import "../../pages/patients.css";
 import { api } from "../../services/api";
 import type { InsuranceCompany, PatientInsurance } from "../../types/insurance";
@@ -51,6 +51,52 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
   const [insuranceDirty, setInsuranceDirty] = useState(false);
   const [insuranceReady, setInsuranceReady] = useState(false);
   const [insuranceError, setInsuranceError] = useState("");
+  const canEdit = !!user.permissions?.includes("patients:view") && !!user.permissions?.includes("patients:edit");
+  const [editing, setEditing] = useState(!patient);
+  const readOnly = Boolean(patient) && !editing;
+  const [notice, setNotice] = useState("");
+  const [discardAction, setDiscardAction] = useState<"close" | "cancel" | null>(null);
+  const [insuranceVersion, setInsuranceVersion] = useState(0);
+  const values = { demographics, firstName, lastName, dateOfBirth, phone, email, hasInsurance, companyId, memberNumber, planName, currentInsurance };
+  const original = useRef(values);
+  // Compare persisted values, not catalog metadata or insurance identifiers.
+  const fingerprint = (v: typeof values) => JSON.stringify({
+    ...Object.fromEntries(Object.entries(v.demographics).filter(([key]) => key !== "territorial_path").sort(([a], [b]) => a.localeCompare(b))),
+    firstName: v.firstName.trim(), lastName: v.lastName.trim(), dateOfBirth: v.dateOfBirth,
+    phone: v.phone.trim(), email: v.email.trim(),
+    ...(canManageInsurance ? { hasInsurance: v.hasInsurance, ...(v.hasInsurance ? { companyId: v.companyId, memberNumber: v.memberNumber.trim(), planName: v.planName.trim() } : {}) } : {}),
+  });
+  const dirty = Boolean(patient) && editing && fingerprint(values) !== fingerprint(original.current);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  function beginEdit(event: React.MouseEvent<HTMLButtonElement>) {
+    // The footer slot becomes a submit button after this render. Cancel the
+    // current click's default action before React reuses that DOM element.
+    event.preventDefault();
+    if (!canEdit) return;
+    original.current = values;
+    setInsuranceDirty(false); setNotice(""); setError(""); setEditing(true);
+  }
+  function cancelEdit() {
+    const v = original.current;
+    setDemographics(v.demographics); setFirstName(v.firstName); setLastName(v.lastName);
+    setDateOfBirth(v.dateOfBirth); setPhone(v.phone); setEmail(v.email);
+    setHasInsurance(v.hasInsurance); setCompanyId(v.companyId); setMemberNumber(v.memberNumber);
+    setPlanName(v.planName); setCurrentInsurance(v.currentInsurance);
+    setInsuranceDirty(false); setEditing(false); setError("");
+  }
+  function requestExit(action: "close" | "cancel") {
+    if (saving) return;
+    if (dirty) setDiscardAction(action);
+    else if (action === "close") onClose();
+    else cancelEdit();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +122,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
           setCompanyId(String(active.insurance_company_id));
           setMemberNumber(active.member_number);
           setPlanName(active.plan_name || "");
-        }
+        } else { setHasInsurance(false); setMemberNumber(""); setPlanName(""); }
       } catch (err: any) {
         if (!cancelled) setInsuranceError(err?.response?.data?.detail || "No fue posible cargar el seguro. Los datos de seguro se conservarán al editar.");
       } finally {
@@ -86,7 +132,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
 
     void loadInsurance();
     return () => { cancelled = true; };
-  }, [patient?.id]);
+  }, [patient?.id, insuranceVersion]);
 
   function selectInsurance(value: boolean) {
     setInsuranceDirty(true);
@@ -100,6 +146,8 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
 
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (saving || !canEdit || readOnly) return;
+    if (patient && !dirty) { setEditing(false); setNotice("No hay cambios para guardar."); return; }
     setSaving(true);
     setError("");
 
@@ -150,6 +198,14 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
       const response = patient
         ? await api.put<Patient>(`/patients/${patient.id}`, payload)
         : await api.post<Patient>("/patients", payload);
+      if (patient) {
+        const saved = response.data;
+        setFirstName(saved.first_name); setLastName(saved.last_name); setDateOfBirth(saved.date_of_birth);
+        setPhone(saved.phone || ""); setEmail(saved.email || "");
+        setDemographics(Object.fromEntries(Object.keys(demographics).map(key => [key, saved[key as keyof PatientDemographics] ?? null])));
+        setEditing(false); setInsuranceDirty(false); setInsuranceVersion(version => version + 1);
+        setNotice("Cambios guardados correctamente.");
+      }
       onSaved(response.data);
     } catch (err: any) {
       // Do not log request payloads containing patient identifiers.
@@ -164,11 +220,14 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
     }
   }
 
-  return <Modal title={patient ? "Editar paciente" : "Nuevo paciente"} headingIcon={<PatientFormIcon name="person-add" size={38} />} description={patient ? "Actualice la información del paciente en Atlas." : "Complete la información del paciente para su registro en Atlas."} open onClose={() => { if (!saving) onClose(); }} closeLabel="Cerrar formulario de paciente" footer={<div className="patient-form-actions"><Button variant="outline" disabled={saving} onClick={onClose}>Cancelar</Button><Button type="submit" form={formId} icon={<PatientFormIcon name="save" size={20} />} loading={saving} loadingLabel="Guardando..." disabled={loadingInsurance}>{patient ? "Guardar cambios" : "Guardar paciente"}</Button></div>}>
+  return <><Modal title={patient ? (readOnly ? "Ficha del paciente" : "Editar paciente") : "Nuevo paciente"} headingIcon={<PatientFormIcon name="person-add" size={38} />} description={patient ? (readOnly ? "Consulta la información registrada en Atlas." : "Editando ficha del paciente") : "Complete la información del paciente para su registro en Atlas."} open onClose={() => requestExit("close")} closeDisabled={saving} closeLabel="Cerrar formulario de paciente" footer={<div className="patient-form-actions">{readOnly ? <><Button variant="outline" onClick={() => requestExit("close")}>Cerrar</Button>{canEdit && <Button onClick={beginEdit} disabled={loadingInsurance}>Editar</Button>}</> : <><Button variant="outline" disabled={saving} onClick={() => requestExit(patient ? "cancel" : "close")}>{patient ? "Cancelar cambios" : "Cancelar"}</Button><Button type="submit" form={formId} icon={<PatientFormIcon name="save" size={20} />} loading={saving} loadingLabel="Guardando..." disabled={loadingInsurance || !canEdit}>{patient ? "Guardar cambios" : "Guardar paciente"}</Button></>}</div>}>
     <form id={formId} onSubmit={save} className="patient-form">
+      {notice && <p role="status">{notice}</p>}
+      {!readOnly && <RequiredFieldsLegend />}
       {error && <Alert tone="danger" title="Revise los datos del paciente">{error}</Alert>}
       {identityMatches.length > 0 && <div className="patient-identity-matches">{identityMatches.map((match) => <Button key={match.id} variant="outline" onClick={() => onExistingSelected({ id: match.id, first_name: match.first_name, last_name: match.last_name, date_of_birth: match.date_of_birth, phone: match.phone_masked, email: null, created_at: new Date().toISOString(), selection_token: match.selection_token })}><strong>Usar {match.first_name} {match.last_name}</strong><span className="atlas-help"> · {match.date_of_birth}{match.phone_masked ? ` · ${match.phone_masked}` : ""}</span></Button>)}</div>}
       {!patient && user.roles.includes("secretary") && <Alert title="Seleccionar un paciente existente">Para buscar un paciente existente, use Nueva cita y seleccione primero el centro y el médico autorizado.</Alert>}
+      <fieldset className="patient-form-controls" disabled={readOnly || saving || !canEdit} aria-label={readOnly ? "Ficha en modo lectura" : "Datos del paciente"}>
       <div className="patient-form-columns">
         <section className="patient-form-folder patient-form-folder--personal" aria-labelledby={`${formId}-personal-title`}>
           <header className="patient-form-folder-heading patient-form-folder-heading--personal">
@@ -194,7 +253,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
               <FormField label="Teléfono (Casa)"><InputWithIcon icon="home" type="tel" maxLength={30} value={demographics.home_phone ?? ""} onChange={(event) => setDemographics({ ...demographics, home_phone: event.target.value || null })} /></FormField>
               <FormField label="Correo electrónico" className="patient-form-contact-email"><InputWithIcon icon="mail" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FormField>
             </FormSection>
-            <PatientDemographicFields value={demographics} onChange={setDemographics} section="personal" />
+            <PatientDemographicFields value={demographics} onChange={setDemographics} section="personal" defaultCountry={!patient} />
           </div>
         </section>
 
@@ -221,6 +280,7 @@ export default function PatientForm({ patient, onClose, onSaved, onExistingSelec
           </div>
         </section>
       </div>
+      </fieldset>
     </form>
-  </Modal>;
+  </Modal>{discardAction && <Modal open title="Cambios sin guardar" onClose={() => setDiscardAction(null)} footer={<div className="patient-form-actions"><Button variant="outline" onClick={() => setDiscardAction(null)}>Seguir editando</Button><Button onClick={() => { const action = discardAction; setDiscardAction(null); if (action === "close") onClose(); else cancelEdit(); }}>Descartar cambios</Button></div>}><p>Hay cambios sin guardar. ¿Deseas descartarlos?</p></Modal>}</>;
 }

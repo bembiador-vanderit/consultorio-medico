@@ -61,4 +61,4 @@ La generación PDF está centralizada en un builder que recibe el contexto docum
 - Diseñador de documentos por bloques con campos obligatorios, opcionales y restricciones por tipo documental.
 - Snapshot o versión completa de la plantilla visual utilizada al emitir. Actualmente se preservan datos clínicos y nombres contextuales, pero no logos, firmas, datos profesionales o layout versionado.
 
-Hasta implementar identidad configurable, “Atlas Consultorio” sigue siendo una marca provisional del generador. No representa ni sustituye la identidad legal/profesional del médico o centro y no se ha hardcodeado ninguna identidad particular.
+“Atlas Pérgamo” es la marca del producto en el generador. No representa ni sustituye la identidad legal/profesional del médico o centro; esa identidad sigue configurándose de forma independiente.

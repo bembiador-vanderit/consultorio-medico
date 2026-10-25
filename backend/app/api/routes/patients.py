@@ -13,6 +13,7 @@ from app.models.locality import Locality
 from app.models.regional import Country, TerritorialLevel, TerritorialUnit
 from app.schemas.center import LocalityResponse
 from app.services.administration import effective_permissions
+from app.services.patient_audit import record_patient_changes
 from app.services.insurance import save_insurance, record
 from app.services.patient_demographics import normalize_document
 from app.schemas.patient import PatientCreate, PatientCreatedResponse, PatientDetailResponse, PatientIdentityResponse, PatientResponse, PatientUpdate
@@ -28,12 +29,22 @@ from app.services.patient_scope import (
 )
 
 router = APIRouter(prefix="/patients", tags=["Pacientes"])
-access = require_permission("patients:access")
+access = require_permission("patients:view")
+edit = require_permission("patients:edit")
+
+
+def scope_read_identities(query, user, db):
+    # Explicit sharing may extend discovery, not demographic/clinical writes.
+    if any(role.code == "doctor" for role in user.roles):
+        from app.services.clinical_sharing import shared_patient_ids
+        normal_ids = scope_patient_identities(select(Patient.id), user, db)
+        return query.where(or_(Patient.id.in_(normal_ids), Patient.id.in_(shared_patient_ids(db,user))))
+    return scope_patient_identities(query,user,db)
 
 
 @router.get("/count")
 def count_patients(user=Depends(access), db: Session = Depends(get_db)):
-    query = scope_patient_identities(select(func.count()).select_from(Patient), user, db)
+    query = scope_read_identities(select(func.count()).select_from(Patient), user, db)
     return {"count": db.scalar(query) or 0}
 
 
@@ -52,12 +63,14 @@ def list_patients(
             or_(
                 Patient.first_name.ilike(term),
                 Patient.last_name.ilike(term),
+                (Patient.first_name + " " + Patient.last_name).ilike(term),
                 Patient.phone.ilike(term),
                 Patient.home_phone.ilike(term),
+                Patient.email.ilike(term),
                 Patient.document_number == normalize_document(query),
             )
         )
-    statement = scope_patient_identities(statement, user, db)
+    statement = scope_read_identities(statement, user, db)
     return db.scalars(statement).all()
 
 
@@ -169,7 +182,7 @@ def _add_insurance(patient: Patient, payload, db: Session, user) -> None:
 
 
 @router.post("", response_model=PatientCreatedResponse, status_code=status.HTTP_201_CREATED)
-def create_patient(payload: PatientCreate, user=Depends(access), db: Session = Depends(get_db)):
+def create_patient(payload: PatientCreate, user=Depends(edit), db: Session = Depends(get_db)):
     require_available_identity(db, date_of_birth=payload.date_of_birth, phone=payload.phone, email=payload.email)
     _validate_demographics(payload, db)
     if payload.has_insurance:
@@ -194,11 +207,19 @@ def create_patient(payload: PatientCreate, user=Depends(access), db: Session = D
 
 @router.get("/{patient_id}", response_model=PatientDetailResponse)
 def get_patient(patient_id: int, user=Depends(access), db: Session = Depends(get_db)):
-    return require_patient_identity_access(db, user, patient_id)
+    from app.services.patient_scope import patient_in_identity_scope
+    if patient_in_identity_scope(db,user,patient_id):
+        return require_patient_identity_access(db,user,patient_id)
+    patient = db.scalar(scope_read_identities(select(Patient).where(Patient.id == patient_id),user,db))
+    if patient is None:
+        raise HTTPException(404,"Paciente no encontrado")
+    # Sharing discloses only the normal list identity, not extra demographics,
+    # blood type, identity documents or emergency contacts.
+    return {**PatientResponse.model_validate(patient).model_dump(), "shared_read_only": True}
 
 
 @router.put("/{patient_id}", response_model=PatientDetailResponse)
-def update_patient(patient_id: int, payload: PatientUpdate, user=Depends(access), db: Session = Depends(get_db)):
+def update_patient(patient_id: int, payload: PatientUpdate, user=Depends(edit), db: Session = Depends(get_db)):
     patient = require_patient_identity_access(db, user, patient_id)
     patient = db.scalar(select(Patient).where(Patient.id == patient_id).with_for_update().execution_options(populate_existing=True))
 
@@ -239,8 +260,11 @@ def update_patient(patient_id: int, payload: PatientUpdate, user=Depends(access)
             item.is_primary = False
             record(db, user, "patient_deactivated", item.id)
 
+    changes = {field: {"before": getattr(patient, field), "after": value}
+               for field, value in patient_data.items() if getattr(patient, field) != value}
     for field, value in patient_data.items():
         setattr(patient, field, value)
+    record_patient_changes(db, user, patient, changes)
 
     try:
         db.commit()

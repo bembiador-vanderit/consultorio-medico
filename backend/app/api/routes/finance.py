@@ -8,8 +8,10 @@ from app.api.deps import require_permission
 from app.db import get_db
 from app.models import Appointment, CareCenter, Organization, Patient, User
 from app.models.finance import CashRegister, CashMovement, Invoice
-from app.schemas.finance import OpenRegister, CloseRegister, NewInvoice, Payment, Reversal, Adjustment, VoidInvoice
+from app.schemas.finance import (OpenRegister, CloseRegister, NewInvoice, Payment, Reversal, Adjustment, VoidInvoice,
+    CardProvider, CardProviderUpdate, CloseCardBatch, ReopenCardBatch, CorrectCardAssignment)
 from app.services import finance as service
+from app.services import card_batches
 from app.services.appointment_scope import assigned_center_ids, is_role, apply_appointment_scope
 from app.services.patient_scope import scope_patient_identities
 
@@ -31,6 +33,17 @@ def centers(user: User = Depends(read), db: Session = Depends(get_db)):
     if not is_role(user, 'admin'):
         q = q.where(CareCenter.id.in_(assigned_center_ids(user)))
     return [{'id': c.id, 'name': c.name, 'is_active': c.is_active} for c in db.scalars(q.order_by(CareCenter.name))]
+
+
+@router.get('/centers/{center_id}/card-providers')
+def card_providers(center_id: int, user: User = Depends(read), db: Session = Depends(get_db)):
+    return card_batches.settings(db, user, center_id)
+
+
+@router.put('/centers/{center_id}/card-providers/{provider}')
+def configure_card_provider(center_id: int, provider: CardProvider, payload: CardProviderUpdate,
+                            user: User = Depends(manage), db: Session = Depends(get_db)):
+    return card_batches.set_provider(db, user, center_id, provider, payload.enabled)
 
 
 @router.get('/patients')
@@ -69,6 +82,26 @@ def registers(center_id: int, user: User = Depends(read), db: Session = Depends(
 @router.get('/registers/{register_id}')
 def register(register_id: int, user: User = Depends(read), db: Session = Depends(get_db)):
     return service.register_view(db, service.register_access(db, user, register_id))
+
+
+@router.get('/registers/{register_id}/card-batches')
+def list_card_batches(register_id: int, user: User = Depends(read), db: Session = Depends(get_db)):
+    return card_batches.list_batches(db, user, register_id)
+
+
+@router.get('/registers/{register_id}/card-batch-history')
+def card_batch_history(register_id: int, user: User = Depends(read), db: Session = Depends(get_db)):
+    return card_batches.history(db, user, register_id)
+
+
+@router.post('/registers/{register_id}/card-batches', status_code=201)
+def close_card_batch(register_id: int, payload: CloseCardBatch, user: User = Depends(collect), db: Session = Depends(get_db)):
+    return card_batches.close_batch(db, user, register_id, payload)
+
+
+@router.post('/card-batches/{batch_id}/reopen')
+def reopen_card_batch(batch_id: int, payload: ReopenCardBatch, user: User = Depends(manage), db: Session = Depends(get_db)):
+    return card_batches.reopen_batch(db, user, batch_id, payload.reason)
 
 
 @router.post('/registers', status_code=201)
@@ -123,6 +156,12 @@ def void(invoice_id: int, payload: VoidInvoice, user: User = Depends(manage), db
 @router.post('/movements/{movement_id}/reverse', status_code=201)
 def reverse(movement_id: int, payload: Reversal, user: User = Depends(manage), db: Session = Depends(get_db)):
     return service.serialize(service.reverse_payment(db, user, movement_id, payload))
+
+
+@router.put('/movements/{movement_id}/card-assignment')
+def correct_card_assignment(movement_id: int, payload: CorrectCardAssignment,
+                            user: User = Depends(manage), db: Session = Depends(get_db)):
+    return card_batches.correct_assignment(db, user, movement_id, payload)
 
 
 def day_bounds(db, day):

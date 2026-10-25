@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AtlasAppShell } from "../layouts/AtlasAppShell";
-import type { AppView } from "../navigation/navigation";
+import { getDefaultGestionOrder, type AppView } from "../navigation/navigation";
 import { ActionCard, Alert, Button, Card, CardGrid, Checkbox, Divider, Drawer, Dropdown, EmptyState, FormField, FormSection, IconButton, Input, LoadingState, Modal, PageContainer, PageHeader, Radio, SectionHeader, Select, Skeleton, Stack, StatusBadge, Table, Tabs, Textarea, Tooltip, type Tone } from "../ui";
 
 const palette = [
@@ -23,11 +23,11 @@ export default function FoundationPreview() {
   const [tab, setTab] = useState("tokens");
   const [message, setMessage] = useState("");
   const [tableState, setTableState] = useState("ready");
-  const user = { full_name: "Usuario de demostración", roles: role === "combined" ? ["doctor", "admin"] : [role] };
-  return <AtlasAppShell user={user} activeView={view} pageTitle="Fundación UI V2" onNavigate={(next) => { setView(next); setMessage(`Vista de ejemplo seleccionada: ${next}`); }}
+  const user = { full_name: "Usuario de demostración", roles: role === "combined" ? ["doctor", "admin"] : [role], permissions: ["finance:read", "finance:collect", "ars:read", "ars:payment", "ars:report", "ars:reconcile"] };
+  return <AtlasAppShell user={user} activeView={view} activeFinanceSection={0} gestionOrder={getDefaultGestionOrder()} accentTheme="classic" pageTitle="Fundación UI V2" onNavigate={(next) => { setView(next); setMessage(`Vista de ejemplo seleccionada: ${next}`); }} onNavigateFinanceSection={(section) => { setView("finance"); setMessage(`Sección financiera de ejemplo: ${section}`); }}
     onSignOut={() => setMessage("Demostración: aquí se conectará el cierre de sesión existente.")}>
     <PageContainer><Stack>
-      <PageHeader eyebrow="ATLAS CONSULTORIO · UI V2 / FASE 0" title="Una base para cada flujo" description="Catálogo de desarrollo con datos ficticios. Los módulos operativos conservan su comportamiento."
+          <PageHeader eyebrow="ATLAS PÉRGAMO · UI V2 / FASE 0" title="Una base para cada flujo" description="Catálogo de desarrollo con datos ficticios. Los módulos operativos conservan su comportamiento."
         actions={<StatusBadge tone="info">Vista de desarrollo</StatusBadge>} />
       <Card compact><FormField label="Contexto de navegación de ejemplo" description="Cambia solo esta demostración; no modifica una cuenta ni sus permisos."><Select value={role} onChange={(event) => { setRole(event.target.value); setView("dashboard"); }}>
         <option value="doctor">Médico</option><option value="secretary">Secretaría</option><option value="admin">Administrador</option><option value="combined">Médico + administrador</option><option value="unknown">Rol desconocido (paridad actual)</option>

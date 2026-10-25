@@ -1,0 +1,16 @@
+.patient-safety { display:grid; gap:.65rem; min-width:0; overflow-wrap:anywhere; }
+.patient-safety h4 { color:var(--atlas-action); font-size:1rem; }
+.patient-safety-alert p { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.patient-safety ul { list-style:none; margin:0; padding:0; display:grid; gap:.6rem; }
+.patient-safety li>span { display:block; font-size:.85rem; color:var(--atlas-text-muted); }
+.patient-safety-list { display:grid; gap:.75rem; list-style:none; padding:0; }
+.patient-safety-list article { border:1px solid var(--atlas-border); border-radius:.6rem; padding:1rem; min-width:0; }
+.patient-safety-list dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; margin:1rem 0; }
+.patient-safety-list dt { color:var(--atlas-text-muted); font-size:.85rem; }
+.patient-safety-list dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.patient-safety-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; padding:0; margin:1rem 0; border:0; min-width:0; }
+.patient-safety-actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+.patient-safety-actions>.atlas-button { min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.atlas-dialog:has(.patient-safety-grid),.atlas-dialog:has(.patient-safety-list) { width:min(60rem,calc(100vw - 1rem)); overflow-wrap:anywhere; }
+.atlas-dialog:has(.patient-safety-list) pre { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; }
+@media(max-width:639px) { .patient-safety-grid,.patient-safety-list dl { grid-template-columns:minmax(0,1fr); }.atlas-dialog-footer>.patient-safety-actions { width:100%; }.patient-safety-actions>.atlas-button { flex:1; min-height:44px; white-space:normal; }.patient-safety-grid .atlas-field { min-width:0; } }
