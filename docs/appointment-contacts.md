@@ -1,0 +1,9 @@
+# Contactos previos a la cita
+
+La Agenda dispone de una lista de pacientes previstos por fecha. Solo incluye citas `scheduled` y `confirmed`; no cuenta canceladas, ausentes ni completadas. Se puede filtrar por centro, médico y último resultado. Los totales se calculan sobre todas las citas visibles de la fecha antes del filtro de resultado: **contactados** significa que hubo al menos un intento, no que se habló con el paciente.
+
+Cada llamada se agrega a `appointment_contact_attempts` con organización, cita, usuario, hora del servidor (UTC), teléfono utilizado, resultado y observación. No se edita ni sobrescribe un intento previo. El último resultado se obtiene por `contacted_at DESC, id DESC`; `pending` se deriva de la ausencia de intentos. No existe resultado `confirmed`. `will_attend` no cambia el estado de la cita, no inicia consulta y no asigna turno. El listado sigue el orden de la hora de cita, no el de llamadas.
+
+API mínima: `GET /api/v1/appointment-contacts?day=YYYY-MM-DD` (admite `center_id`, `doctor_id`, `result`), `GET /api/v1/appointment-contacts/{appointment_id}` y `POST /api/v1/appointment-contacts/{appointment_id}`. El cuerpo del POST admite `result`, `channel=phone`, `contact_value` y `notes`. La lectura utiliza el alcance de Agenda; el registro se limita a secretaría o administración con acceso a esa cita. El alcance de organización se aplica en la sesión y se valida cada referencia antes de guardar. Las citas con historial de contacto no pueden eliminarse ni reasignarse a otro paciente, médico o centro; pueden cancelarse conservando el historial.
+
+La migración `0041_appt_contact_attempts` solo crea una tabla nueva y no modifica citas históricas. Debe aplicarse antes de usar esta pantalla o la API en la instancia oficial. Esta microtarea no aplica la migración ni despliega la aplicación. No implementa turnos, llegadas, `QueueTicket`, reportes PDF ni cambios de hora de cita.

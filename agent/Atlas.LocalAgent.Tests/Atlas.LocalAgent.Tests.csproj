@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0-windows</TargetFramework><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.5.1" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.5.1" />
+    <ProjectReference Include="../Atlas.LocalAgent.Core/Atlas.LocalAgent.Core.csproj" />
+    <ProjectReference Include="../Atlas.LocalAgent.Service/Atlas.LocalAgent.Service.csproj" />
+    <ProjectReference Include="../qa/Atlas.LocalAgent.IdentityLab/Atlas.LocalAgent.IdentityLab.csproj" />
+  </ItemGroup>
+  <ItemGroup><None Include="../../backend/tests/fixtures/print-intent-v2.json" Link="print-intent-v2.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup>
+    <None Include="../installer/atlas-local-agent.iss" Link="installer/atlas-local-agent.iss" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../installer/Build-Installer.ps1" Link="installer/Build-Installer.ps1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

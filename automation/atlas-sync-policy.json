@@ -1,0 +1,18 @@
+{
+  "expectedRepository": "bembiador-vanderit/consultorio-medico",
+  "allowedBranchPattern": "^(feat|fix|chore|docs|refactor|test|hotfix)/[A-Za-z0-9._/-]+$",
+  "forbiddenBranches": ["main"],
+  "forbiddenFilePatterns": [
+    "(^|/)\\.env(?:\\.(?!example$)[^/]+)?$",
+    "(^|/)(artifacts|dumps|logs|bin|obj|TestResults|publish|coverage)(/|$)",
+    "\\.(dump|backup|sqlite|sqlite3|sqlite-wal|sqlite-shm|db|log|pfx|p12|key|pem|crt|cer)$",
+    "(^|/)(id_rsa|id_ed25519|identity\\.json|station\\.json|secret\\.[^/]+\\.bin)$"
+  ],
+  "forbidForcePush": true,
+  "requireStagedSecurityCheck": true,
+  "requireRemoteDivergenceCheck": true,
+  "requireDiffCheck": true,
+  "requireSingleAlembicHead": true,
+  "requireTestsByChangeType": true,
+  "requirePostPushVerification": true
+}

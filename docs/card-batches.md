@@ -1,0 +1,11 @@
+# Lotes de tarjeta por caja (0051)
+
+Cada centro habilita explícitamente las prestadoras de tarjeta que usa: CARDNET, AZUL y/o VISANET. El administrador con `finance:manage` configura la disponibilidad en Finanzas → Caja. Sin una prestadora habilitada, Atlas no ofrece tarjeta como método de cobro. El número de lote del voucher es texto para conservar ceros iniciales; no se registra el número de tarjeta.
+
+Cada cobro con tarjeta lleva prestadora y lote. El agrupamiento para cierre usa **organización + centro + caja + prestadora + lote**. No mezcla dos secretarias ni dos prestadoras aunque compartan el mismo número de lote. La cajera ve los cobros netos de su caja y declara la cantidad y el monto que muestra el voucher de cierre del POS. Atlas compara ambas cifras; si hay diferencia exige una observación y la deja visible. Este cierre **no equivale a conciliación o confirmación bancaria**.
+
+Los lotes con movimientos deben cerrarse antes de cerrar la caja. Una secretaria con `finance:collect` puede cerrar los de su propia caja y centro autorizado. La reapertura y corrección de prestadora/lote de un cobro exigen `finance:manage` y un motivo. Se conserva un evento inmutable con actor, fecha, valores anteriores y nuevos; el importe del movimiento original no se edita. La reapertura en Atlas solo habilita correcciones de registro: **no reabre el lote físico del POS** ni permite agregar cobros nuevos a un lote que ya se cerró.
+
+Una devolución ordinaria de tarjeta se permite solo antes del cierre POS y en la misma caja. Después del cierre queda bloqueada, incluso si el administrador reabre el registro de Atlas; se requiere el trámite administrativo externo con la entidad/banco. No se fabrica una devolución bancaria desde Atlas. Los cobros históricos sin prestadora/lote no se modifican en la migración y requieren una corrección administrativa auditada si su caja aún debe cerrarse.
+
+La migración 0051 agrega configuración, lotes y auditoría sin cambiar importes, facturas ni citas históricas. El downgrade de desarrollo se niega si ya existe una configuración o un cierre, para evitar pérdida de datos. La prueba de concurrencia sobre PostgreSQL asegura un único cierre efectivo por lote.

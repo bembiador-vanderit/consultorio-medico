@@ -1,0 +1,17 @@
+.agent-registry{display:grid;gap:1rem;min-width:0;color:var(--atlas-text,#16384a)}
+.agent-registry header{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap}
+.agent-registry h1{font-size:1.5rem}.agent-registry h2{font-size:1.15rem}.agent-registry h3{font-size:1rem}
+.agent-registry-notice{background:#edf7f6;border-left:3px solid #378b81;padding:1rem;border-radius:.5rem}
+.agent-registry-card{min-width:0;background:white;border:1px solid #d4e2e7;border-radius:.8rem;padding:1rem;margin-bottom:.8rem}
+.agent-registry-fields{display:flex;gap:.8rem;align-items:end;flex-wrap:wrap;margin-bottom:1rem}
+.agent-registry label{display:grid;gap:.35rem;min-width:0;flex:1}
+.agent-registry input,.agent-registry select,.agent-registry textarea{width:100%;min-width:0;padding:.65rem;border:1px solid #a4bdc8;border-radius:.4rem;box-sizing:border-box}
+.agent-registry button{min-height:44px;padding:.55rem .9rem;border:1px solid #91b4bc;border-radius:.4rem;background:#f2f9f9;color:#174d54;cursor:pointer;margin:.2rem}
+.agent-registry button:disabled{opacity:.55;cursor:default}.agent-registry :focus-visible{outline:2px solid #197f79;outline-offset:2px}
+.agent-registry-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:1rem}
+.agent-registry-group{padding-left:1rem;border-left:2px solid #d6e8e6}.agent-registry dd{margin:0 0 .6rem;overflow-wrap:anywhere}.agent-registry dt{font-size:.85rem;color:#496570}
+.agent-registry-state{display:inline-block;padding:.3rem .6rem;border-radius:2rem;background:#eef2f3}.agent-registry-state--online{background:#cfeee4;color:#205e4b}.agent-registry-state--revoked{background:#f4dce0;color:#793c47}
+.agent-registry-code{display:grid;gap:.6rem;background:#edf8f5;padding:1rem;overflow-wrap:anywhere}.agent-registry-code strong{font-size:1.3rem;letter-spacing:.05em}
+.agent-registry-overlay{position:fixed;inset:0;z-index:80;background:#102e46aa;display:grid;place-items:center;padding:1rem}
+.agent-registry-modal{background:#fff;padding:1.25rem;border-radius:1rem;max-width:720px;width:100%;box-sizing:border-box;max-height:90dvh;overflow:auto;overflow-wrap:anywhere}
+@media(max-width:600px){.agent-registry-fields{display:grid;grid-template-columns:minmax(0,1fr)}.agent-registry-group{padding-left:.5rem}.agent-registry-overlay{padding:.4rem}.agent-registry-modal{padding:1rem;max-height:96dvh}}

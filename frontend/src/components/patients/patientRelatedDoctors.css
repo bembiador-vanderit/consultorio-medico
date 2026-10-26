@@ -1,0 +1,12 @@
+.patient-related-doctors { display:grid; gap:.65rem; min-width:0; overflow-wrap:anywhere; }
+.patient-related-doctors h4 { color:var(--atlas-action); font-size:1rem; }
+.patient-related-doctors ul,.patient-related-doctors-detail ul { display:grid; gap:.75rem; padding:0; margin:0; list-style:none; }
+.patient-related-doctors li { display:grid; gap:.2rem; }
+.patient-related-doctors li>span { font-size:.85rem; color:var(--atlas-text-muted); }
+.patient-related-doctors-detail { display:grid; gap:1rem; min-width:0; overflow-wrap:anywhere; }
+.patient-related-doctors-detail article { padding:1rem; border:1px solid var(--atlas-border); border-radius:.6rem; }
+.patient-related-doctors-detail dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:1rem 0 0; }
+.patient-related-doctors-detail dt { font-size:.85rem; color:var(--atlas-text-muted); }
+.patient-related-doctors-detail dd { margin:0; overflow-wrap:anywhere; }
+.atlas-dialog:has(.patient-related-doctors-detail) { width:min(54rem,calc(100vw - 1rem)); }
+@media(max-width:639px) { .patient-related-doctors-detail dl { grid-template-columns:minmax(0,1fr); }.patient-related-doctors>.atlas-button { min-height:44px; white-space:normal; } }

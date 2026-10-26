@@ -1,0 +1,11 @@
+# Agenda por turnos V2 — orden de agenda
+
+La modalidad efectiva sigue resolviéndose por médico, centro y fecha (incluidas las excepciones). Las citas `timed` requieren una hora. Tras activar 0053, las citas nuevas `queue` se guardan sin hora; el servidor ignora cualquier hora enviada por un cliente antiguo para esa modalidad. Antes de activar 0053, la captura queue conserva temporalmente la hora obligatoria de 0052 y la interfaz no oculta Hora. La API expone `/appointments/queue-capabilities` para esta transición.
+
+`daily_booking_order` es un número administrativo por organización, centro, médico y fecha. Se asigna al crear la cita queue bajo bloqueo de la fila de centro y con una secuencia persistente; no se reutilizan huecos al cancelar o eliminar. Editar una cita en la misma jornada conserva su orden. Al moverla de fecha, médico o centro se asigna el siguiente orden en el destino y no se renumera el origen. El cambio de modalidad de una jornada ocupada sigue sujeto a las protecciones existentes.
+
+La migración 0053 conserva las citas históricas, permite NULL en `appointment_time` únicamente para `queue` y asigna orden a las queue históricas con `row_number()` por organización/centro/médico/fecha, ordenadas por `created_at, id`. No asigna orden a timed ni crea QueueTicket. Las horas históricas queue permanecen intactas, también cuando se edita la cita sin cambiar de jornada. El downgrade se niega si existen citas sin hora, para no perder datos; probarlo solo en una base desechable.
+
+“Orden de agenda” no es “Turno”. El Turno se obtiene exclusivamente del QueueTicket al registrar llegada. La vista Día separa citas por hora y por turno; Semana mantiene solo timed en el eje horario y muestra queue fuera de él; Mes indica cuántas citas hay por turno. Reminders que necesitan una hora exacta no se programan para queue sin hora; las comunicaciones y reportes muestran la modalidad sin inventar un horario. Las transferencias de cobertura clínica basadas en un intervalo horario siguen requiriendo una cita con hora.
+
+La migración **no se aplica automáticamente a la base oficial en esta microfase**. Antes de activar 0053 allí, efectuar respaldo, migración y validación operativa en una microtarea separada. No reiniciar el contenedor backend oficial, cuyo comando de arranque ejecuta `alembic upgrade head`, hasta autorizar esa activación.

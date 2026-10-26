@@ -1,0 +1,42 @@
+.print-management{display:grid;gap:1rem;min-width:0;max-width:1500px;margin:auto;color:var(--atlas-text,#16384a)}
+.print-management *{box-sizing:border-box}
+.print-management-header,.print-management-detail-head,.print-management-section-heading,.print-management-printer-head,.print-management-station-top{display:flex;justify-content:space-between;align-items:flex-start;gap:.8rem}
+.print-management-header{flex-wrap:wrap;align-items:center}
+.print-management-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+.print-management h1,.print-management h2,.print-management h3,.print-management p{margin:0}
+.print-management h1{font-size:1.6rem}.print-management h2{font-size:1.2rem}.print-management h3{font-size:1rem}
+.print-management-header>div{display:grid;gap:.35rem}
+.print-management-eyebrow{color:#54717d;font-size:.8rem;font-weight:700;letter-spacing:.02em}
+.print-management-header button{border:1px solid #8eb6bf;border-radius:.5rem;background:white;color:#164d58;padding:.65rem 1rem;min-height:44px;cursor:pointer}
+.print-management-header .print-management-history-button{border-color:#d2e0e5;background:transparent}
+.print-management button:disabled{opacity:.6;cursor:default}
+.print-management :focus-visible{outline:2px solid #087a83;outline-offset:2px}
+.print-management-note{padding:.8rem 1rem;background:#edf7f7;border-left:3px solid #4d9c9a;border-radius:.5rem}
+.print-management-history{display:grid;gap:.3rem;padding:.9rem 1rem;border:1px solid #d9e5e9;border-radius:.7rem;background:white}
+.print-management-alert{padding:.7rem .85rem;background:#fff5e9;border:1px solid #ebd3ae;border-radius:.5rem}
+.print-management-summary{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;padding:.8rem 1rem;background:white;border:1px solid #d9e5e9;border-radius:.7rem}
+.print-management-summary strong{font-size:1.15rem;color:#18576b}
+.print-management-list,.print-management-detail,.print-management-empty{min-width:0;background:white;border:1px solid #d9e5e9;border-radius:.8rem;padding:1rem}
+.print-management-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem;align-items:start}.print-management-list>.print-management-section-heading{grid-column:1/-1}.print-management-section-heading{align-items:center;margin-bottom:.3rem}
+.print-management-section-heading span{color:#54717d}
+.print-management-station-card{min-width:0;border:1px solid #d9e5e9;border-radius:.7rem;background:#fff;overflow:hidden}
+.print-management-station{display:grid;gap:.35rem;width:100%;min-width:0;min-height:44px;padding:.75rem;text-align:left;border:0;background:#fff;color:inherit;cursor:pointer}
+.print-management-station:hover,.print-management-station[aria-expanded="true"]{background:#f5fafb}.print-management-station[aria-expanded="true"]{box-shadow:inset 3px 0 #398f98}
+.print-management-station strong,.print-management-printer strong{overflow-wrap:anywhere}
+.print-management-station-count{font-size:.9rem}.print-management-muted{font-size:.83rem;color:#5a737e;overflow-wrap:anywhere}
+.print-management-station-meta{display:grid;gap:.15rem;min-width:0}.print-management-station-action{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-top:.1rem;color:#18576b;font-size:.85rem;font-weight:700}.print-management-chevron{width:.55rem;height:.55rem;flex:none;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .15s ease}.print-management-station[aria-expanded="true"] .print-management-chevron{transform:rotate(225deg)}
+.print-management-station-panel{min-width:0;border-top:1px solid #e3ecef}.print-management-station-panel[hidden]{display:none}.print-management-station-panel .print-management-detail{border:0;border-radius:0;padding:.8rem}
+.print-management-status,.print-management-availability{display:inline-flex;align-items:center;flex:none;gap:.35rem;padding:.23rem .55rem;border-radius:999px;background:#eff1f3;color:#455761;font-size:.76rem;font-weight:700;white-space:nowrap}
+.print-management-status::before,.print-management-availability::before{content:"";width:.45rem;height:.45rem;border-radius:50%;background:currentColor}
+.print-management-status--online,.print-management-availability--available{background:#e0f2eb;color:#21664e}
+.print-management-status--degraded{background:#fff0d7;color:#835b16}.print-management-status--revoked{background:#fae6e8;color:#924b55}
+.print-management-detail{display:grid;gap:.8rem}.print-management-detail-head{align-items:center;flex-wrap:wrap}
+.print-management-detail-head>div{display:grid;gap:.2rem}.print-management-detail-count{padding:.7rem .8rem;background:#f4f8fa;border-radius:.55rem}
+.print-management-printers{list-style:none;margin:0;padding:0;display:grid;gap:.65rem;min-width:0}
+.print-management-printer{min-width:0;border:1px solid #d9e5e9;border-radius:.6rem;padding:.85rem;display:grid;gap:.35rem}
+.print-management-printer-head{align-items:center;flex-wrap:wrap}
+.print-management-technical{font-size:.82rem;color:#47636e}.print-management-technical summary{cursor:pointer;width:max-content;max-width:100%}
+.print-management-technical dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.2rem .7rem;margin:.5rem 0 0}.print-management-technical dt{font-weight:700}.print-management-technical dd{margin:0;overflow-wrap:anywhere}
+@media(max-width:900px){.print-management-list{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.print-management{gap:.75rem}.print-management-header{align-items:stretch}.print-management-actions{display:grid;grid-template-columns:minmax(0,1fr);width:100%}.print-management-header button{width:100%}.print-management-summary{display:grid;gap:.25rem}.print-management-list{padding:.65rem;gap:.5rem}.print-management-station{padding:.7rem}.print-management-station-top{align-items:center;flex-wrap:wrap;gap:.45rem}.print-management-station-meta{grid-template-columns:minmax(0,auto) minmax(0,1fr);align-items:baseline;column-gap:.5rem}.print-management-station-meta .print-management-muted{text-align:right}.print-management-station-panel .print-management-detail{padding:.7rem}}
+@media(prefers-reduced-motion:reduce){.print-management-chevron{transition:none}}
