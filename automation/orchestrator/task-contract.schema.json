@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atlas.example.test/schemas/task-contract-v1.json",
+  "title": "Atlas Task Contract V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id", "title", "status", "task_type", "priority",
+    "model", "reasoning_level", "branch", "expected_base_sha",
+    "scope", "allowed_paths", "forbidden_paths", "acceptance_criteria",
+    "validation_requirements", "review_mode", "review_approved",
+    "depends_on", "blocks", "result", "commit_sha", "github_sync",
+    "created_at", "started_at", "completed_at"
+  ],
+  "properties": {
+    "task_id": { "type": "string", "pattern": "^ATLAS-[0-9]{4}$" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": ["QUEUED", "READY", "IN_PROGRESS", "VALIDATING", "BLOCKED", "COMPLETED", "FAILED", "WAITING_FOR_REVIEW"]
+    },
+    "task_type": {
+      "enum": ["DOCS", "FRONTEND", "BACKEND", "AGENT", "DATABASE", "SECURITY", "FINANCE", "CLINICAL", "PRINTING", "INFRASTRUCTURE", "CROSS_CUTTING"]
+    },
+    "priority": { "enum": ["P0", "P1", "P2", "P3"] },
+    "model": { "type": "string", "minLength": 1 },
+    "reasoning_level": { "enum": ["LOW", "MEDIUM", "HIGH"] },
+    "branch": { "type": "string", "minLength": 1 },
+    "expected_base_sha": { "type": "string", "pattern": "^[0-9a-fA-F]{40}$" },
+    "scope": { "type": "string", "minLength": 1 },
+    "allowed_paths": { "$ref": "#/$defs/paths" },
+    "forbidden_paths": { "$ref": "#/$defs/paths" },
+    "acceptance_criteria": { "$ref": "#/$defs/nonemptyTextList" },
+    "validation_requirements": { "$ref": "#/$defs/nonemptyTextList" },
+    "review_mode": { "enum": ["AUTO_CONTINUE", "REVIEW_RECOMMENDED", "REVIEW_REQUIRED"] },
+    "review_approved": { "type": "boolean" },
+    "depends_on": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_id", "status"],
+        "properties": {
+          "task_id": { "type": "string", "pattern": "^ATLAS-[0-9]{4}$" },
+          "status": { "enum": ["QUEUED", "READY", "IN_PROGRESS", "VALIDATING", "BLOCKED", "COMPLETED", "FAILED", "WAITING_FOR_REVIEW"] }
+        }
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^ATLAS-[0-9]{4}$" }
+    },
+    "result": { "type": ["string", "null"] },
+    "commit_sha": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{40}$" },
+    "github_sync": { "enum": ["YES", "NO"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "started_at": { "type": ["string", "null"], "format": "date-time" },
+    "completed_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "$defs": {
+    "paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "nonemptyTextList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

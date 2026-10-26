@@ -11,7 +11,7 @@ Desde `C:\AtlasPergamo`:
 .\scripts\test-atlas-sync.ps1
 ```
 
-`-DryRun` valida, pero no stagea, confirma ni publica. La primera activación real del sincronizador requiere una tarea separada; no usarlo para confirmar su propia implementación durante esta microfase.
+`-DryRun` valida, pero no stagea, confirma ni publica. La sincronización real requiere un mensaje explícito y pasa nuevamente por todas las barreras antes de confirmar y publicar.
 
 ## Bloqueos
 
@@ -26,3 +26,5 @@ Desde `C:\AtlasPergamo`:
 `DOCS_ONLY` comprueba vínculos locales; `FRONTEND`, `BACKEND` y `AGENT` corren las respectivas suites y build/compile; `MIGRATION` añade revisión Alembic y pruebas backend; `SECURITY` ejecuta pruebas de la guardia y regresión ampliada; `CROSS_CUTTING` ejecuta suites completas. Las comprobaciones de seguridad, diff, rama y remoto se aplican en todos los perfiles.
 
 La sincronización usa `git add -A` solo después del examen de candidatos. Revalida staged antes del commit. Si la publicación falla después de crear el commit, informa `COMMIT_CREATED=YES` y `GITHUB_SYNC=NO`; no intenta reescribir historia ni resolver conflictos automáticamente. El mensaje de commit debe proporcionarse explícitamente.
+
+El contrato de microtareas y el formulario de Issue, sin ejecución autónoma, se describen en [`orchestrator/README.md`](orchestrator/README.md).

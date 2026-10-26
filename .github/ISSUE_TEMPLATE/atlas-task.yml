@@ -1,0 +1,111 @@
+name: Atlas Task
+description: Contrato de microtarea para planificación y revisión; no inicia ejecución automática.
+title: "[ATLAS-XXXX] "
+body:
+  - type: markdown
+    attributes:
+      value: "No incluya credenciales, datos de pacientes ni otros secretos. Crear el Issue no ejecuta la tarea."
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID
+      description: Formato ATLAS-0001.
+      placeholder: ATLAS-0001
+    validations:
+      required: true
+  - type: input
+    id: task_title
+    attributes:
+      label: Title
+    validations:
+      required: true
+  - type: dropdown
+    id: task_type
+    attributes:
+      label: Type
+      options: [DOCS, FRONTEND, BACKEND, AGENT, DATABASE, SECURITY, FINANCE, CLINICAL, PRINTING, INFRASTRUCTURE, CROSS_CUTTING]
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options: [P0, P1, P2, P3]
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: Recomendación explícita; no se selecciona automáticamente.
+    validations:
+      required: true
+  - type: dropdown
+    id: reasoning
+    attributes:
+      label: Reasoning
+      options: [LOW, MEDIUM, HIGH]
+    validations:
+      required: true
+  - type: input
+    id: branch
+    attributes:
+      label: Branch
+    validations:
+      required: true
+  - type: input
+    id: expected_base_sha
+    attributes:
+      label: Expected base SHA
+      description: SHA de 40 caracteres de la base esperada.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Describa el alcance sin datos sensibles.
+    validations:
+      required: true
+  - type: textarea
+    id: allowed_paths
+    attributes:
+      label: Allowed paths
+      description: Una ruta o patrón por línea.
+    validations:
+      required: true
+  - type: textarea
+    id: forbidden_paths
+    attributes:
+      label: Forbidden paths
+      description: Una ruta o patrón por línea; escriba "Ninguna" si no aplica.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: Un criterio verificable por línea.
+    validations:
+      required: true
+  - type: textarea
+    id: validation_requirements
+    attributes:
+      label: Validation
+      description: Pruebas y comprobaciones requeridas.
+    validations:
+      required: true
+  - type: dropdown
+    id: review_mode
+    attributes:
+      label: Review Mode
+      options: [AUTO_CONTINUE, REVIEW_RECOMMENDED, REVIEW_REQUIRED]
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: IDs ATLAS-XXXX y su estado conocido; escriba "Ninguna" si no aplica.
+    validations:
+      required: true

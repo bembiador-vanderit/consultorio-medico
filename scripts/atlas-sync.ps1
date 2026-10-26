@@ -1,6 +1,7 @@
 param(
     [string]$Message,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$SelfTest
 )
 
 Set-StrictMode -Version Latest
@@ -18,6 +19,33 @@ function Invoke-SyncGit {
     return @($output | ForEach-Object { [string]$_ })
 }
 
+function Get-SyncGitPaths {
+    param([string[]]$Arguments)
+    # Path output must come only from stdout. Git warnings on stderr are not paths.
+    $ErrorActionPreference = 'Continue'
+    $output = & git @Arguments 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "GIT_PATH_COMMAND_FAILED: $($Arguments[0])" }
+    return @($output)
+}
+
+function ConvertTo-SyncPath {
+    param([object]$Value)
+    if ($Value -isnot [string]) { return '' }
+    $path = $Value.Trim()
+    if (-not $path) { return '' }
+    if ($path.Length -ge 2 -and $path.StartsWith('"') -and $path.EndsWith('"')) {
+        $path = $path.Substring(1, $path.Length - 2)
+    }
+    return (($path.Replace('\', '/') -replace '/+', '/').Trim()).ToLowerInvariant()
+}
+
+function Get-SyncPathSet {
+    param([object[]]$Values)
+    return @($Values | ForEach-Object { ConvertTo-SyncPath $_ } | Where-Object { $_ } | Sort-Object -Unique)
+}
+
+if ($SelfTest) { return }
+
 try {
     if ([string]::IsNullOrWhiteSpace($Message)) { throw 'EMPTY_COMMIT_MESSAGE' }
     Push-Location $repoRoot
@@ -34,18 +62,27 @@ try {
         }
 
         $branch = Invoke-SyncGit @('symbolic-ref', '--quiet', '--short', 'HEAD')
-        $candidates = @(
-            Invoke-SyncGit @('-c', 'core.quotepath=false', 'diff', '--name-only', '--no-renames', 'HEAD')
-            Invoke-SyncGit @('-c', 'core.quotepath=false', 'ls-files', '--others', '--exclude-standard')
-        ) | Where-Object { $_ } | Sort-Object -Unique
+        $candidateRaw = @(
+            Get-SyncGitPaths @('-c', 'core.quotepath=false', 'diff', '--name-only', '--no-renames', 'HEAD')
+            Get-SyncGitPaths @('-c', 'core.quotepath=false', 'ls-files', '--others', '--exclude-standard')
+        )
+        $candidates = @(Get-SyncPathSet $candidateRaw)
+        Write-Output "PRE_STAGE_COUNT=$($candidates.Count)"
         Invoke-SyncGit @('add', '-A') | Out-Null
-        $staged = @(Invoke-SyncGit @('-c', 'core.quotepath=false', 'diff', '--cached', '--name-only', '--no-renames'))
+        $stagedRaw = @(Get-SyncGitPaths @('-c', 'core.quotepath=false', 'diff', '--cached', '--name-only', '--no-renames'))
+        $staged = @(Get-SyncPathSet $stagedRaw)
+        Write-Output "POST_STAGE_COUNT=$($staged.Count)"
         if ($staged.Count -eq 0) { throw 'NOTHING_STAGED' }
-        if (@(Compare-Object $candidates $staged).Count -gt 0) { throw 'CANDIDATES_CHANGED_DURING_STAGING' }
+        $pathDifference = @(Compare-Object $candidates $staged)
+        if ($pathDifference.Count -gt 0) {
+            Write-Output "PRE_STAGE_CANDIDATES=$($candidates -join ',')"
+            Write-Output "POST_STAGE_CANDIDATES=$($staged -join ',')"
+            throw 'CANDIDATES_CHANGED_DURING_STAGING'
+        }
         $stagedValidation = @(& $validator -StagedOnly -SkipTests)
         if ($LASTEXITCODE -ne 0 -or $stagedValidation -notcontains 'RESULT=PASS') {
             $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'automation/atlas-sync-policy.json') -Raw | ConvertFrom-Json
-            foreach ($path in $staged) {
+            foreach ($path in $stagedRaw) {
                 foreach ($pattern in $policy.forbiddenFilePatterns) {
                     if ($path.Replace('\', '/') -match $pattern) {
                         Invoke-SyncGit @('restore', '--staged', '--', $path) | Out-Null
@@ -55,8 +92,11 @@ try {
             }
             throw "STAGED_VALIDATION_FAILED: $($stagedValidation -join '; ')"
         }
-        if (@(Invoke-SyncGit @('diff', '--name-only')).Count -gt 0) { throw 'WORKTREE_CHANGED_AFTER_STAGING' }
+        if (@(Get-SyncGitPaths @('diff', '--name-only')).Count -gt 0) { throw 'WORKTREE_CHANGED_AFTER_STAGING' }
         Invoke-SyncGit @('diff', '--cached', '--check') | Out-Null
+        Write-Output 'STAGED_FILES_BEGIN'
+        foreach ($path in $stagedRaw) { Write-Output "STAGED_FILE=$path" }
+        Write-Output 'STAGED_FILES_END'
         Invoke-SyncGit @('commit', '-m', $Message) | Out-Null
         $created = 'YES'
         $localHead = Invoke-SyncGit @('rev-parse', 'HEAD')
