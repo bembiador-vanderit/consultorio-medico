@@ -1,0 +1,34 @@
+
+name: Atlas Runner - Prueba de conexion
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostico:
+    runs-on: [self-hosted, Linux, X64, atlas]
+    timeout-minutes: 5
+
+    steps:
+      - name: Identificar servidor
+        run: |
+          hostname
+          whoami
+          uname -r
+
+      - name: Verificar recursos
+        run: |
+          free -h
+          df -h /
+
+      - name: Verificar herramientas
+        run: |
+          git --version
+          docker --version
+          docker compose version
+
+      - name: Confirmar ejecucion
+        run: echo "ATLAS RUNNER - PRUEBA COMPLETADA"
